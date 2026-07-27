@@ -89,8 +89,8 @@
     --color-term-mask: var(--term-mask);
     --color-term-warn: var(--term-warn);
 
-    --font-sans: var(--font-sans-face), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial,
-        sans-serif;
+    --font-sans:
+        var(--font-sans-face), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
     --font-mono: var(--font-mono-face), ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
@@ -109,7 +109,14 @@
     body {
         background-color: var(--bg);
         color: var(--fg);
-        font-family: var(--font-sans-face), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial,
+        font-family:
+            var(--font-sans-face),
+            ui-sans-serif,
+            system-ui,
+            -apple-system,
+            "Segoe UI",
+            Helvetica,
+            Arial,
             sans-serif;
         font-feature-settings: "cv02", "cv03", "cv04";
         -webkit-font-smoothing: antialiased;
@@ -144,7 +151,8 @@
 }
 
 @utility hairline-grid {
-    background-image: linear-gradient(to right, var(--line) 1px, transparent 1px),
+    background-image:
+        linear-gradient(to right, var(--line) 1px, transparent 1px),
         linear-gradient(to bottom, var(--line) 1px, transparent 1px);
     background-size: 56px 56px;
 }

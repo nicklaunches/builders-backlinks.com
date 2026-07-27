@@ -15,7 +15,6 @@
  *      "quality placements only" would be the easy marketing move and would
  *      make the product a referee, which it is not.
  */
-
 import { ShieldCheck, Sparkles, Target, Terminal } from "lucide-react";
 
 import { InstallTabs } from "@/components/web/install-tabs";
@@ -93,7 +92,7 @@ export default function LandingPage() {
                 <section className="relative overflow-hidden">
                     <div
                         aria-hidden="true"
-                        className="hairline-grid pointer-events-none absolute inset-0 opacity-[0.35] [mask-image:radial-gradient(70%_55%_at_50%_0%,black,transparent)]"
+                        className="hairline-grid pointer-events-none absolute inset-0 [mask-image:radial-gradient(70%_55%_at_50%_0%,black,transparent)] opacity-[0.35]"
                     />
 
                     <div className="relative mx-auto max-w-5xl px-5 pt-14 pb-16 sm:px-6 sm:pt-20 sm:pb-20">
@@ -108,9 +107,9 @@ export default function LandingPage() {
 
                         <p className="text-muted mt-5 max-w-2xl text-[16.5px] leading-relaxed sm:text-[17.5px]">
                             Roughly half of agreed link trades never become a published link. Not because anyone changed
-                            their mind, but because placing it means opening an editor, finding the right page, writing a
-                            sentence, committing, deploying. Your agent is already in the repo, so we put the whole trade
-                            where the work happens.
+                            their mind, but because placing it means opening an editor, finding the right page, writing
+                            a sentence, committing, deploying. Your agent is already in the repo, so we put the whole
+                            trade where the work happens.
                         </p>
 
                         <div className="mt-10">
@@ -159,17 +158,13 @@ export default function LandingPage() {
                 --------------------------------------------------------------- */}
                 <section id="how" aria-labelledby="how-heading" className="border-line bg-surface-2/60 border-t">
                     <div className="mx-auto max-w-5xl px-5 py-16 sm:px-6 sm:py-20">
-                        <h2
-                            id="how-heading"
-                            className="text-[1.6rem] font-semibold tracking-[-0.02em] sm:text-[2rem]">
+                        <h2 id="how-heading" className="text-[1.6rem] font-semibold tracking-[-0.02em] sm:text-[2rem]">
                             How it works
                         </h2>
 
                         <ol className="mt-10 grid gap-4 sm:mt-12 md:grid-cols-3 md:gap-5">
                             {STEPS.map((step) => (
-                                <li
-                                    key={step.n}
-                                    className="border-line bg-surface flex flex-col rounded-xl border p-6">
+                                <li key={step.n} className="border-line bg-surface flex flex-col rounded-xl border p-6">
                                     <span className="text-accent font-mono text-[12px] tracking-[0.16em]">
                                         {step.n}
                                     </span>

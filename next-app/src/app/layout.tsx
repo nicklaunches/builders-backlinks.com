@@ -6,7 +6,6 @@
  * because this audience reads a monospace `bb_live_...` as "real" and a
  * proportional one as "marketing".
  */
-
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 

@@ -55,7 +55,11 @@ export function CopyButton({ value, label = "install command", className }: Copy
                 copied && "border-term-ok/50 text-term-ok hover:text-term-ok",
                 className,
             )}>
-            {copied ? <Check aria-hidden="true" className="size-3.5" /> : <Copy aria-hidden="true" className="size-3.5" />}
+            {copied ? (
+                <Check aria-hidden="true" className="size-3.5" />
+            ) : (
+                <Copy aria-hidden="true" className="size-3.5" />
+            )}
             <span aria-hidden="true">{copied ? "Copied" : "Copy"}</span>
             <span role="status" aria-live="polite" className="sr-only">
                 {copied ? `Copied ${label}` : ""}

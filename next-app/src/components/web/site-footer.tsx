@@ -1,7 +1,6 @@
 /**
  * @file Minimal footer. No counts, no badges, no social proof we do not have.
  */
-
 import { Wordmark } from "@/components/web/wordmark";
 
 const LINKS = [

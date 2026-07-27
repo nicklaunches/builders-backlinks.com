@@ -1,7 +1,6 @@
 /**
  * @file The wordmark. A path, because the product is a two-sided trade.
  */
-
 import { cn } from "@/components/web/cn";
 
 export function Wordmark({ className }: { className?: string }) {

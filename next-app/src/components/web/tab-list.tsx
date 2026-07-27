@@ -112,17 +112,17 @@ export function TabList<T extends string>({
                         className={cn(
                             "shrink-0 font-mono whitespace-nowrap transition-colors",
                             variant === "solid" &&
-                                "rounded-md px-3 py-1.5 text-[12.5px] tracking-tight sm:text-[13px]",
+                                "rounded-md border px-3 py-1.5 text-[12.5px] tracking-tight sm:text-[13px]",
                             variant === "solid" &&
                                 (selected
-                                    ? "bg-term-bg text-term-bright shadow-[0_1px_0_0_rgba(255,255,255,0.06)_inset]"
-                                    : "text-term-dim hover:text-term-fg"),
+                                    ? "border-term-line bg-term-bg text-term-bright"
+                                    : "text-term-dim hover:bg-term-bg/40 hover:text-term-fg border-transparent"),
                             variant === "underline" &&
                                 "rounded-none border-b-2 px-3 py-2 text-[12px] tracking-wide lowercase sm:text-[12.5px]",
                             variant === "underline" &&
                                 (selected
                                     ? "border-term-ok text-term-bright"
-                                    : "border-transparent text-term-dim hover:text-term-fg"),
+                                    : "text-term-dim hover:text-term-fg border-transparent"),
                         )}>
                         {item.label}
                     </button>

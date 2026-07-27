@@ -12,9 +12,10 @@
  *   - placement is reported, never refereed
  *   - no member counts, site counts, or "N builders in X" appear anywhere
  *
- * TODO(verify): the tool names shown in the transcripts (submit_site,
- * list_matches, accept_match, get_link_brief, mark_link_placed) must be kept in
- * step with the real MCP tool registry once `src/app/api/[transport]` lands.
+ * The tool names in the transcripts are the real ones, checked against the
+ * registry in `src/lib/mcp/tools.ts`. This page is aimed at people who will
+ * paste the install command and then call the tools, so a name that does not
+ * exist is not a cosmetic slip, it is the page lying about the product.
  */
 
 "use client";
@@ -24,7 +25,7 @@ import { useState } from "react";
 
 import { cn } from "@/components/web/cn";
 import { CopyButton } from "@/components/web/copy-button";
-import { TabList, type TabItem, panelId, tabId } from "@/components/web/tab-list";
+import { type TabItem, TabList, panelId, tabId } from "@/components/web/tab-list";
 
 const MCP_URL = "https://builders-backlinks.com/api/mcp";
 
@@ -178,10 +179,7 @@ const TRANSCRIPTS: Record<ViewId, readonly Line[]> = {
         [s("> ", "dim"), s("/mcp", "prompt")],
         BLANK,
         [s("  builders-backlinks   ", "plain"), s("✓ connected", "ok")],
-        [
-            s("  tools  ", "dim"),
-            s("submit_site · list_matches · accept_match", "tool"),
-        ],
+        [s("  tools  ", "dim"), s("submit_site · list_matches · respond_to_match", "tool")],
         l("         get_link_brief · mark_link_placed", "tool"),
         BLANK,
         l("  Nothing installed locally. It is an HTTP server.", "dim"),
@@ -219,11 +217,7 @@ const TRANSCRIPTS: Record<ViewId, readonly Line[]> = {
         BLANK,
         l("  1 match waiting on you", "bright"),
         RULE,
-        [
-            s("  partner      ", "dim"),
-            s("▓▓▓▓▓▓▓▓▓.dev", "mask"),
-            s("   hidden until you both accept", "dim"),
-        ],
+        [s("  partner      ", "dim"), s("▓▓▓▓▓▓▓▓▓.dev", "mask"), s("   hidden until you both accept", "dim")],
         [s("  category     ", "dim"), s("Developer Tools", "plain")],
         [s("  DR           ", "dim"), s("17", "plain"), s("   your band: 10 to 25", "dim")],
         [s("  about        ", "dim"), s("Uptime checks and a hosted status page for", "plain")],
@@ -234,7 +228,7 @@ const TRANSCRIPTS: Record<ViewId, readonly Line[]> = {
         [s("  offers       ", "dim"), s("a link from an existing article", "plain")],
         RULE,
         BLANK,
-        [s("  ", "dim"), s("accept_match", "tool"), s("   ·   ", "dim"), s("decline_match", "tool")],
+        [s("  ", "dim"), s("respond_to_match", "tool"), s("(match_id, accept: true | false)", "dim")],
     ],
 
     place: [
@@ -339,7 +333,7 @@ export function InstallTabs() {
             </div>
 
             {/* Client picker. */}
-            <div className="border-term-line bg-term-chrome/60 border-b px-2 py-2">
+            <div className="border-term-line bg-term-chrome border-b px-2 py-2">
                 <TabList
                     label="Agent client"
                     idBase="client"
@@ -369,7 +363,7 @@ export function InstallTabs() {
                         ) : null}
                     </div>
 
-                    <div className="border-term-line bg-black/25 flex items-start gap-3 rounded-lg border p-3">
+                    <div className="border-term-line flex items-start gap-3 rounded-lg border bg-black/25 p-3">
                         <div className="min-w-0 flex-1 overflow-x-auto">
                             <SnippetBody snippet={definition.snippet} />
                         </div>
@@ -381,14 +375,14 @@ export function InstallTabs() {
                     ) : null}
 
                     <p className="text-term-dim mt-2.5 text-[12px] leading-relaxed">
-                        Replace <code className="font-mono text-term-fg">bb_live_...</code> with the key on your
+                        Replace <code className="text-term-fg font-mono">bb_live_...</code> with the key on your
                         dashboard. It is the only secret involved.
                     </p>
                 </div>
             ))}
 
             {/* View picker. */}
-            <div className="border-term-line bg-term-chrome/60 border-b px-2">
+            <div className="border-term-line bg-term-chrome border-b px-2">
                 <TabList
                     label="What the agent does"
                     idBase="view"

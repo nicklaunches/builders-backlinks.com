@@ -1,7 +1,6 @@
 /**
  * @file Top bar. Server component: no state, no interactivity beyond links.
  */
-
 import { Wordmark } from "@/components/web/wordmark";
 
 const NAV = [

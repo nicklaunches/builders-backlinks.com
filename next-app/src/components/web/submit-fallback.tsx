@@ -35,7 +35,8 @@ export function SubmitFallback() {
                 aria-controls={regionId}
                 className={cn(
                     "group flex w-full items-center justify-between gap-4 px-5 py-4 text-left sm:px-6 sm:py-5",
-                    "hover:bg-surface-2 rounded-xl transition-colors",
+                    "hover:bg-surface-2 transition-colors",
+                    open ? "rounded-t-xl" : "rounded-xl",
                 )}>
                 <span className="min-w-0">
                     <span className="block text-[15px] font-semibold sm:text-base">
@@ -47,10 +48,7 @@ export function SubmitFallback() {
                 </span>
                 <ChevronDown
                     aria-hidden="true"
-                    className={cn(
-                        "text-muted size-5 shrink-0 transition-transform duration-200",
-                        open && "rotate-180",
-                    )}
+                    className={cn("text-muted size-5 shrink-0 transition-transform duration-200", open && "rotate-180")}
                 />
             </button>
 
