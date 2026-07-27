@@ -1,0 +1,52 @@
+{
+    "name": "builders-backlinks",
+    "version": "0.1.0",
+    "private": true,
+    "scripts": {
+        "dev": "next dev",
+        "build": "next build",
+        "start": "next start",
+        "lint": "eslint",
+        "typecheck": "tsc --noEmit",
+        "format": "prettier . --write",
+        "mcp:inspect": "npx @modelcontextprotocol/inspector",
+        "test": "node --import tsx --test \"src/**/*.test.ts\"",
+        "test:mcp": "node --import tsx scripts/mcp-smoke.ts"
+    },
+    "dependencies": {
+        "@auth/mongodb-adapter": "^3.11.2",
+        "@aws-sdk/client-sesv2": "^3.1041.0",
+        "@modelcontextprotocol/sdk": "1.26.0",
+        "@react-email/components": "^1.0.12",
+        "@react-email/render": "^2.0.8",
+        "clsx": "^2.1.1",
+        "disposable-email-domains": "^1.0.62",
+        "lucide-react": "^1.11.0",
+        "mcp-handler": "^1.1.0",
+        "mongodb": "^6.21.0",
+        "mongoose": "^8.23.1",
+        "next": "16.2.9",
+        "next-auth": "5.0.0-beta.31",
+        "react": "19.2.4",
+        "react-dom": "19.2.4",
+        "tailwind-merge": "^3.5.0",
+        "zod": "^4.3.6"
+    },
+    "devDependencies": {
+        "@tailwindcss/postcss": "^4",
+        "@trivago/prettier-plugin-sort-imports": "^6.0.2",
+        "@types/node": "^20",
+        "@types/react": "^19",
+        "@types/react-dom": "^19",
+        "dotenv": "^17.4.2",
+        "env-cmd": "^11.0.0",
+        "eslint": "^9",
+        "eslint-config-next": "16.2.4",
+        "prettier": "^3.8.3",
+        "prettier-plugin-tailwindcss": "^0.7.3",
+        "tailwindcss": "^4",
+        "tsx": "^4.21.0",
+        "typescript": "^5"
+    },
+    "packageManager": "pnpm@10.33.4"
+}

@@ -1,0 +1,8 @@
+next-app/node_modules/
+next-app/.next/
+next-app/.vercel/
+next-app/.env
+next-app/.env.*
+!next-app/.env.example
+*.tsbuildinfo
+.DS_Store

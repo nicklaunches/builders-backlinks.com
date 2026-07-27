@@ -1,0 +1,150 @@
+/**
+ * @file Tailwind v4 entry and the site theme.
+ *
+ * Design identity: a quiet developer-tool surface (paper white / deep ink,
+ * hairline rules, generous whitespace) with a single jade accent reserved for
+ * things that are actually true: verified links, the primary action, links.
+ *
+ * The terminal is deliberately dark in BOTH themes. It is a terminal, its ANSI
+ * palette only reads correctly on a dark ground, and pinning it means the hero
+ * looks identical to every reader. So `--term-*` is defined once and never
+ * flipped by `prefers-color-scheme`.
+ */
+
+@import "tailwindcss";
+
+:root {
+    color-scheme: light;
+
+    --bg: #fbfbfa;
+    --surface: #ffffff;
+    --surface-2: #f4f5f3;
+    --line: #e2e4e0;
+    --line-strong: #cfd2cc;
+    --fg: #14161a;
+    --muted: #5c6169;
+    --accent: #0f7a52;
+    --accent-hover: #0b6543;
+    --accent-fg: #ffffff;
+    --accent-soft: #e6f4ed;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        color-scheme: dark;
+
+        --bg: #0a0b0d;
+        --surface: #101216;
+        --surface-2: #171a1f;
+        --line: #23262c;
+        --line-strong: #333840;
+        --fg: #e9ebee;
+        --muted: #98a0ab;
+        --accent: #4ade80;
+        --accent-hover: #86efac;
+        --accent-fg: #06140d;
+        --accent-soft: #10241a;
+    }
+}
+
+/* Terminal chrome. Fixed across themes, see file header. */
+:root {
+    --term-bg: #0c0e12;
+    --term-chrome: #14171d;
+    --term-line: #242830;
+    --term-fg: #d6dae1;
+    --term-dim: #767e8c;
+    --term-bright: #f4f6f8;
+    --term-tool: #7ee0a0;
+    --term-ok: #4ade80;
+    --term-add: #86efac;
+    --term-key: #7dd3fc;
+    --term-mask: #c4b5fd;
+    --term-warn: #fbbf24;
+}
+
+@theme inline {
+    --color-bg: var(--bg);
+    --color-surface: var(--surface);
+    --color-surface-2: var(--surface-2);
+    --color-line: var(--line);
+    --color-line-strong: var(--line-strong);
+    --color-fg: var(--fg);
+    --color-muted: var(--muted);
+    --color-accent: var(--accent);
+    --color-accent-hover: var(--accent-hover);
+    --color-accent-fg: var(--accent-fg);
+    --color-accent-soft: var(--accent-soft);
+
+    --color-term-bg: var(--term-bg);
+    --color-term-chrome: var(--term-chrome);
+    --color-term-line: var(--term-line);
+    --color-term-fg: var(--term-fg);
+    --color-term-dim: var(--term-dim);
+    --color-term-bright: var(--term-bright);
+    --color-term-tool: var(--term-tool);
+    --color-term-ok: var(--term-ok);
+    --color-term-add: var(--term-add);
+    --color-term-key: var(--term-key);
+    --color-term-mask: var(--term-mask);
+    --color-term-warn: var(--term-warn);
+
+    --font-sans: var(--font-sans-face), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial,
+        sans-serif;
+    --font-mono: var(--font-mono-face), ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@layer base {
+    *,
+    *::before,
+    *::after {
+        border-color: var(--line);
+    }
+
+    html {
+        -webkit-text-size-adjust: 100%;
+        scroll-behavior: smooth;
+    }
+
+    body {
+        background-color: var(--bg);
+        color: var(--fg);
+        font-family: var(--font-sans-face), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial,
+            sans-serif;
+        font-feature-settings: "cv02", "cv03", "cv04";
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+    }
+
+    /* One visible focus treatment everywhere, including inside the dark terminal. */
+    :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+        border-radius: 3px;
+    }
+
+    ::selection {
+        background-color: var(--accent-soft);
+        color: var(--fg);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        html {
+            scroll-behavior: auto;
+        }
+
+        *,
+        *::before,
+        *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+        }
+    }
+}
+
+@utility hairline-grid {
+    background-image: linear-gradient(to right, var(--line) 1px, transparent 1px),
+        linear-gradient(to bottom, var(--line) 1px, transparent 1px);
+    background-size: 56px 56px;
+}
