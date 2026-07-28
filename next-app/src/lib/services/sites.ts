@@ -1,14 +1,14 @@
 import { analyzeSite } from "@/lib/analyze";
-import { type Category, isCategory, UNMATCHABLE } from "@/lib/categories";
+import { type Category, UNMATCHABLE, isCategory } from "@/lib/categories";
 import { AnalyzeError, type SiteAnalysis } from "@/lib/contracts";
 import { connectMongo } from "@/lib/db/mongoose";
 import { type ExchangeMemberHydrated } from "@/lib/models/ExchangeMember";
 import {
     ExchangeSite,
     type ExchangeSiteHydrated,
-    normalizeDomain,
     PLACEMENT_OFFERS,
     type PlacementOffer,
+    normalizeDomain,
 } from "@/lib/models/ExchangeSite";
 
 /**
@@ -29,7 +29,8 @@ import {
 
 export class SiteError extends Error {
     constructor(
-        public readonly code: "domain_taken" | "invalid_category" | "unmatchable_category" | "too_many_sites" | "invalid",
+        public readonly code:
+            "domain_taken" | "invalid_category" | "unmatchable_category" | "too_many_sites" | "invalid",
         message: string,
     ) {
         super(message);
@@ -98,9 +99,15 @@ export async function commitSite(input: CommitSiteInput): Promise<ExchangeSiteHy
         );
     }
     if (!description.trim()) {
-        throw new SiteError("invalid", "A description is required. It is what partners see before they know who you are.");
+        throw new SiteError(
+            "invalid",
+            "A description is required. It is what partners see before they know who you are.",
+        );
     }
-    const cleanKeywords = keywords.map((k) => k.trim().toLowerCase()).filter(Boolean).slice(0, 25);
+    const cleanKeywords = keywords
+        .map((k) => k.trim().toLowerCase())
+        .filter(Boolean)
+        .slice(0, 25);
     if (cleanKeywords.length === 0) {
         throw new SiteError("invalid", "Add at least one anchor phrase you would like partners to link you as.");
     }

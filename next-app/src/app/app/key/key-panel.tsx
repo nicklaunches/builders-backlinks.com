@@ -83,7 +83,7 @@ export function KeyPanel({ initial }: KeyPanelProps) {
             {error ? (
                 <p
                     role="alert"
-                    className="border-line bg-surface-2 flex items-start gap-2.5 rounded-lg border p-4 text-[13.5px] leading-relaxed">
+                    className="border-line bg-surface-2 flex items-start gap-2.5 rounded-sm border p-4 text-[13.5px] leading-relaxed">
                     <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
                     <span>{error}</span>
                 </p>
@@ -98,8 +98,8 @@ export function KeyPanel({ initial }: KeyPanelProps) {
 
 function Generate({ formAction, pending }: { formAction: () => void; pending: boolean }) {
     return (
-        <section aria-labelledby="generate-heading" className="border-line bg-surface rounded-xl border p-6 sm:p-8">
-            <span className="border-line bg-surface-2 text-accent mb-4 inline-flex size-10 items-center justify-center rounded-lg border">
+        <section aria-labelledby="generate-heading" className="border-line bg-surface rounded-sm border p-6 sm:p-8">
+            <span className="border-line bg-surface-2 text-accent mb-4 inline-flex size-10 items-center justify-center rounded-sm border">
                 <KeyRound aria-hidden="true" className="size-5" />
             </span>
 
@@ -122,7 +122,7 @@ function Generate({ formAction, pending }: { formAction: () => void; pending: bo
                     disabled={pending}
                     className={cn(
                         "bg-accent text-accent-fg hover:bg-accent-hover inline-flex items-center justify-center gap-2",
-                        "rounded-lg px-6 py-3 text-[15px] font-semibold transition-colors",
+                        "rounded-sm px-6 py-3 text-[15px] font-semibold transition-colors",
                         "disabled:cursor-not-allowed disabled:opacity-60",
                     )}>
                     {pending ? (
@@ -153,7 +153,7 @@ function Reveal({ state, onDismiss }: { state: Extract<IssueKeyState, { status: 
             <section
                 role="alert"
                 aria-labelledby="reveal-heading"
-                className="border-accent/40 bg-accent-soft rounded-xl border p-5 sm:p-6">
+                className="border-accent/40 bg-accent-soft rounded-sm border p-5 sm:p-6">
                 <p className="flex items-center gap-2.5 text-[15px] font-semibold">
                     <ShieldAlert aria-hidden="true" className="text-accent size-5 shrink-0" />
                     <span id="reveal-heading">This is the only time this key will ever be shown.</span>
@@ -189,14 +189,14 @@ function Reveal({ state, onDismiss }: { state: Extract<IssueKeyState, { status: 
 
             <Snippet eyebrow="The key on its own" label="API key" value={state.plaintext} />
 
-            <div className="border-line bg-surface flex flex-col gap-3 rounded-xl border p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="border-line bg-surface flex flex-col gap-3 rounded-sm border p-5 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-muted text-[13.5px] leading-relaxed">
                     Saved it somewhere? Hiding it does not revoke it, it just takes it off this screen.
                 </p>
                 <button
                     type="button"
                     onClick={onDismiss}
-                    className="border-line hover:border-line-strong hover:bg-surface-2 inline-flex shrink-0 items-center justify-center rounded-lg border px-5 py-2.5 text-[14px] font-medium transition-colors">
+                    className="border-line hover:border-line-strong hover:bg-surface-2 inline-flex shrink-0 items-center justify-center rounded-sm border px-5 py-2.5 text-[14px] font-medium transition-colors">
                     I have saved it, hide it
                 </button>
             </div>
@@ -226,7 +226,7 @@ function Snippet({
     return (
         <section
             className={cn(
-                "border-term-line bg-term-bg overflow-hidden rounded-xl border",
+                "border-term-line bg-term-bg overflow-hidden rounded-sm border",
                 primary && "shadow-2xl shadow-black/20",
             )}>
             <div className="border-term-line bg-term-chrome flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-2.5">
@@ -280,8 +280,8 @@ function ExistingKey({
     const [confirming, setConfirming] = useState(false);
 
     return (
-        <section aria-labelledby="existing-heading" className="border-line bg-surface rounded-xl border p-6 sm:p-8">
-            <span className="border-line bg-surface-2 text-accent mb-4 inline-flex size-10 items-center justify-center rounded-lg border">
+        <section aria-labelledby="existing-heading" className="border-line bg-surface rounded-sm border p-6 sm:p-8">
+            <span className="border-line bg-surface-2 text-accent mb-4 inline-flex size-10 items-center justify-center rounded-sm border">
                 <KeyRound aria-hidden="true" className="size-5" />
             </span>
 
@@ -293,7 +293,7 @@ function ExistingKey({
                 agent config any more, generate a new one.
             </p>
 
-            <dl className="border-line mt-6 grid gap-px overflow-hidden rounded-lg border sm:grid-cols-2">
+            <dl className="border-line mt-6 grid gap-px overflow-hidden rounded-sm border sm:grid-cols-2">
                 <div className="bg-surface-2/60 p-4">
                     <dt className="text-muted font-mono text-[11px] tracking-[0.14em] uppercase">Issued</dt>
                     <dd className="mt-1.5 font-mono text-[14px]">{issuedAt ?? "unknown"}</dd>
@@ -310,7 +310,7 @@ function ExistingKey({
             </dl>
 
             {confirming ? (
-                <div className="border-line bg-surface-2 mt-6 rounded-lg border p-5">
+                <div className="border-line bg-surface-2 mt-6 rounded-sm border p-5">
                     <p className="flex items-start gap-2.5 text-[14.5px] font-semibold">
                         <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
                         <span>Your current key stops working immediately.</span>
@@ -328,7 +328,7 @@ function ExistingKey({
                                 disabled={pending}
                                 className={cn(
                                     "bg-accent text-accent-fg hover:bg-accent-hover inline-flex w-full items-center justify-center gap-2",
-                                    "rounded-lg px-5 py-2.5 text-[14.5px] font-semibold transition-colors sm:w-auto",
+                                    "rounded-sm px-5 py-2.5 text-[14.5px] font-semibold transition-colors sm:w-auto",
                                     "disabled:cursor-not-allowed disabled:opacity-60",
                                 )}>
                                 {pending ? (
@@ -345,7 +345,7 @@ function ExistingKey({
                             type="button"
                             onClick={() => setConfirming(false)}
                             disabled={pending}
-                            className="border-line hover:border-line-strong hover:bg-surface inline-flex items-center justify-center rounded-lg border px-5 py-2.5 text-[14.5px] font-medium transition-colors disabled:opacity-60">
+                            className="border-line hover:border-line-strong hover:bg-surface inline-flex items-center justify-center rounded-sm border px-5 py-2.5 text-[14.5px] font-medium transition-colors disabled:opacity-60">
                             Keep my current key
                         </button>
                     </div>
@@ -354,7 +354,7 @@ function ExistingKey({
                 <button
                     type="button"
                     onClick={() => setConfirming(true)}
-                    className="border-line hover:border-line-strong hover:bg-surface-2 mt-6 inline-flex items-center justify-center gap-2 rounded-lg border px-5 py-2.5 text-[14.5px] font-medium transition-colors">
+                    className="border-line hover:border-line-strong hover:bg-surface-2 mt-6 inline-flex items-center justify-center gap-2 rounded-sm border px-5 py-2.5 text-[14.5px] font-medium transition-colors">
                     <RotateCcw aria-hidden="true" className="size-4" />
                     Regenerate key
                 </button>

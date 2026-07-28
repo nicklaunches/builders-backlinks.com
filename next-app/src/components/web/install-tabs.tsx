@@ -321,7 +321,7 @@ export function InstallTabs() {
     const [view, setView] = useState<ViewId>("place");
 
     return (
-        <div className="border-term-line bg-term-bg overflow-hidden rounded-xl border shadow-2xl shadow-black/20">
+        <div className="border-term-line bg-term-bg overflow-hidden rounded-sm border shadow-2xl shadow-black/20">
             {/* Chrome: eyebrow + recommendation. */}
             <div className="border-term-line bg-term-chrome flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-3">
                 <span className="text-term-dim font-mono text-[11px] tracking-[0.14em] uppercase">
@@ -357,14 +357,14 @@ export function InstallTabs() {
                     <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1">
                         <span className="text-term-dim text-[12px]">{definition.where}</span>
                         {definition.path ? (
-                            <code className="border-term-line text-term-fg rounded border px-1.5 py-0.5 font-mono text-[11.5px]">
+                            <code className="border-term-line text-term-fg rounded-sm border px-1.5 py-0.5 font-mono text-[11.5px]">
                                 {definition.path}
                             </code>
                         ) : null}
                     </div>
 
-                    <div className="border-term-line flex items-start gap-3 rounded-lg border bg-black/25 p-3">
-                        <div className="min-w-0 flex-1 overflow-x-auto">
+                    <div className="border-term-line flex items-start gap-3 rounded-sm border bg-black/25 p-3">
+                        <div className="min-w-0 flex-1 scrollbar-none overflow-x-auto">
                             <SnippetBody snippet={definition.snippet} />
                         </div>
                         <CopyButton value={definition.snippet} label={`${definition.label} setup`} />
@@ -404,7 +404,7 @@ export function InstallTabs() {
                     tabIndex={0}>
                     {/* Horizontal scroll lives here, not on the page. No max height:
                         the `place` payoff line must never sit below a hidden fold. */}
-                    <div className="min-h-[20rem] overflow-x-auto px-4 py-4">
+                    <div className="min-h-[20rem] scrollbar-none overflow-x-auto px-4 py-4">
                         <TranscriptBody lines={TRANSCRIPTS[tab.id]} />
                     </div>
                     <p className="border-term-line text-term-dim border-t px-4 py-3 text-[12.5px] leading-relaxed">

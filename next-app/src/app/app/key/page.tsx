@@ -70,7 +70,7 @@ export default async function ApiKeyPage() {
                         )}
                     </div>
 
-                    <aside className="border-line bg-surface-2/60 mt-12 rounded-xl border p-5 sm:p-6">
+                    <aside className="border-line bg-surface-2/60 mt-12 rounded-sm border p-5 sm:p-6">
                         <h2 className="text-[14.5px] font-semibold">What works without a key</h2>
                         <p className="text-muted mt-2.5 text-[14px] leading-relaxed">
                             The read-only tools (<code className="text-fg font-mono text-[13px]">search_partners</code>,{" "}
@@ -97,8 +97,8 @@ function SignInPrompt() {
     const href = `/signin?callbackUrl=${encodeURIComponent(CALLBACK)}`;
 
     return (
-        <section aria-labelledby="signin-heading" className="border-line bg-surface rounded-xl border p-6 sm:p-8">
-            <span className="border-line bg-surface-2 text-accent mb-4 inline-flex size-10 items-center justify-center rounded-lg border">
+        <section aria-labelledby="signin-heading" className="border-line bg-surface rounded-sm border p-6 sm:p-8">
+            <span className="border-line bg-surface-2 text-accent mb-4 inline-flex size-10 items-center justify-center rounded-sm border">
                 <LogIn aria-hidden="true" className="size-5" />
             </span>
 
@@ -112,7 +112,7 @@ function SignInPrompt() {
 
             <a
                 href={href}
-                className="bg-accent text-accent-fg hover:bg-accent-hover mt-6 inline-flex items-center justify-center rounded-lg px-6 py-3 text-[15px] font-semibold transition-colors">
+                className="bg-accent text-accent-fg hover:bg-accent-hover mt-6 inline-flex items-center justify-center rounded-sm px-6 py-3 text-[15px] font-semibold transition-colors">
                 Sign in and continue
             </a>
 

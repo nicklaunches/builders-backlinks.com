@@ -1,6 +1,6 @@
 import type { Category } from "@/lib/categories";
 import type { MaskedPartner, RevealedPartner } from "@/lib/contracts";
-import { isRevealed, type MatchState } from "@/lib/models/ExchangeMatch";
+import { type MatchState, isRevealed } from "@/lib/models/ExchangeMatch";
 import type { ExchangeSiteDoc } from "@/lib/models/ExchangeSite";
 import type { PlacementOffer } from "@/lib/models/ExchangeSite";
 

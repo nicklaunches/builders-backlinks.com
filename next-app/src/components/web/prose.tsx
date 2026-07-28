@@ -72,7 +72,7 @@ export function Subheading({ id, children }: { id?: string; children: React.Reac
 /** Inline code. Sits in body text, so it uses page tokens, not terminal ones. */
 export function Code({ children }: { children: React.ReactNode }) {
     return (
-        <code className="border-line bg-surface-2 text-fg rounded border px-1.5 py-0.5 font-mono text-[0.85em] whitespace-nowrap">
+        <code className="border-line bg-surface-2 text-fg rounded-sm border px-1.5 py-0.5 font-mono text-[0.85em] whitespace-nowrap">
             {children}
         </code>
     );
@@ -86,7 +86,7 @@ export function Code({ children }: { children: React.ReactNode }) {
  */
 export function CodeBlock({ code, label, copyLabel }: { code: string; label?: string; copyLabel?: string }) {
     return (
-        <div className="border-term-line bg-term-bg mt-4 overflow-hidden rounded-xl border">
+        <div className="border-term-line bg-term-bg mt-4 overflow-hidden rounded-sm border">
             <div className="border-term-line bg-term-chrome flex items-center justify-between gap-3 border-b px-3 py-2">
                 <span className="text-term-dim font-mono text-[11px] tracking-[0.12em] uppercase">
                     {label ?? "shell"}
@@ -132,7 +132,7 @@ export function Callout({
     return (
         <aside
             className={cn(
-                "mt-6 max-w-[70ch] rounded-xl border p-5",
+                "mt-6 max-w-[70ch] rounded-sm border p-5",
                 tone === "accent" ? "border-accent/35 bg-accent-soft" : "border-line bg-surface",
             )}>
             <div className="flex items-start gap-2 text-[15px] leading-snug font-semibold">

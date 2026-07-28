@@ -22,6 +22,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { OnThisPageRail } from "@/components/web/on-this-page-rail";
 import { OnThisPage, PageHeader } from "@/components/web/page-header";
 import { Callout, Code, CodeBlock, Prose, Section, Subheading } from "@/components/web/prose";
 import { SiteFooter } from "@/components/web/site-footer";
@@ -434,7 +435,7 @@ const PILL_MUTED = `${PILL} border-line text-muted`;
 
 function ToolCard({ tool }: { tool: ToolDef }) {
     return (
-        <article id={`tool-${tool.name}`} className="border-line bg-surface scroll-mt-20 rounded-xl border p-5 sm:p-6">
+        <article id={`tool-${tool.name}`} className="border-line bg-surface scroll-mt-20 rounded-sm border p-5 sm:p-6">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                 <h4 className="text-accent font-mono text-[15px] font-semibold">{tool.name}</h4>
                 <span className={tool.auth === "anonymous" ? PILL_MUTED : PILL_ACCENT}>
@@ -527,317 +528,343 @@ export default function McpDocsPage() {
                     title="The MCP server, end to end"
                     lede="One HTTP endpoint, eleven tools, and a worked trade from an empty listing to a link we have verified is live. Nothing installs on your machine."
                     meta={MCP_URL}>
-                    <OnThisPage items={SECTIONS} />
+                    {/* Small screens only: above lg the sticky rail takes over,
+                        and showing both would be the same list twice. */}
+                    <OnThisPage items={SECTIONS} className="lg:hidden" />
                 </PageHeader>
 
-                <div className="mx-auto max-w-3xl px-5 py-14 sm:px-6 sm:py-16">
-                    {/* -------------------------------------------------------
+                {/* The prose column keeps its max-w-3xl measure. Only the
+                    OUTER wrapper widens, to make room for the rail, so the
+                    reading line length is identical to every other page. */}
+                <div className="mx-auto max-w-6xl px-5 py-14 sm:px-6 sm:py-16 lg:grid lg:grid-cols-[minmax(0,1fr)_15rem] lg:gap-12">
+                    <div className="max-w-3xl">
+                        {/* -------------------------------------------------------
                         The server
                     ------------------------------------------------------- */}
-                    <Section id="server" title="The server">
-                        <Prose>
-                            <p>
-                                Builders Backlinks is an MCP server first and a website second. The exchange is driven
-                                by tool calls from whatever agent you already work in, and the web pages exist so that
-                                people without one are not locked out.
-                            </p>
-                            <ul>
-                                <li>
-                                    Endpoint: <Code>{MCP_URL}</Code>
-                                </li>
-                                <li>
-                                    Transport: Streamable HTTP. A legacy SSE endpoint is also served at{" "}
-                                    <Code>/api/sse</Code>, but use <Code>/api/mcp</Code> unless your client cannot.
-                                </li>
-                                <li>
-                                    Server identity: <Code>builders-backlinks</Code>, version <Code>0.1.0</Code>.
-                                </li>
-                                <li>
-                                    Nothing runs locally. There is no npm package, no binary, and no process on your
-                                    machine.
-                                </li>
-                                <li>
-                                    The request budget is 60 seconds. Nearly every call returns in well under a second.{" "}
-                                    <Code>submit_site</Code> is the exception, because it does a live page fetch, a
-                                    Domain Rating lookup and an LLM call before it answers.
-                                </li>
-                            </ul>
-                        </Prose>
-                    </Section>
+                        <Section id="server" title="The server">
+                            <Prose>
+                                <p>
+                                    Builders Backlinks is an MCP server first and a website second. The exchange is
+                                    driven by tool calls from whatever agent you already work in, and the web pages
+                                    exist so that people without one are not locked out.
+                                </p>
+                                <ul>
+                                    <li>
+                                        Endpoint: <Code>{MCP_URL}</Code>
+                                    </li>
+                                    <li>
+                                        Transport: Streamable HTTP. A legacy SSE endpoint is also served at{" "}
+                                        <Code>/api/sse</Code>, but use <Code>/api/mcp</Code> unless your client cannot.
+                                    </li>
+                                    <li>
+                                        Server identity: <Code>builders-backlinks</Code>, version <Code>0.1.0</Code>.
+                                    </li>
+                                    <li>
+                                        Nothing runs locally. There is no npm package, no binary, and no process on your
+                                        machine.
+                                    </li>
+                                    <li>
+                                        The request budget is 60 seconds. Nearly every call returns in well under a
+                                        second. <Code>submit_site</Code> is the exception, because it does a live page
+                                        fetch, a Domain Rating lookup and an LLM call before it answers.
+                                    </li>
+                                </ul>
+                            </Prose>
+                        </Section>
 
-                    {/* -------------------------------------------------------
+                        {/* -------------------------------------------------------
                         Install
                     ------------------------------------------------------- */}
-                    <Section id="install" title="Install">
-                        <Prose>
-                            <p>
-                                Add the server once. Replace <Code>bb_live_...</Code> with the key from{" "}
-                                <a href="/app/key">your dashboard</a> (<a href="/signin">sign in</a> first). If you have
-                                not got a key yet, add the server without the header: the read tools still work.
-                            </p>
-                        </Prose>
+                        <Section id="install" title="Install">
+                            <Prose>
+                                <p>
+                                    Add the server once. Replace <Code>bb_live_...</Code> with the key from{" "}
+                                    <a href="/app/key">your dashboard</a> (<a href="/signin">sign in</a> first). If you
+                                    have not got a key yet, add the server without the header: the read tools still
+                                    work.
+                                </p>
+                            </Prose>
 
-                        <Callout title="Two of these four are confirmed, two are not">
-                            Claude Code and Cursor are confirmed working against this server. The Codex CLI and Gemini
-                            CLI snippets follow those products&rsquo; own MCP documentation, but we have not run them
-                            end to end here yet, so treat them as should-work rather than known-good. If one fails, the
-                            endpoint and the header are the only things that actually matter: any client that can send
-                            an <Code>Authorization</Code> header to a streamable-HTTP MCP URL will work.
-                        </Callout>
+                            <Callout title="Two of these four are confirmed, two are not">
+                                Claude Code and Cursor are confirmed working against this server. The Codex CLI and
+                                Gemini CLI snippets follow those products&rsquo; own MCP documentation, but we have not
+                                run them end to end here yet, so treat them as should-work rather than known-good. If
+                                one fails, the endpoint and the header are the only things that actually matter: any
+                                client that can send an <Code>Authorization</Code> header to a streamable-HTTP MCP URL
+                                will work.
+                            </Callout>
 
-                        <div className="mt-9 space-y-10">
-                            {INSTALLS.map((install) => (
-                                <InstallCard key={install.id} install={install} />
-                            ))}
-                        </div>
-                    </Section>
+                            <div className="mt-9 space-y-10">
+                                {INSTALLS.map((install) => (
+                                    <InstallCard key={install.id} install={install} />
+                                ))}
+                            </div>
+                        </Section>
 
-                    {/* -------------------------------------------------------
+                        {/* -------------------------------------------------------
                         Authentication
                     ------------------------------------------------------- */}
-                    <Section id="auth" title="Authentication">
-                        <Prose>
-                            <p>
-                                Authentication is optional at the server level and enforced per tool. That is
-                                deliberate: adding the server should never fail, and the first thing you can do should
-                                be to check whether the exchange is worth joining at all.
-                            </p>
-                            <ul>
-                                <li>
-                                    <strong>Read tools work anonymously.</strong> <Code>get_rules</Code>,{" "}
-                                    <Code>get_categories</Code> and <Code>search_partners</Code> need no credentials of
-                                    any kind.
-                                </li>
-                                <li>
-                                    <strong>Write tools need a bearer token.</strong> Everything that touches your
-                                    sites, matches or links resolves a member from the{" "}
-                                    <Code>Authorization: Bearer bb_live_...</Code> header, and returns the exact command
-                                    to add one if it cannot.
-                                </li>
-                                <li>
-                                    A key is <Code>bb_live_</Code> followed by 32 bytes of base64url randomness, so it
-                                    pastes into a shell command without quoting hazards.
-                                </li>
-                                <li>
-                                    Only the SHA-256 of your key is stored. The plaintext is shown once, at creation,
-                                    and is unrecoverable afterwards. Lose it and you mint a new one.
-                                </li>
-                                <li>
-                                    Unsubscribing disables the key. Your sites drop out of matching and tool calls
-                                    behave as though you are signed out, until you resubscribe.
-                                </li>
-                            </ul>
-                        </Prose>
+                        <Section id="auth" title="Authentication">
+                            <Prose>
+                                <p>
+                                    Authentication is optional at the server level and enforced per tool. That is
+                                    deliberate: adding the server should never fail, and the first thing you can do
+                                    should be to check whether the exchange is worth joining at all.
+                                </p>
+                                <ul>
+                                    <li>
+                                        <strong>Read tools work anonymously.</strong> <Code>get_rules</Code>,{" "}
+                                        <Code>get_categories</Code> and <Code>search_partners</Code> need no credentials
+                                        of any kind.
+                                    </li>
+                                    <li>
+                                        <strong>Write tools need a bearer token.</strong> Everything that touches your
+                                        sites, matches or links resolves a member from the{" "}
+                                        <Code>Authorization: Bearer bb_live_...</Code> header, and returns the exact
+                                        command to add one if it cannot.
+                                    </li>
+                                    <li>
+                                        A key is <Code>bb_live_</Code> followed by 32 bytes of base64url randomness, so
+                                        it pastes into a shell command without quoting hazards.
+                                    </li>
+                                    <li>
+                                        Only the SHA-256 of your key is stored. The plaintext is shown once, at
+                                        creation, and is unrecoverable afterwards. Lose it and you mint a new one.
+                                    </li>
+                                    <li>
+                                        Unsubscribing disables the key. Your sites drop out of matching and tool calls
+                                        behave as though you are signed out, until you resubscribe.
+                                    </li>
+                                </ul>
+                            </Prose>
 
-                        <Callout title="Header tokens now, OAuth 2.1 later" tone="accent">
-                            The blessed path in the MCP specification is OAuth 2.1 with dynamic client registration, and
-                            that is where this is going: a one-time browser sign-in and an install snippet with no key
-                            in it at all. It needs an authorization server we have not built yet, and header tokens work
-                            in every client today, including the ones whose OAuth support for third-party servers is
-                            still uneven. When OAuth lands, the header path keeps working and no tool name or argument
-                            changes.
-                        </Callout>
-                    </Section>
+                            <Callout title="Header tokens now, OAuth 2.1 later" tone="accent">
+                                The blessed path in the MCP specification is OAuth 2.1 with dynamic client registration,
+                                and that is where this is going: a one-time browser sign-in and an install snippet with
+                                no key in it at all. It needs an authorization server we have not built yet, and header
+                                tokens work in every client today, including the ones whose OAuth support for
+                                third-party servers is still uneven. When OAuth lands, the header path keeps working and
+                                no tool name or argument changes.
+                            </Callout>
+                        </Section>
 
-                    {/* -------------------------------------------------------
+                        {/* -------------------------------------------------------
                         Tool reference
                     ------------------------------------------------------- */}
-                    <Section id="tools" title="Tool reference">
-                        <Prose>
-                            <p>
-                                Eleven tools: three that need no key at all, and eight that act on your own account.
-                                Every tool returns plain text written to be read by a model, and every write tool ends
-                                by saying what to do next, so an agent can keep the loop going without being prompted at
-                                each step.
-                            </p>
-                        </Prose>
+                        <Section id="tools" title="Tool reference">
+                            <Prose>
+                                <p>
+                                    Eleven tools: three that need no key at all, and eight that act on your own account.
+                                    Every tool returns plain text written to be read by a model, and every write tool
+                                    ends by saying what to do next, so an agent can keep the loop going without being
+                                    prompted at each step.
+                                </p>
+                            </Prose>
 
-                        <Subheading id="tools-read">Anonymous reads</Subheading>
-                        <div className="mt-4 space-y-4">
-                            {READ_TOOLS.map((tool) => (
-                                <ToolCard key={tool.name} tool={tool} />
-                            ))}
-                        </div>
+                            <Subheading id="tools-read">Anonymous reads</Subheading>
+                            <div className="mt-4 space-y-4">
+                                {READ_TOOLS.map((tool) => (
+                                    <ToolCard key={tool.name} tool={tool} />
+                                ))}
+                            </div>
 
-                        <Subheading id="tools-write">Authenticated writes</Subheading>
-                        <Prose className="mt-3">
-                            <p>Each of these needs the bearer header.</p>
-                        </Prose>
-                        <div className="mt-4 space-y-4">
-                            {WRITE_TOOLS.map((tool) => (
-                                <ToolCard key={tool.name} tool={tool} />
-                            ))}
-                        </div>
-                    </Section>
+                            <Subheading id="tools-write">Authenticated writes</Subheading>
+                            <Prose className="mt-3">
+                                <p>Each of these needs the bearer header.</p>
+                            </Prose>
+                            <div className="mt-4 space-y-4">
+                                {WRITE_TOOLS.map((tool) => (
+                                    <ToolCard key={tool.name} tool={tool} />
+                                ))}
+                            </div>
+                        </Section>
 
-                    {/* -------------------------------------------------------
+                        {/* -------------------------------------------------------
                         Worked example
                     ------------------------------------------------------- */}
-                    <Section id="example" title="A trade, end to end">
-                        <Prose>
-                            <p>
-                                This is the whole product in nine steps. In practice you say something like{" "}
-                                <em>trade a link</em> and the agent walks it, but the calls underneath are these, in
-                                this order.
-                            </p>
-                        </Prose>
+                        <Section id="example" title="A trade, end to end">
+                            <Prose>
+                                <p>
+                                    This is the whole product in nine steps. In practice you say something like{" "}
+                                    <em>trade a link</em> and the agent walks it, but the calls underneath are these, in
+                                    this order.
+                                </p>
+                            </Prose>
 
-                        <ol className="mt-8 space-y-10">
-                            {WALKTHROUGH.map((step) => (
-                                <WalkthroughStep key={step.n} step={step} />
-                            ))}
-                        </ol>
+                            <ol className="mt-8 space-y-10">
+                                {WALKTHROUGH.map((step) => (
+                                    <WalkthroughStep key={step.n} step={step} />
+                                ))}
+                            </ol>
 
-                        <Callout title="Both sides have to place, not just you">
-                            A match only reaches <Code>placed</Code> once two links are verified live, one in each
-                            direction. Your side landing first is normal and is never held against you: the first two
-                            exchanges of any member are graced, because somebody has to go first.
-                        </Callout>
-                    </Section>
+                            <Callout title="Both sides have to place, not just you">
+                                A match only reaches <Code>placed</Code> once two links are verified live, one in each
+                                direction. Your side landing first is normal and is never held against you: the first
+                                two exchanges of any member are graced, because somebody has to go first.
+                            </Callout>
+                        </Section>
 
-                    {/* -------------------------------------------------------
+                        {/* -------------------------------------------------------
                         Privacy model
                     ------------------------------------------------------- */}
-                    <Section id="privacy" title="What the API can see, and what it cannot">
-                        <Prose>
-                            <p>
-                                Blind matching is a product promise, so it is worth being exact about what that means at
-                                the API level rather than asking you to take it on trust.
-                            </p>
-                            <ul>
-                                <li>
-                                    <strong>No read tool returns a partner domain, URL or email.</strong> Not{" "}
-                                    <Code>search_partners</Code>, not <Code>list_matches</Code> before agreement, at no
-                                    limit and under no filter. The masked partner type has no field for them, so there
-                                    is nothing to populate by accident.
-                                </li>
-                                <li>
-                                    <strong>Identities unlock at mutual accept, both at once.</strong> The second accept
-                                    moves the match to <Code>agreed</Code>, and from that moment each side sees the
-                                    other domain, URL and email. There is no one-way reveal and no way to look first.
-                                </li>
-                                <li>
-                                    <strong>The partner id is opaque.</strong> The <Code>partnerId</Code> in a search
-                                    result is an internal site id. It is only useful as an argument to another call, and
-                                    it does not decode to anything.
-                                </li>
-                                <li>
-                                    <strong>Descriptions are written not to identify you.</strong> The listing text is
-                                    drafted by an LLM that is never given your domain or any URL, and a mechanical pass
-                                    afterwards strips brand tokens derived from your domain and page title. An anchor
-                                    that still carries a brand name is dropped rather than rewritten.
-                                </li>
-                                <li>
-                                    <strong>Your own data is always fully visible to you.</strong>{" "}
-                                    <Code>list_my_sites</Code>, <Code>check_links</Code> and{" "}
-                                    <Code>get_my_standing</Code> show your real domains and pages, because they are
-                                    yours.
-                                </li>
-                            </ul>
-                            <p>
-                                Two things to hold on to on the other side of that line. Your description, your anchors
-                                and your DR are readable by any anonymous caller, so treat them as public copy. And a
-                                reveal cannot be undone: once you accept a match, that partner has your domain and email
-                                for good. The full picture is on the <a href="/privacy">privacy page</a>.
-                            </p>
-                        </Prose>
-                    </Section>
+                        <Section id="privacy" title="What the API can see, and what it cannot">
+                            <Prose>
+                                <p>
+                                    Blind matching is a product promise, so it is worth being exact about what that
+                                    means at the API level rather than asking you to take it on trust.
+                                </p>
+                                <ul>
+                                    <li>
+                                        <strong>No read tool returns a partner domain, URL or email.</strong> Not{" "}
+                                        <Code>search_partners</Code>, not <Code>list_matches</Code> before agreement, at
+                                        no limit and under no filter. The masked partner type has no field for them, so
+                                        there is nothing to populate by accident.
+                                    </li>
+                                    <li>
+                                        <strong>Identities unlock at mutual accept, both at once.</strong> The second
+                                        accept moves the match to <Code>agreed</Code>, and from that moment each side
+                                        sees the other domain, URL and email. There is no one-way reveal and no way to
+                                        look first.
+                                    </li>
+                                    <li>
+                                        <strong>The partner id is opaque.</strong> The <Code>partnerId</Code> in a
+                                        search result is an internal site id. It is only useful as an argument to
+                                        another call, and it does not decode to anything.
+                                    </li>
+                                    <li>
+                                        <strong>Descriptions are written not to identify you.</strong> The listing text
+                                        is drafted by an LLM that is never given your domain or any URL, and a
+                                        mechanical pass afterwards strips brand tokens derived from your domain and page
+                                        title. An anchor that still carries a brand name is dropped rather than
+                                        rewritten.
+                                    </li>
+                                    <li>
+                                        <strong>Your own data is always fully visible to you.</strong>{" "}
+                                        <Code>list_my_sites</Code>, <Code>check_links</Code> and{" "}
+                                        <Code>get_my_standing</Code> show your real domains and pages, because they are
+                                        yours.
+                                    </li>
+                                </ul>
+                                <p>
+                                    Two things to hold on to on the other side of that line. Your description, your
+                                    anchors and your DR are readable by any anonymous caller, so treat them as public
+                                    copy. And a reveal cannot be undone: once you accept a match, that partner has your
+                                    domain and email for good. The full picture is on the{" "}
+                                    <a href="/privacy">privacy page</a>.
+                                </p>
+                            </Prose>
+                        </Section>
 
-                    {/* -------------------------------------------------------
+                        {/* -------------------------------------------------------
                         Limits
                     ------------------------------------------------------- */}
-                    <Section id="limits" title="Limits and good behaviour">
-                        <Prose>
-                            <p>
-                                The exchange is a member base, not a directory to enumerate, and the anonymous read
-                                surface is the easiest thing here to abuse. The limits reflect that.
-                            </p>
-                            <ul>
-                                <li>
-                                    <Code>search_partners</Code> takes a <Code>limit</Code> between 1 and 20 and clamps
-                                    it server-side. There is no offset, no cursor and no page argument, so the pool
-                                    cannot be walked from end to end.
-                                </li>
-                                <li>
-                                    Results are ordered least-recently-matched first, so repeating the same query mostly
-                                    returns the same rows. Narrow by category and DR rather than trying to page.
-                                </li>
-                                <li>
-                                    <Code>list_matches</Code> returns at most 50 matches, and <Code>check_links</Code>{" "}
-                                    at most 100 links, most recently updated first.
-                                </li>
-                                <li>One member can list up to 5 sites, and one domain belongs to one member, ever.</li>
-                                <li>A proposed match expires 14 days after it is created and returns to the pool.</li>
-                                <li>
-                                    <Code>submit_site</Code> is expensive on our side: a page fetch, an Ahrefs lookup
-                                    and an LLM call. Call the draft phase once, not in a retry loop.
-                                </li>
-                            </ul>
-                            <p>
-                                There is no published per-key request limit today, and we would rather never need one.
-                                Enumerating the member base, trying to correlate masked profiles back to domains, or
-                                driving the read tools in a tight loop are all grounds for revoking a key. If explicit
-                                rate limiting does arrive, the first thing you will see is an HTTP 429, not a quiet
-                                change in what the results contain.
-                            </p>
-                        </Prose>
-                    </Section>
+                        <Section id="limits" title="Limits and good behaviour">
+                            <Prose>
+                                <p>
+                                    The exchange is a member base, not a directory to enumerate, and the anonymous read
+                                    surface is the easiest thing here to abuse. The limits reflect that.
+                                </p>
+                                <ul>
+                                    <li>
+                                        <Code>search_partners</Code> takes a <Code>limit</Code> between 1 and 20 and
+                                        clamps it server-side. There is no offset, no cursor and no page argument, so
+                                        the pool cannot be walked from end to end.
+                                    </li>
+                                    <li>
+                                        Results are ordered least-recently-matched first, so repeating the same query
+                                        mostly returns the same rows. Narrow by category and DR rather than trying to
+                                        page.
+                                    </li>
+                                    <li>
+                                        <Code>list_matches</Code> returns at most 50 matches, and{" "}
+                                        <Code>check_links</Code> at most 100 links, most recently updated first.
+                                    </li>
+                                    <li>
+                                        One member can list up to 5 sites, and one domain belongs to one member, ever.
+                                    </li>
+                                    <li>
+                                        A proposed match expires 14 days after it is created and returns to the pool.
+                                    </li>
+                                    <li>
+                                        <Code>submit_site</Code> is expensive on our side: a page fetch, an Ahrefs
+                                        lookup and an LLM call. Call the draft phase once, not in a retry loop.
+                                    </li>
+                                </ul>
+                                <p>
+                                    There is no published per-key request limit today, and we would rather never need
+                                    one. Enumerating the member base, trying to correlate masked profiles back to
+                                    domains, or driving the read tools in a tight loop are all grounds for revoking a
+                                    key. If explicit rate limiting does arrive, the first thing you will see is an HTTP
+                                    429, not a quiet change in what the results contain.
+                                </p>
+                            </Prose>
+                        </Section>
 
-                    {/* -------------------------------------------------------
+                        {/* -------------------------------------------------------
                         Errors
                     ------------------------------------------------------- */}
-                    <Section id="errors" title="Errors">
-                        <Prose>
-                            <p>
-                                Errors come back as ordinary tool results with the MCP error flag set, and a body
-                                written as an instruction rather than a status code. An agent that reads{" "}
-                                <em>run this to add your key, then retry</em> gets itself unstuck. An agent that reads{" "}
-                                <em>401 unauthorized</em> does not. The ones worth knowing:
-                            </p>
-                            <ul>
-                                <li>
-                                    <strong>You are not signed in.</strong> A write tool was called without a valid key.
-                                    The body contains the exact command to add one.
-                                </li>
-                                <li>
-                                    <strong>Could not analyze that site.</strong> The page was unreachable, was not
-                                    HTML, was too large, refused our crawler, or had too little text to describe
-                                    honestly. Sites that render almost everything client-side are the common case.
-                                </li>
-                                <li>
-                                    <strong>Already listed.</strong> That domain is in the exchange under another
-                                    member. Domains are globally unique.
-                                </li>
-                                <li>
-                                    <strong>Not agreed yet.</strong> <Code>get_link_brief</Code> or{" "}
-                                    <Code>mark_link_placed</Code> was called on a match that has not reached mutual
-                                    accept. The target URL does not exist in any payload before then.
-                                </li>
-                                <li>
-                                    <strong>Recorded, but we could not confirm it.</strong> Not an error, and not an
-                                    accusation. We read server-rendered HTML only, so a link injected by JavaScript is
-                                    invisible to us even when it is genuinely on the page. We look again automatically.
-                                </li>
-                            </ul>
-                            <p>
-                                Anything else surfaces as a generic failure saying nothing was changed, which is
-                                accurate: tool handlers are thin adapters over the same services the web routes use, so
-                                a failure inside one does not half-write anything.
+                        <Section id="errors" title="Errors">
+                            <Prose>
+                                <p>
+                                    Errors come back as ordinary tool results with the MCP error flag set, and a body
+                                    written as an instruction rather than a status code. An agent that reads{" "}
+                                    <em>run this to add your key, then retry</em> gets itself unstuck. An agent that
+                                    reads <em>401 unauthorized</em> does not. The ones worth knowing:
+                                </p>
+                                <ul>
+                                    <li>
+                                        <strong>You are not signed in.</strong> A write tool was called without a valid
+                                        key. The body contains the exact command to add one.
+                                    </li>
+                                    <li>
+                                        <strong>Could not analyze that site.</strong> The page was unreachable, was not
+                                        HTML, was too large, refused our crawler, or had too little text to describe
+                                        honestly. Sites that render almost everything client-side are the common case.
+                                    </li>
+                                    <li>
+                                        <strong>Already listed.</strong> That domain is in the exchange under another
+                                        member. Domains are globally unique.
+                                    </li>
+                                    <li>
+                                        <strong>Not agreed yet.</strong> <Code>get_link_brief</Code> or{" "}
+                                        <Code>mark_link_placed</Code> was called on a match that has not reached mutual
+                                        accept. The target URL does not exist in any payload before then.
+                                    </li>
+                                    <li>
+                                        <strong>Recorded, but we could not confirm it.</strong> Not an error, and not an
+                                        accusation. We read server-rendered HTML only, so a link injected by JavaScript
+                                        is invisible to us even when it is genuinely on the page. We look again
+                                        automatically.
+                                    </li>
+                                </ul>
+                                <p>
+                                    Anything else surfaces as a generic failure saying nothing was changed, which is
+                                    accurate: tool handlers are thin adapters over the same services the web routes use,
+                                    so a failure inside one does not half-write anything.
+                                </p>
+                            </Prose>
+                        </Section>
+
+                        <Prose className="border-line mt-16 border-t pt-8">
+                            <p className="text-[14px]">
+                                Domain Rating is provided by{" "}
+                                <a href="https://ahrefs.com/website-authority-checker" rel="noopener nofollow">
+                                    Ahrefs
+                                </a>
+                                . The house rules are on the <Link href="/#rules">landing page</Link> and are also
+                                returned by <Code>get_rules</Code>. The <a href="/terms">terms</a> and{" "}
+                                <a href="/privacy">privacy notice</a> cover everything else.
                             </p>
                         </Prose>
-                    </Section>
+                    </div>
 
-                    <Prose className="border-line mt-16 border-t pt-8">
-                        <p className="text-[14px]">
-                            Domain Rating is provided by{" "}
-                            <a href="https://ahrefs.com/website-authority-checker" rel="noopener nofollow">
-                                Ahrefs
-                            </a>
-                            . The house rules are on the <Link href="/#rules">landing page</Link> and are also returned
-                            by <Code>get_rules</Code>. The <a href="/terms">terms</a> and{" "}
-                            <a href="/privacy">privacy notice</a> cover everything else.
-                        </p>
-                    </Prose>
+                    {/* top-20 clears the sticky site header (h-14 plus breathing
+                        room), matching the scroll-mt-20 already on each Section. */}
+                    <aside className="hidden lg:block">
+                        <div className="sticky top-20">
+                            <OnThisPageRail items={SECTIONS} />
+                        </div>
+                    </aside>
                 </div>
             </main>
 

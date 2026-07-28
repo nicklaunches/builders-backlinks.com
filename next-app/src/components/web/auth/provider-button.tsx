@@ -41,7 +41,7 @@ export function ProviderButton({
                 type="submit"
                 className={cn(
                     "border-line bg-surface hover:border-line-strong hover:bg-surface-2 flex w-full items-center",
-                    "justify-center gap-3 rounded-lg border px-4 py-3 text-[15px] font-medium transition-colors",
+                    "justify-center gap-3 rounded-sm border px-4 py-3 text-[15px] font-medium transition-colors",
                 )}>
                 <Icon className="size-[18px] shrink-0" />
                 Continue with {label}

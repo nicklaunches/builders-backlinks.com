@@ -66,7 +66,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
                     <Wordmark className="text-[16px]" />
                 </Link>
 
-                <div className="border-line bg-surface mt-8 w-full max-w-[26rem] rounded-xl border p-6 sm:p-8">
+                <div className="border-line bg-surface mt-8 w-full max-w-[26rem] rounded-sm border p-6 sm:p-8">
                     {user ? (
                         <>
                             <h1 className="text-[1.4rem] font-semibold tracking-[-0.02em]">
@@ -87,7 +87,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
                                     person was signed out. */}
                                 <a
                                     href={callbackUrl}
-                                    className="bg-accent text-accent-fg hover:bg-accent-hover flex w-full items-center justify-center rounded-lg px-4 py-3 text-[15px] font-semibold transition-colors">
+                                    className="bg-accent text-accent-fg hover:bg-accent-hover flex w-full items-center justify-center rounded-sm px-4 py-3 text-[15px] font-semibold transition-colors">
                                     Continue
                                 </a>
                                 <SignOutButton />
@@ -103,7 +103,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
                             {error ? (
                                 <div
                                     role="alert"
-                                    className="border-line bg-surface-2 mt-6 rounded-lg border px-4 py-3.5">
+                                    className="border-line bg-surface-2 mt-6 rounded-sm border px-4 py-3.5">
                                     <p className="text-[14px] font-semibold">{error.title}</p>
                                     <p className="text-muted mt-1.5 text-[13.5px] leading-relaxed">{error.body}</p>
                                 </div>

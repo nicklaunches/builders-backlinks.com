@@ -1,7 +1,7 @@
 import { connectMongo } from "@/lib/db/mongoose";
-import type { ExchangeMemberHydrated } from "@/lib/models/ExchangeMember";
 import { ExchangeLink, type ExchangeLinkDoc, type Placement } from "@/lib/models/ExchangeLink";
-import { ExchangeMatch, isRevealed, type MatchState } from "@/lib/models/ExchangeMatch";
+import { ExchangeMatch, type MatchState, isRevealed } from "@/lib/models/ExchangeMatch";
+import type { ExchangeMemberHydrated } from "@/lib/models/ExchangeMember";
 import { ExchangeSite, type ExchangeSiteHydrated } from "@/lib/models/ExchangeSite";
 import { verifyLink } from "@/lib/verify";
 

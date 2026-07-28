@@ -3,13 +3,13 @@ import { z } from "zod";
 
 import { CATEGORIES } from "@/lib/categories";
 import { AnalyzeError } from "@/lib/contracts";
-import { enforceToolLimit, RateLimited } from "@/lib/mcp/limits";
+import { RateLimited, enforceToolLimit } from "@/lib/mcp/limits";
 import type { ExchangeMemberHydrated } from "@/lib/models/ExchangeMember";
 import { PLACEMENT_OFFERS } from "@/lib/models/ExchangeSite";
 import { getCategoryDepths, getRules } from "@/lib/services/catalog";
-import { checkLinks, getLinkBrief, getStanding, LinkError, markLinkPlaced } from "@/lib/services/links";
-import { autoPair, listMatches, MatchError, respondToMatch, searchPartners } from "@/lib/services/matches";
-import { commitSite, draftSite, listMySites, SiteError } from "@/lib/services/sites";
+import { LinkError, checkLinks, getLinkBrief, getStanding, markLinkPlaced } from "@/lib/services/links";
+import { MatchError, autoPair, listMatches, respondToMatch, searchPartners } from "@/lib/services/matches";
+import { SiteError, commitSite, draftSite, listMySites } from "@/lib/services/sites";
 
 /**
  * @file The MCP tool surface.
@@ -56,7 +56,7 @@ const SIGN_IN_HINT = [
     "",
     "Get a key at https://builders-backlinks.com/app/key and add it to the server:",
     "",
-    '  claude mcp remove builders-backlinks',
+    "  claude mcp remove builders-backlinks",
     "  claude mcp add --transport http builders-backlinks \\",
     "      https://builders-backlinks.com/api/mcp \\",
     '      --header "Authorization: Bearer bb_live_..."',
@@ -156,14 +156,19 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
                 open.length
                     ? `Matching now (${open.length}):\n` +
                       open
-                          .map((d) => `  ${d.category}: ${d.activeSites} sites, median DR ${d.medianDomainRating ?? "n/a"}`)
+                          .map(
+                              (d) =>
+                                  `  ${d.category}: ${d.activeSites} sites, median DR ${d.medianDomainRating ?? "n/a"}`,
+                          )
                           .join("\n")
                     : "No category has enough sites to match on its own yet.",
                 thin.length
                     ? `\nStill filling up, matched against adjacent categories (${thin.length}):\n` +
                       thin.map((d) => `  ${d.category}: ${d.activeSites}`).join("\n")
                     : "",
-                empty.length ? `\nNobody here yet, be first (${empty.length}): ${empty.map((d) => d.category).join(", ")}` : "",
+                empty.length
+                    ? `\nNobody here yet, be first (${empty.length}): ${empty.map((d) => d.category).join(", ")}`
+                    : "",
             ];
             return text(lines.filter(Boolean).join("\n"));
         }),
@@ -196,14 +201,13 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
             }
             return text(
                 partners
-                    .map(
-                        (p) =>
-                            [
-                                `${p.partnerId}  ${p.category}  DR ${p.domainRating ?? "unrated"}`,
-                                `  ${p.description}`,
-                                `  wants anchors: ${p.wantedAnchors.join(", ") || "none given"}`,
-                                `  can offer: ${p.placementOffered}   given ${p.linksGiven} / received ${p.linksGot}`,
-                            ].join("\n"),
+                    .map((p) =>
+                        [
+                            `${p.partnerId}  ${p.category}  DR ${p.domainRating ?? "unrated"}`,
+                            `  ${p.description}`,
+                            `  wants anchors: ${p.wantedAnchors.join(", ") || "none given"}`,
+                            `  can offer: ${p.placementOffered}   given ${p.linksGiven} / received ${p.linksGot}`,
+                        ].join("\n"),
                     )
                     .join("\n\n"),
             );

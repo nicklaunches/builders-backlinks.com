@@ -6,8 +6,9 @@
  * a founder who has never installed an MCP server can still find the front
  * door in one glance. Hiding this would cost real signups.
  *
- * Posts to `/submit`, which does not exist yet. That route is someone else's
- * work in flight; the form is wired to it so nothing has to be rewired later.
+ * Submits by GET to `/submit`, so the typed URL arrives as `?url=...`. It must
+ * not be a POST: a page component cannot read a POST body, so the URL was
+ * silently dropped and that page opened blank.
  */
 
 "use client";
@@ -23,7 +24,7 @@ export function SubmitFallback() {
     const fieldId = useId();
 
     return (
-        <section aria-labelledby={`${regionId}-heading`} className="border-line bg-surface rounded-xl border">
+        <section aria-labelledby={`${regionId}-heading`} className="border-line bg-surface rounded-sm border">
             <h2 id={`${regionId}-heading`} className="sr-only">
                 Submit on the web
             </h2>
@@ -36,7 +37,7 @@ export function SubmitFallback() {
                 className={cn(
                     "group flex w-full items-center justify-between gap-4 px-5 py-4 text-left sm:px-6 sm:py-5",
                     "hover:bg-surface-2 transition-colors",
-                    open ? "rounded-t-xl" : "rounded-xl",
+                    open ? "rounded-t-sm" : "rounded-sm",
                 )}>
                 <span className="min-w-0">
                     <span className="block text-[15px] font-semibold sm:text-base">
@@ -75,7 +76,7 @@ export function SubmitFallback() {
                             spellCheck={false}
                             placeholder="https://yourapp.com"
                             className={cn(
-                                "border-line bg-bg text-fg placeholder:text-muted/70 w-full rounded-lg border",
+                                "border-line bg-bg text-fg placeholder:text-muted/70 w-full rounded-sm border",
                                 "px-3.5 py-3 font-mono text-[14px] outline-none",
                                 "focus:border-accent transition-colors",
                             )}
@@ -85,7 +86,7 @@ export function SubmitFallback() {
                         type="submit"
                         className={cn(
                             "bg-accent text-accent-fg hover:bg-accent-hover inline-flex items-center justify-center gap-2",
-                            "rounded-lg px-5 py-3 text-[14.5px] font-semibold whitespace-nowrap transition-colors",
+                            "rounded-sm px-5 py-3 text-[14.5px] font-semibold whitespace-nowrap transition-colors",
                         )}>
                         Draft my listing
                         <ArrowRight aria-hidden="true" className="size-4" />

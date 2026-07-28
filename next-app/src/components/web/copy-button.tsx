@@ -50,7 +50,7 @@ export function CopyButton({ value, label = "install command", className }: Copy
             aria-label={copied ? `Copied ${label}` : `Copy ${label}`}
             className={cn(
                 "border-term-line text-term-dim hover:text-term-bright hover:border-term-dim",
-                "inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5",
+                "inline-flex shrink-0 items-center gap-1.5 rounded-sm border px-2.5 py-1.5",
                 "font-mono text-[11px] tracking-wide uppercase transition-colors",
                 copied && "border-term-ok/50 text-term-ok hover:text-term-ok",
                 className,

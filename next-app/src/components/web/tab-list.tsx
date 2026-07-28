@@ -90,8 +90,8 @@ export function TabList<T extends string>({
             aria-orientation="horizontal"
             onKeyDown={onKeyDown}
             className={cn(
-                "flex items-center gap-1 overflow-x-auto",
-                variant === "solid" && "rounded-lg p-1",
+                "flex scrollbar-none items-center gap-1 overflow-x-auto",
+                variant === "solid" && "rounded-sm p-1",
                 className,
             )}>
             {items.map((item, index) => {
@@ -112,7 +112,7 @@ export function TabList<T extends string>({
                         className={cn(
                             "shrink-0 font-mono whitespace-nowrap transition-colors",
                             variant === "solid" &&
-                                "rounded-md border px-3 py-1.5 text-[12.5px] tracking-tight sm:text-[13px]",
+                                "rounded-sm border px-3 py-1.5 text-[12.5px] tracking-tight sm:text-[13px]",
                             variant === "solid" &&
                                 (selected
                                     ? "border-term-line bg-term-bg text-term-bright"
@@ -121,7 +121,7 @@ export function TabList<T extends string>({
                                 "rounded-none border-b-2 px-3 py-2 text-[12px] tracking-wide lowercase sm:text-[12.5px]",
                             variant === "underline" &&
                                 (selected
-                                    ? "border-term-ok text-term-bright"
+                                    ? "border-accent text-term-bright"
                                     : "text-term-dim hover:text-term-fg border-transparent"),
                         )}>
                         {item.label}

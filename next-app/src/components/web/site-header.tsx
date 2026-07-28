@@ -20,7 +20,7 @@ const NAV = [
 ] as const;
 
 const NAV_LINK_CLASS =
-    "text-muted hover:text-fg hidden rounded-md px-2.5 py-1.5 text-[13.5px] transition-colors sm:inline-block";
+    "text-muted hover:text-fg hidden rounded-sm px-2.5 py-1.5 text-[13.5px] transition-colors sm:inline-block";
 
 export function SiteHeader() {
     return (
@@ -38,7 +38,7 @@ export function SiteHeader() {
                     ))}
                     <Link
                         href="/signin"
-                        className="border-line hover:border-line-strong hover:bg-surface-2 rounded-md border px-3 py-1.5 text-[13.5px] font-medium transition-colors">
+                        className="border-line hover:border-line-strong hover:bg-surface-2 rounded-sm border px-3 py-1.5 text-[13.5px] font-medium transition-colors">
                         Sign in
                     </Link>
                 </nav>

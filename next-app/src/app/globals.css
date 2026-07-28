@@ -182,3 +182,24 @@
         linear-gradient(to bottom, var(--line) 1px, transparent 1px);
     background-size: 56px 56px;
 }
+
+/*
+ * Scrolls, but shows no bar. Only for chrome we style ourselves, currently the
+ * terminal in the hero: a platform scrollbar drawn across the install command
+ * reads as a rendering fault rather than an affordance.
+ *
+ * This hides the indicator, not the scrolling. Wheel, trackpad, touch and
+ * keyboard all still work, and the containers using it are focusable, so the
+ * content stays reachable without a mouse.
+ *
+ * Do NOT put this on the docs code blocks. There the bar is the only hint that
+ * a long line continues, and nothing else on the page implies it.
+ */
+@utility scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+
+    &::-webkit-scrollbar {
+        display: none;
+    }
+}

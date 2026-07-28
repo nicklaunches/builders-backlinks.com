@@ -11,7 +11,6 @@
  * logic. If a tool handler does anything a web route would not, the two
  * interfaces have already started to drift.
  */
-
 import type { Category } from "@/lib/categories";
 import type { Placement } from "@/lib/models/ExchangeLink";
 import type { PlacementOffer } from "@/lib/models/ExchangeSite";
@@ -139,11 +138,7 @@ export type ScoreBreakdown = {
     rejected: null | "same_owner" | "unmatchable_category" | "no_category_overlap";
 };
 
-export type ScoreCandidate = (
-    subject: MatchableSite,
-    candidate: MatchableSite,
-    ctx: ScoreContext,
-) => ScoreBreakdown;
+export type ScoreCandidate = (subject: MatchableSite, candidate: MatchableSite, ctx: ScoreContext) => ScoreBreakdown;
 
 /**
  * The single entry point matching is called through, both synchronously from

@@ -37,7 +37,7 @@ const AHREFS_URL = "https://ahrefs.com/website-authority-checker";
  */
 export function DomainRatingBadge({ value }: { value: number | null }) {
     return (
-        <div className="border-line bg-surface-2/60 rounded-lg border px-4 py-3">
+        <div className="border-line bg-surface-2/60 rounded-sm border px-4 py-3">
             <div className="flex items-baseline gap-2">
                 <span className="font-mono text-[22px] leading-none font-semibold">{value ?? "n/a"}</span>
                 <span className="text-muted text-[13px]">Domain Rating</span>
@@ -97,7 +97,7 @@ export function ReviewForm({ draft, onStartOver }: ReviewFormProps) {
             {/* ---------------------------------------------------------------
                 What we read
             --------------------------------------------------------------- */}
-            <div className="border-line bg-surface rounded-xl border p-5 sm:p-6">
+            <div className="border-line bg-surface rounded-sm border p-5 sm:p-6">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="min-w-0">
                         <p className="text-muted font-mono text-[11px] tracking-[0.14em] uppercase">Your domain</p>
@@ -112,7 +112,7 @@ export function ReviewForm({ draft, onStartOver }: ReviewFormProps) {
                     <button
                         type="button"
                         onClick={onStartOver}
-                        className="text-muted hover:text-fg rounded-md text-[13px] underline underline-offset-4 transition-colors">
+                        className="text-muted hover:text-fg rounded-sm text-[13px] underline underline-offset-4 transition-colors">
                         Use a different URL
                     </button>
                 </div>
@@ -141,7 +141,7 @@ export function ReviewForm({ draft, onStartOver }: ReviewFormProps) {
                     aria-invalid={errorField === "category" || undefined}
                     aria-describedby={errorField === "category" ? errorId : undefined}
                     className={cn(
-                        "border-line bg-bg text-fg w-full rounded-lg border px-3.5 py-3 text-[14.5px]",
+                        "border-line bg-bg text-fg w-full rounded-sm border px-3.5 py-3 text-[14.5px]",
                         "focus:border-accent transition-colors outline-none",
                     )}>
                     {CATEGORIES.map((option) => (
@@ -171,7 +171,7 @@ export function ReviewForm({ draft, onStartOver }: ReviewFormProps) {
 
                 <div
                     id={blindNoteId}
-                    className="border-accent/35 bg-accent-soft flex items-start gap-3 rounded-lg border p-4">
+                    className="border-accent/35 bg-accent-soft flex items-start gap-3 rounded-sm border p-4">
                     <EyeOff aria-hidden="true" className="text-accent mt-0.5 size-[18px] shrink-0" />
                     <div className="text-[13.5px] leading-relaxed">
                         <p className="font-semibold">This is the only thing a potential partner sees at first.</p>
@@ -196,7 +196,7 @@ export function ReviewForm({ draft, onStartOver }: ReviewFormProps) {
                         .filter(Boolean)
                         .join(" ")}
                     className={cn(
-                        "border-line bg-bg text-fg w-full resize-y rounded-lg border px-3.5 py-3",
+                        "border-line bg-bg text-fg w-full resize-y rounded-sm border px-3.5 py-3",
                         "text-[14.5px] leading-relaxed outline-none",
                         "focus:border-accent transition-colors",
                     )}
@@ -226,7 +226,7 @@ export function ReviewForm({ draft, onStartOver }: ReviewFormProps) {
                     aria-describedby={errorField === "keywords" ? errorId : undefined}
                     spellCheck={false}
                     className={cn(
-                        "border-line bg-bg text-fg w-full resize-y rounded-lg border px-3.5 py-3",
+                        "border-line bg-bg text-fg w-full resize-y rounded-sm border px-3.5 py-3",
                         "font-mono text-[13.5px] leading-relaxed outline-none",
                         "focus:border-accent transition-colors",
                     )}
@@ -250,7 +250,7 @@ export function ReviewForm({ draft, onStartOver }: ReviewFormProps) {
                         <label
                             key={option.value}
                             className={cn(
-                                "border-line bg-surface flex cursor-pointer items-start gap-3 rounded-lg border p-4",
+                                "border-line bg-surface flex cursor-pointer items-start gap-3 rounded-sm border p-4",
                                 "hover:border-line-strong transition-colors",
                                 placement === option.value && "border-accent/50 bg-accent-soft",
                             )}>
@@ -280,7 +280,7 @@ export function ReviewForm({ draft, onStartOver }: ReviewFormProps) {
                 <p
                     id={errorId}
                     role="alert"
-                    className="border-line bg-surface-2 flex items-start gap-2.5 rounded-lg border p-4 text-[13.5px] leading-relaxed">
+                    className="border-line bg-surface-2 flex items-start gap-2.5 rounded-sm border p-4 text-[13.5px] leading-relaxed">
                     <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
                     <span>{formError}</span>
                 </p>
@@ -292,7 +292,7 @@ export function ReviewForm({ draft, onStartOver }: ReviewFormProps) {
                     disabled={pending}
                     className={cn(
                         "bg-accent text-accent-fg hover:bg-accent-hover inline-flex items-center justify-center gap-2",
-                        "rounded-lg px-6 py-3 text-[15px] font-semibold transition-colors",
+                        "rounded-sm px-6 py-3 text-[15px] font-semibold transition-colors",
                         "disabled:cursor-not-allowed disabled:opacity-60",
                     )}>
                     {pending ? (
@@ -325,8 +325,8 @@ function SubmittedPanel({ state }: { state: Extract<CommitState, { status: "done
     const Icon = state.matched ? PartyPopper : CheckCircle2;
 
     return (
-        <section className="border-accent/35 bg-accent-soft rounded-xl border p-6 sm:p-8" aria-live="polite">
-            <span className="border-line bg-surface text-accent mb-4 inline-flex size-10 items-center justify-center rounded-lg border">
+        <section className="border-accent/35 bg-accent-soft rounded-sm border p-6 sm:p-8" aria-live="polite">
+            <span className="border-line bg-surface text-accent mb-4 inline-flex size-10 items-center justify-center rounded-sm border">
                 <Icon aria-hidden="true" className="size-5" />
             </span>
 
@@ -341,12 +341,12 @@ function SubmittedPanel({ state }: { state: Extract<CommitState, { status: "done
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
                 <a
                     href="/app/key"
-                    className="bg-accent text-accent-fg hover:bg-accent-hover inline-flex items-center justify-center rounded-lg px-5 py-3 text-[14.5px] font-semibold transition-colors">
+                    className="bg-accent text-accent-fg hover:bg-accent-hover inline-flex items-center justify-center rounded-sm px-5 py-3 text-[14.5px] font-semibold transition-colors">
                     Get your MCP key
                 </a>
                 <Link
                     href="/"
-                    className="border-line hover:border-line-strong hover:bg-surface inline-flex items-center justify-center rounded-lg border px-5 py-3 text-[14.5px] font-medium transition-colors">
+                    className="border-line hover:border-line-strong hover:bg-surface inline-flex items-center justify-center rounded-sm border px-5 py-3 text-[14.5px] font-medium transition-colors">
                     Back to the home page
                 </Link>
             </div>

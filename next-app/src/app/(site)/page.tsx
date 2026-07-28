@@ -152,7 +152,7 @@ export default function LandingPage() {
                                 const Icon = prop.icon;
                                 return (
                                     <article key={prop.title} className="flex flex-col">
-                                        <span className="border-accent/30 bg-accent-soft text-accent-text mb-4 inline-flex size-9 items-center justify-center rounded-lg border">
+                                        <span className="border-accent/30 bg-accent-soft text-accent-text mb-4 inline-flex size-9 items-center justify-center rounded-sm border">
                                             <Icon aria-hidden="true" className="size-[18px]" />
                                         </span>
                                         <h3 className="text-[16px] leading-snug font-semibold text-balance">
@@ -177,7 +177,7 @@ export default function LandingPage() {
 
                         <ol className="mt-10 grid gap-4 sm:mt-12 md:grid-cols-3 md:gap-5">
                             {STEPS.map((step) => (
-                                <li key={step.n} className="border-line bg-surface flex flex-col rounded-xl border p-6">
+                                <li key={step.n} className="border-line bg-surface flex flex-col rounded-sm border p-6">
                                     <span className="text-accent-text font-mono text-[12px] tracking-[0.16em]">
                                         {step.n}
                                     </span>
@@ -221,7 +221,7 @@ export default function LandingPage() {
                             ))}
 
                             {HEADLINE_RULE ? (
-                                <div className="border-accent/35 bg-accent-soft relative mt-8 overflow-hidden rounded-xl border p-6 pl-7 sm:p-7 sm:pl-9">
+                                <div className="border-accent/35 bg-accent-soft relative mt-8 overflow-hidden rounded-sm border p-6 pl-7 sm:p-7 sm:pl-9">
                                     <span
                                         aria-hidden="true"
                                         className="bg-accent absolute inset-y-0 left-0 w-[3px] rounded-r-full"
@@ -263,12 +263,12 @@ export default function LandingPage() {
                         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
                             <a
                                 href="/signin"
-                                className="bg-accent text-accent-fg hover:bg-accent-hover inline-flex w-full items-center justify-center rounded-lg px-6 py-3 text-[15px] font-semibold transition-colors sm:w-auto">
+                                className="bg-accent text-accent-fg hover:bg-accent-hover inline-flex w-full items-center justify-center rounded-sm px-6 py-3 text-[15px] font-semibold transition-colors sm:w-auto">
                                 Get your key
                             </a>
                             <a
                                 href="/docs/mcp"
-                                className="border-line hover:border-line-strong hover:bg-surface inline-flex w-full items-center justify-center rounded-lg border px-6 py-3 text-[15px] font-medium transition-colors sm:w-auto">
+                                className="border-line hover:border-line-strong hover:bg-surface inline-flex w-full items-center justify-center rounded-sm border px-6 py-3 text-[15px] font-medium transition-colors sm:w-auto">
                                 Read the MCP docs
                             </a>
                         </div>

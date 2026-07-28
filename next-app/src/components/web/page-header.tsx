@@ -49,12 +49,21 @@ export function PageHeader({ eyebrow, title, lede, meta, children }: PageHeaderP
 /**
  * A flat anchor index for a long page.
  *
- * Deliberately not sticky and not collapsible: it is read once, at the top, by
- * someone deciding whether the answer they want is on this page at all.
+ * Read once, at the top, by someone deciding whether the answer they want is on
+ * this page at all. On `/docs/mcp` it is the small-screen fallback and hides
+ * itself above `lg`, where `OnThisPageRail` takes over with a sticky, scroll
+ * tracking version. On the shorter legal pages this is the only outline: a rail
+ * on a two-screen page is noise.
  */
-export function OnThisPage({ items }: { items: readonly { href: string; label: string }[] }) {
+export function OnThisPage({
+    items,
+    className,
+}: {
+    items: readonly { href: string; label: string }[];
+    className?: string;
+}) {
     return (
-        <nav aria-label="On this page" className="border-line bg-surface mt-8 rounded-xl border p-5">
+        <nav aria-label="On this page" className={cn("border-line bg-surface mt-8 rounded-sm border p-5", className)}>
             <p className="text-muted font-mono text-[11px] tracking-[0.14em] uppercase">On this page</p>
             <ol className="mt-3 grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
                 {items.map((item, index) => (

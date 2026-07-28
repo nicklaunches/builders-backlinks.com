@@ -77,7 +77,7 @@ export function SubmitFlow({ initialUrl, signInHref }: { initialUrl: string; sig
                         aria-invalid={error ? true : undefined}
                         aria-describedby={[helpId, error ? errorId : null].filter(Boolean).join(" ")}
                         className={cn(
-                            "border-line bg-bg text-fg placeholder:text-muted/70 w-full flex-1 rounded-lg border",
+                            "border-line bg-bg text-fg placeholder:text-muted/70 w-full flex-1 rounded-sm border",
                             "px-3.5 py-3 font-mono text-[14px] outline-none",
                             "focus:border-accent transition-colors",
                             "disabled:opacity-60",
@@ -88,7 +88,7 @@ export function SubmitFlow({ initialUrl, signInHref }: { initialUrl: string; sig
                         disabled={pending}
                         className={cn(
                             "bg-accent text-accent-fg hover:bg-accent-hover inline-flex items-center justify-center gap-2",
-                            "rounded-lg px-5 py-3 text-[14.5px] font-semibold whitespace-nowrap transition-colors",
+                            "rounded-sm px-5 py-3 text-[14.5px] font-semibold whitespace-nowrap transition-colors",
                             "disabled:cursor-not-allowed disabled:opacity-60",
                         )}>
                         {pending ? (
@@ -107,7 +107,7 @@ export function SubmitFlow({ initialUrl, signInHref }: { initialUrl: string; sig
             </form>
 
             {pending ? (
-                <div role="status" aria-live="polite" className="border-line bg-surface rounded-xl border p-5 sm:p-6">
+                <div role="status" aria-live="polite" className="border-line bg-surface rounded-sm border p-5 sm:p-6">
                     <p className="text-[14.5px] font-semibold">Working on it. This takes a few seconds.</p>
                     <ul className="text-muted mt-3 flex flex-col gap-2 text-[13.5px]">
                         {PENDING_STEPS.map((step) => (
@@ -127,7 +127,7 @@ export function SubmitFlow({ initialUrl, signInHref }: { initialUrl: string; sig
                 <div
                     id={errorId}
                     role="alert"
-                    className="border-line bg-surface-2 flex items-start gap-2.5 rounded-lg border p-4">
+                    className="border-line bg-surface-2 flex items-start gap-2.5 rounded-sm border p-4">
                     <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
                     <div className="text-[13.5px] leading-relaxed">
                         <p>{error}</p>

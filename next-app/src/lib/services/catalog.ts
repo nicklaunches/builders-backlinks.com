@@ -87,7 +87,8 @@ export const HOUSE_RULES = {
 
 export function getRules(): { rules: string[]; summary: string } {
     return {
-        summary: "A free, reciprocal link exchange for people shipping products. Free forever, no fees, no marketplace.",
+        summary:
+            "A free, reciprocal link exchange for people shipping products. Free forever, no fees, no marketplace.",
         rules: Object.values(HOUSE_RULES),
     };
 }
