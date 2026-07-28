@@ -363,7 +363,10 @@ export function InstallTabs() {
                         ) : null}
                     </div>
 
-                    <div className="border-term-line flex items-start gap-3 rounded-sm border bg-black/25 p-3">
+                    {/* items-center, not items-start: the common case is a
+                        one-line command sitting next to a taller bordered
+                        button, and top-aligning those reads as a misalignment. */}
+                    <div className="border-term-line flex items-center gap-3 rounded-sm border bg-black/25 p-3">
                         <div className="min-w-0 flex-1 scrollbar-none overflow-x-auto">
                             <SnippetBody snippet={definition.snippet} />
                         </div>

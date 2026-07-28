@@ -1,40 +1,86 @@
 /**
- * @file Minimal footer. No counts, no badges, no social proof we do not have.
+ * @file Footer. Dense, mono, two rows, no chrome.
  *
- * One row of links, the wordmark, a copyright line. The four destinations are
- * the only pages a visitor can need from here: the docs, the web fallback for
- * submitting without an agent, and the two legal pages.
+ * Deliberately typographic rather than a card grid: small mono type, underlined
+ * links, comma separators. It should read like the end of a man page, which
+ * matches the spec-ledger treatment House rules already uses.
+ *
+ * No counts and no badges. The exchange has no members yet, and inventing
+ * social proof on the one page that claims to verify things for a living is
+ * exactly the wrong trade.
+ *
+ * A future row belongs above `pages:`: the reference this is modelled on opens
+ * with `alternatives:` and a run of competitor comparison pages. Those are real
+ * pSEO value, but ours do not exist yet, and a footer full of 404s is worse
+ * than a short footer. Add the row when /alternatives/<slug> ships.
  */
-import { Wordmark } from "@/components/web/wordmark";
+import { Star } from "lucide-react";
+import Link from "next/link";
 
-const LINKS = [
+/**
+ * Every sibling property lives at github.com/nicklaunches/<domain>, so this
+ * follows the same convention. One constant, so renaming the repo is one edit.
+ */
+const REPO_URL = "https://github.com/nicklaunches/builders-backlinks.com";
+const PARENT_URL = "https://nicklaunches.com";
+const X_URL = "https://x.com/nicklaunches";
+
+const PAGES = [
     { href: "/docs/mcp", label: "MCP docs" },
     { href: "/submit", label: "Submit a site" },
     { href: "/terms", label: "Terms" },
     { href: "/privacy", label: "Privacy" },
 ] as const;
 
+/** Muted underline that warms to the accent on hover. Shared by every link here. */
+const LINK = "decoration-line-strong hover:text-accent-text underline underline-offset-2 transition-colors";
+
 export function SiteFooter() {
     return (
-        <footer className="border-line border-t">
-            <div className="mx-auto flex max-w-5xl flex-col gap-5 px-5 py-8 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-                <div className="flex flex-col gap-1">
-                    <Wordmark />
-                    <p className="text-muted font-mono text-[12px]">
-                        © {new Date().getFullYear()} Builders Backlinks. A free link exchange for people who ship.
-                    </p>
-                </div>
-
-                <nav aria-label="Footer" className="flex flex-wrap items-center gap-x-5 gap-y-2">
-                    {LINKS.map((link) => (
-                        <a
-                            key={link.href}
-                            href={link.href}
-                            className="text-muted hover:text-fg rounded-sm text-[13px] transition-colors">
-                            {link.label}
-                        </a>
+        <footer className="border-line mt-24 border-t">
+            <div className="text-muted mx-auto max-w-5xl px-5 py-9 font-mono text-[12.5px] sm:px-6">
+                {/* Row one: destinations, comma separated. The commas sit
+                    OUTSIDE the anchors so they are not underlined too. */}
+                <p className="leading-[2]">
+                    <span className="text-fg">pages:</span>{" "}
+                    {PAGES.map((page, index) => (
+                        <span key={page.href}>
+                            <Link href={page.href} className={LINK}>
+                                {page.label}
+                            </Link>
+                            {index < PAGES.length - 1 ? ", " : null}
+                        </span>
                     ))}
-                </nav>
+                </p>
+
+                {/* Row two: three groups, each wrapping as a unit on narrow screens. */}
+                <div className="mt-5 flex flex-wrap items-center gap-x-8 gap-y-2.5">
+                    <span>© {new Date().getFullYear()} builders-backlinks.com</span>
+
+                    <a
+                        href={REPO_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`text-accent-text inline-flex items-center gap-1.5 ${LINK}`}>
+                        <Star aria-hidden="true" className="size-3.5" />
+                        Star on GitHub
+                    </a>
+
+                    <span>
+                        built by{" "}
+                        <a
+                            href={PARENT_URL}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={`text-accent-text ${LINK}`}>
+                            nicklaunches.com
+                        </a>{" "}
+                        ·{" "}
+                        <a href={X_URL} target="_blank" rel="noopener noreferrer" className={LINK}>
+                            @nicklaunches
+                        </a>
+                    </span>
+                </div>
             </div>
         </footer>
     );

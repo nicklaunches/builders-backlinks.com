@@ -24,7 +24,7 @@
  * placement policy, is a full-width panel, because it is the differentiated
  * position and should not look like the other three.
  */
-import { ShieldCheck, Sparkles, Target, Terminal } from "lucide-react";
+import { ShieldCheck, Target, Terminal } from "lucide-react";
 
 import { InstallTabs } from "@/components/web/install-tabs";
 import { SiteFooter } from "@/components/web/site-footer";
@@ -111,8 +111,7 @@ export default function LandingPage() {
                     />
 
                     <div className="relative mx-auto max-w-5xl px-5 pt-14 pb-16 sm:px-6 sm:pt-20 sm:pb-20">
-                        <p className="text-muted mb-5 inline-flex items-center gap-2 font-mono text-[11.5px] tracking-[0.14em] uppercase">
-                            <Sparkles aria-hidden="true" className="text-accent size-3.5" />
+                        <p className="text-muted mb-5 font-mono text-[11.5px] tracking-[0.14em] uppercase">
                             Free backlink exchange · driven over MCP
                         </p>
 
