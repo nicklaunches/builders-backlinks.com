@@ -2,8 +2,22 @@
  * @file Tailwind v4 entry and the site theme.
  *
  * Design identity: a quiet developer-tool surface (paper white / deep ink,
- * hairline rules, generous whitespace) with a single jade accent reserved for
+ * hairline rules, generous whitespace) with a single orange accent reserved for
  * things that are actually true: verified links, the primary action, links.
+ * The orange is nicklaunches.com's `#ff7a05`, so this reads as a sibling site.
+ *
+ * That orange is a FILL, not a text colour. `#ff7a05` on white is 2.61:1, and
+ * white on `#ff7a05` is the same 2.61:1, so neither direction is legible. The
+ * accent role is therefore split three ways and each half is used literally:
+ *
+ *   --accent       brand fill: buttons, the eyebrow icon, rules, the badge pill
+ *   --accent-fg    what sits ON that fill. Near-black, never white (7.09:1)
+ *   --accent-text  accent-coloured TEXT on the page ground. Darker in light
+ *                  mode, lighter in dark mode, >= 4.5:1 on every surface here
+ *
+ * `--focus` is pinned across both themes because the focus ring has to clear
+ * 3:1 on the paper background AND inside the always-dark terminal, and no
+ * single value can do that if it also flips with the colour scheme.
  *
  * The terminal is deliberately dark in BOTH themes. It is a terminal, its ANSI
  * palette only reads correctly on a dark ground, and pinning it means the hero
@@ -23,10 +37,11 @@
     --line-strong: #cfd2cc;
     --fg: #14161a;
     --muted: #5c6169;
-    --accent: #0f7a52;
-    --accent-hover: #0b6543;
-    --accent-fg: #ffffff;
-    --accent-soft: #e6f4ed;
+    --accent: #ff7a05;
+    --accent-hover: #e86c00;
+    --accent-fg: #1a1206;
+    --accent-soft: #fff2e5;
+    --accent-text: #b35200;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -40,14 +55,22 @@
         --line-strong: #333840;
         --fg: #e9ebee;
         --muted: #98a0ab;
-        --accent: #4ade80;
-        --accent-hover: #86efac;
-        --accent-fg: #06140d;
-        --accent-soft: #10241a;
+        --accent: #ff7a05;
+        --accent-hover: #ff9333;
+        --accent-fg: #1a1206;
+        --accent-soft: #2a1608;
+        --accent-text: #ff9d4d;
     }
 }
 
-/* Terminal chrome. Fixed across themes, see file header. */
+/* Focus ring. Fixed across themes, see file header. */
+:root {
+    --focus: #d96a10;
+}
+
+/* Terminal chrome. Fixed across themes, see file header.
+   `--term-tool` and `--term-key` are warm now so the transcripts sit with the
+   brand orange, which leaves green to mean one thing only: verified. */
 :root {
     --term-bg: #0c0e12;
     --term-chrome: #14171d;
@@ -55,10 +78,10 @@
     --term-fg: #d6dae1;
     --term-dim: #767e8c;
     --term-bright: #f4f6f8;
-    --term-tool: #7ee0a0;
+    --term-tool: #ff9d4d;
     --term-ok: #4ade80;
-    --term-add: #86efac;
-    --term-key: #7dd3fc;
+    --term-add: #7ee787;
+    --term-key: #e8c39e;
     --term-mask: #c4b5fd;
     --term-warn: #fbbf24;
 }
@@ -75,6 +98,8 @@
     --color-accent-hover: var(--accent-hover);
     --color-accent-fg: var(--accent-fg);
     --color-accent-soft: var(--accent-soft);
+    --color-accent-text: var(--accent-text);
+    --color-focus: var(--focus);
 
     --color-term-bg: var(--term-bg);
     --color-term-chrome: var(--term-chrome);
@@ -123,9 +148,10 @@
         text-rendering: optimizeLegibility;
     }
 
-    /* One visible focus treatment everywhere, including inside the dark terminal. */
+    /* One visible focus treatment everywhere, including inside the dark
+       terminal. `--focus` is the mid orange that clears 3:1 on both grounds. */
     :focus-visible {
-        outline: 2px solid var(--accent);
+        outline: 2px solid var(--focus);
         outline-offset: 2px;
         border-radius: 3px;
     }

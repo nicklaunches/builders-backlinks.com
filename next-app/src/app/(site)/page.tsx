@@ -14,6 +14,15 @@
  *      report it to both sides, and we never reject one. Softening that into
  *      "quality placements only" would be the easy marketing move and would
  *      make the product a referee, which it is not.
+ *
+ * Copy is kept short on purpose: one or two sentences per block. Every claim
+ * here is true of the built product, so trimming is allowed but rewriting a
+ * promise is not.
+ *
+ * House rules deliberately do NOT use the card rhythm of the two sections
+ * above. Three of them are a hairline spec ledger and the fourth, the
+ * placement policy, is a full-width panel, because it is the differentiated
+ * position and should not look like the other three.
  */
 import { ShieldCheck, Sparkles, Target, Terminal } from "lucide-react";
 
@@ -26,17 +35,17 @@ const VALUE_PROPS = [
     {
         icon: Terminal,
         title: "The agent does the part everyone else skips",
-        body: "Every other exchange hands you an email address and wishes you luck. Placing the link is where trades die: open the editor, find the right page, write a sentence that does not read like a favour, commit, deploy. Your agent is already in the repo, so that whole stretch collapses into one instruction.",
+        body: "Other exchanges hand you an email address. Placing the link is where trades die, and your agent is already in the repo.",
     },
     {
         icon: Target,
         title: "Matched inside your category, banded by DR",
-        body: "Off-topic links help nobody and read like a scheme. You are matched inside your own category, and only widened by one editorially sensible step when a category is genuinely thin (we tell you when we did). Domain Rating is banded, so neither side feels shortchanged before they even reply.",
+        body: "You are matched inside your own category and banded by DR, widened by one adjacent step only when a category is thin.",
     },
     {
         icon: ShieldCheck,
         title: "We verify, and we keep checking",
-        body: "Both links are fetched and classified the moment they are marked placed, then again on day 7, day 30, and monthly after that. If a link is quietly pulled six weeks later, the other side hears about it. Nobody else in this category records whether the trade actually happened.",
+        body: "Both links are fetched and classified when marked placed, then again on day 7, day 30, and monthly. Pull one and the other side hears.",
     },
 ] as const;
 
@@ -44,17 +53,17 @@ const STEPS = [
     {
         n: "01",
         title: "Submit your site",
-        body: "Paste a URL. We read the page and draft the listing: category, an identity-scrubbed description, suggested anchors, and DR. Your URL and your email stay hidden from partners until you both agree.",
+        body: "Paste a URL. We draft the listing (category, an identity-scrubbed description, anchors, DR) and keep your URL hidden until you both agree.",
     },
     {
         n: "02",
         title: "Get matched in your category",
-        body: "Matching runs weekly, or instantly if a partner in your category is already waiting. You see a masked profile: what the site is about, its DR band, the anchors it wants, the placement it offers. Not who it is.",
+        body: "Matching runs weekly, or instantly if a partner is waiting. You see a masked profile: category, DR band, the anchors it wants.",
     },
     {
         n: "03",
         title: "Trade, and we verify",
-        body: "Accept, and the two of you are revealed to each other. Place your link, mark it placed, and we check it. Then day 7, day 30, then monthly. Both sides see exactly the same record.",
+        body: "Accept, you are revealed to each other, and once you mark your link placed we check it and keep checking.",
     },
 ] as const;
 
@@ -63,22 +72,28 @@ type Rule = { title: string; body: string; emphasis?: boolean };
 const RULES: readonly Rule[] = [
     {
         title: "Real sites only",
-        body: "A live site, real content, a real owner. Parked domains, PBNs, expired-domain rebuilds and link farms are turned down at review. This only works if the links are worth having.",
+        body: "A live site, real content, a real owner. Parked domains, PBNs, expired-domain rebuilds and link farms are turned down.",
     },
     {
         title: "Same category, or nothing",
-        body: "You are matched inside your own category. When a category is too thin to pair, we widen by exactly one adjacent step and say so. We never pair at random, and some categories simply wait.",
+        body: "Matched inside your own category. If it is too thin to pair, we widen by exactly one adjacent step and say so.",
     },
     {
         title: "One for one, reciprocal",
-        body: "One link out, one link in. No credits, no points, no way to bank a debt or buy your way up a queue. If you stop placing your side, matching stops finding you partners.",
+        body: "One link out, one link in. No credits, no points, no queue to buy your way up.",
     },
     {
         title: "Where the link goes is your call",
-        body: "We classify every placement (content, footer, nav, sidebar) and every rel (dofollow, nofollow, sponsored), and we tell both sides exactly what they gave and exactly what they got. We do not reject placements and we do not referee them. Full disclosure, both ways, and you decide whether the trade was fair.",
+        body: "We classify every placement (content, footer, nav, sidebar) and every rel (dofollow, nofollow, sponsored), and tell both sides what they gave and what they got. We never reject a placement and never referee one: you decide whether the trade was fair.",
         emphasis: true,
     },
 ];
+
+/** The three rules that render as the hairline ledger. */
+const LEDGER_RULES = RULES.filter((rule) => !rule.emphasis);
+
+/** The placement policy. Rendered as its own panel, see the file header. */
+const HEADLINE_RULE = RULES.find((rule) => rule.emphasis);
 
 export default function LandingPage() {
     return (
@@ -106,10 +121,8 @@ export default function LandingPage() {
                         </h1>
 
                         <p className="text-muted mt-5 max-w-2xl text-[16.5px] leading-relaxed sm:text-[17.5px]">
-                            Roughly half of agreed link trades never become a published link. Not because anyone changed
-                            their mind, but because placing it means opening an editor, finding the right page, writing
-                            a sentence, committing, deploying. Your agent is already in the repo, so we put the whole
-                            trade where the work happens.
+                            Roughly half of agreed link trades never become a published link. Your agent is already in
+                            the repo, so we put the whole trade where the work happens.
                         </p>
 
                         <div className="mt-10">
@@ -139,7 +152,7 @@ export default function LandingPage() {
                                 const Icon = prop.icon;
                                 return (
                                     <article key={prop.title} className="flex flex-col">
-                                        <span className="border-line bg-surface text-accent mb-4 inline-flex size-9 items-center justify-center rounded-lg border">
+                                        <span className="border-accent/30 bg-accent-soft text-accent-text mb-4 inline-flex size-9 items-center justify-center rounded-lg border">
                                             <Icon aria-hidden="true" className="size-[18px]" />
                                         </span>
                                         <h3 className="text-[16px] leading-snug font-semibold text-balance">
@@ -165,7 +178,7 @@ export default function LandingPage() {
                         <ol className="mt-10 grid gap-4 sm:mt-12 md:grid-cols-3 md:gap-5">
                             {STEPS.map((step) => (
                                 <li key={step.n} className="border-line bg-surface flex flex-col rounded-xl border p-6">
-                                    <span className="text-accent font-mono text-[12px] tracking-[0.16em]">
+                                    <span className="text-accent-text font-mono text-[12px] tracking-[0.16em]">
                                         {step.n}
                                     </span>
                                     <h3 className="mt-3 text-[16px] font-semibold">{step.title}</h3>
@@ -190,24 +203,44 @@ export default function LandingPage() {
                             Four of them, and they do not change per member.
                         </p>
 
-                        <dl className="mt-10 grid gap-6 sm:mt-12 md:grid-cols-2 md:gap-7">
-                            {RULES.map((rule) => (
+                        {/* Spec ledger, not cards: hairline rows, mono rule name in a
+                            fixed left column, prose on the right. Stacks on mobile. */}
+                        <dl className="border-line mt-10 border-t sm:mt-12">
+                            {LEDGER_RULES.map((rule, index) => (
                                 <div
                                     key={rule.title}
-                                    className={
-                                        rule.emphasis
-                                            ? "border-accent/35 bg-accent-soft rounded-xl border p-6 md:col-span-2"
-                                            : "border-line bg-surface rounded-xl border p-6"
-                                    }>
-                                    <dt className="flex items-center gap-2 text-[15.5px] font-semibold">
-                                        <span aria-hidden="true" className="text-accent font-mono">
-                                            §
+                                    className="border-line grid gap-1.5 border-b py-5 md:grid-cols-[15rem_minmax(0,1fr)] md:gap-10 md:py-6">
+                                    <dt className="flex items-baseline gap-2.5 font-mono text-[13.5px] font-medium tracking-[-0.01em]">
+                                        <span aria-hidden="true" className="text-accent-text tabular-nums">
+                                            §{String(index + 1).padStart(2, "0")}
                                         </span>
                                         {rule.title}
                                     </dt>
-                                    <dd className="text-muted mt-2.5 text-[14.5px] leading-relaxed">{rule.body}</dd>
+                                    <dd className="text-muted text-[14.5px] leading-relaxed">{rule.body}</dd>
                                 </div>
                             ))}
+
+                            {HEADLINE_RULE ? (
+                                <div className="border-accent/35 bg-accent-soft relative mt-8 overflow-hidden rounded-xl border p-6 pl-7 sm:p-7 sm:pl-9">
+                                    <span
+                                        aria-hidden="true"
+                                        className="bg-accent absolute inset-y-0 left-0 w-[3px] rounded-r-full"
+                                    />
+                                    <dt className="flex items-baseline gap-2.5">
+                                        <span
+                                            aria-hidden="true"
+                                            className="text-accent-text font-mono text-[13.5px] tabular-nums">
+                                            §04
+                                        </span>
+                                        <span className="text-[17px] font-semibold tracking-[-0.015em] text-balance sm:text-[19px]">
+                                            {HEADLINE_RULE.title}
+                                        </span>
+                                    </dt>
+                                    <dd className="text-muted mt-3 max-w-3xl text-[15px] leading-relaxed">
+                                        {HEADLINE_RULE.body}
+                                    </dd>
+                                </div>
+                            ) : null}
                         </dl>
                     </div>
                 </section>
@@ -223,8 +256,8 @@ export default function LandingPage() {
                             Add the server. Then say &ldquo;trade a link&rdquo;.
                         </h2>
                         <p className="text-muted mx-auto mt-4 max-w-xl text-[15.5px] leading-relaxed">
-                            Free, one for one, and your URL stays hidden until you both agree. Bring an agent, or use
-                            the web form. Same exchange either way.
+                            Free, one for one, and your URL stays hidden until you both agree. Agent or web form, same
+                            exchange.
                         </p>
 
                         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">

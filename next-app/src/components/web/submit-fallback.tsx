@@ -53,7 +53,14 @@ export function SubmitFallback() {
             </button>
 
             <div id={regionId} hidden={!open} className="border-line border-t px-5 pt-5 pb-6 sm:px-6">
-                <form action="/submit" method="post" className="flex flex-col gap-3 sm:flex-row">
+                {/*
+                    GET, not POST. A page component cannot read a POST body, so
+                    posting here silently dropped the URL the visitor had just
+                    typed and /submit came up empty. As a GET this becomes
+                    /submit?url=..., which that page reads directly and also
+                    carries through the sign-in round trip.
+                */}
+                <form action="/submit" method="get" className="flex flex-col gap-3 sm:flex-row">
                     <div className="flex-1">
                         <label htmlFor={fieldId} className="sr-only">
                             Your site URL

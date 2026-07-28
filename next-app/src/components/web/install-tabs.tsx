@@ -327,7 +327,7 @@ export function InstallTabs() {
                 <span className="text-term-dim font-mono text-[11px] tracking-[0.14em] uppercase">
                     From your agent · MCP
                 </span>
-                <span className="border-term-ok/40 bg-term-ok/10 text-term-ok rounded-full border px-2 py-0.5 font-mono text-[10px] tracking-[0.14em] uppercase">
+                <span className="bg-accent text-accent-fg rounded-full px-2 py-0.5 font-mono text-[10px] font-medium tracking-[0.14em] uppercase">
                     Recommended
                 </span>
             </div>
@@ -421,7 +421,7 @@ export function InstallTabs() {
                 </p>
                 <a
                     href="/docs/mcp"
-                    className="text-term-ok hover:text-term-add inline-flex items-center gap-1.5 text-[12.5px] font-medium whitespace-nowrap transition-colors">
+                    className="text-term-tool hover:text-term-bright inline-flex items-center gap-1.5 text-[12.5px] font-medium whitespace-nowrap transition-colors">
                     Full MCP + API docs
                     <ArrowRight aria-hidden="true" className="size-3.5" />
                 </a>

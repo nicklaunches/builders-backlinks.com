@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { CATEGORIES } from "@/lib/categories";
 import { AnalyzeError } from "@/lib/contracts";
+import { enforceToolLimit, RateLimited } from "@/lib/mcp/limits";
 import type { ExchangeMemberHydrated } from "@/lib/models/ExchangeMember";
 import { PLACEMENT_OFFERS } from "@/lib/models/ExchangeSite";
 import { getCategoryDepths, getRules } from "@/lib/services/catalog";
@@ -29,8 +30,16 @@ import { commitSite, draftSite, listMySites, SiteError } from "@/lib/services/si
  *    useless; "run this to add your key, then retry" gets the member unstuck.
  */
 
-/** Resolved by the transport from the bearer token. Absent for anonymous callers. */
-export type ToolContext = { member: ExchangeMemberHydrated | null };
+/**
+ * Per-request context, built by the transport.
+ *
+ * `caller` is the rate-limit identity: the member id when signed in, else the
+ * client IP. It is on the context rather than derived per tool so that
+ * `guard()` can enforce a budget around EVERY tool without each handler having
+ * to remember to, which is the kind of thing that gets forgotten on the one
+ * tool that most needed it.
+ */
+export type ToolContext = { member: ExchangeMemberHydrated | null; caller: string };
 
 type TextResult = { content: Array<{ type: "text"; text: string }>; isError?: boolean };
 
@@ -65,6 +74,12 @@ class NotSignedIn extends Error {}
 /** Turns any thrown service error into a message the model can act on. */
 function explain(err: unknown): TextResult {
     if (err instanceof NotSignedIn) return failure(SIGN_IN_HINT);
+    if (err instanceof RateLimited) {
+        const mins = Math.max(1, Math.ceil(err.retryAfterSeconds / 60));
+        return failure(
+            `You are calling this faster than the exchange allows. Wait about ${mins} minute(s) and try again. If you are looping over partners, slow down: the read tools are shared and deliberately capped.`,
+        );
+    }
     if (err instanceof AnalyzeError) {
         const hint =
             err.code === "too_thin"
@@ -81,10 +96,22 @@ function explain(err: unknown): TextResult {
     return failure("Something went wrong on our side. Nothing was changed. Try again in a moment.");
 }
 
-/** Wraps a handler so every thrown error becomes a readable tool result. */
-function guard<A>(fn: (args: A) => Promise<TextResult>): (args: A) => Promise<TextResult> {
+/**
+ * Wraps a handler with the two things every tool needs: a rate-limit check and
+ * error translation.
+ *
+ * Rate limiting lives here rather than in each handler so it cannot be missed
+ * on a new tool. Adding a tool without a budget gets the DEFAULT one, which is
+ * the safe direction to fail.
+ */
+function guard<A>(
+    ctx: ToolContext,
+    tool: string,
+    fn: (args: A) => Promise<TextResult>,
+): (args: A) => Promise<TextResult> {
     return async (args: A) => {
         try {
+            await enforceToolLimit(tool, ctx.caller);
             return await fn(args);
         } catch (err) {
             return explain(err);
@@ -105,7 +132,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
                 "The house rules of the backlink exchange. Read this before submitting a site or placing a link: it explains what counts as a valid placement and what does not get matched.",
             inputSchema: {},
         },
-        guard(async () => {
+        guard(ctx, "get_rules", async () => {
             const { summary, rules } = getRules();
             return text([summary, "", ...rules.map((r) => `- ${r}`)].join("\n"));
         }),
@@ -119,7 +146,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
                 "Lists every category in the exchange with how many active sites it has and the median Domain Rating. Use it to see whether a category can match today, or whether the member would be first in it.",
             inputSchema: {},
         },
-        guard(async () => {
+        guard(ctx, "get_categories", async () => {
             const depths = await getCategoryDepths();
             const open = depths.filter((d) => d.open);
             const thin = depths.filter((d) => !d.open && d.activeSites > 0);
@@ -155,7 +182,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
                 limit: z.number().int().min(1).max(20).default(5),
             },
         },
-        guard(async (args) => {
+        guard(ctx, "search_partners", async (args) => {
             const partners = await searchPartners({
                 category: args.category,
                 drMin: args.dr_min,
@@ -205,7 +232,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
                     .describe("What the member can offer a partner in return."),
             },
         },
-        guard(async (args) => {
+        guard(ctx, "submit_site", async (args) => {
             const member = requireMember(ctx);
             const draft = await draftSite(args.url);
 
@@ -257,7 +284,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
             description: "Lists the sites this member has in the exchange, with status and link standing.",
             inputSchema: {},
         },
-        guard(async () => {
+        guard(ctx, "list_my_sites", async () => {
             const member = requireMember(ctx);
             const sites = await listMySites(member);
             if (sites.length === 0) {
@@ -286,7 +313,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
                     .optional(),
             },
         },
-        guard(async (args) => {
+        guard(ctx, "list_matches", async (args) => {
             const member = requireMember(ctx);
             const matches = await listMatches(member, args.state);
             if (matches.length === 0) return text("No matches yet.");
@@ -321,7 +348,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
                 reason: z.string().max(500).optional().describe("Optional note when declining."),
             },
         },
-        guard(async (args) => {
+        guard(ctx, "respond_to_match", async (args) => {
             const member = requireMember(ctx);
             const view = await respondToMatch({
                 member,
@@ -355,7 +382,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
                 format: z.enum(["html", "markdown", "mdx", "jsx"]).default("html"),
             },
         },
-        guard(async (args) => {
+        guard(ctx, "get_link_brief", async (args) => {
             const member = requireMember(ctx);
             const brief = await getLinkBrief({ member, matchId: args.match_id, format: args.format });
             return text(
@@ -388,7 +415,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
                 anchor_used: z.string().optional(),
             },
         },
-        guard(async (args) => {
+        guard(ctx, "mark_link_placed", async (args) => {
             const member = requireMember(ctx);
             const report = await markLinkPlaced({
                 member,
@@ -429,7 +456,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
                 "Every link this member has given and received, with its current verified state, placement, and rel.",
             inputSchema: {},
         },
-        guard(async () => {
+        guard(ctx, "check_links", async () => {
             const member = requireMember(ctx);
             const rows = await checkLinks(member);
             if (rows.length === 0) return text("No links yet.");
@@ -453,7 +480,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
             description: "How many links this member has given versus received, and whether matching favours them.",
             inputSchema: {},
         },
-        guard(async () => {
+        guard(ctx, "get_my_standing", async () => {
             const member = requireMember(ctx);
             const s = await getStanding(member);
             return text(

@@ -2,6 +2,7 @@ import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { createMcpHandler, withMcpAuth } from "mcp-handler";
 
 import { bearerFromHeader, resolveMemberFromBearer } from "@/lib/auth/api-key";
+import { callerKey } from "@/lib/mcp/limits";
 import { registerTools } from "@/lib/mcp/tools";
 import type { ExchangeMemberHydrated } from "@/lib/models/ExchangeMember";
 
@@ -47,11 +48,23 @@ export const maxDuration = 60;
  */
 let currentMember: ExchangeMemberHydrated | null = null;
 
+/**
+ * The rate-limit identity for the current request.
+ *
+ * Set alongside `currentMember` in `verifyToken`, which is the only place with
+ * access to the raw Request and therefore to the client IP. Anonymous callers
+ * are bucketed by IP, signed-in ones by member id.
+ */
+let currentCaller = "ip:unknown";
+
 const handler = createMcpHandler(
     (server) => {
         registerTools(server, {
             get member() {
                 return currentMember;
+            },
+            get caller() {
+                return currentCaller;
             },
         });
     },
@@ -71,10 +84,11 @@ const handler = createMcpHandler(
  * Returning `undefined` is not a rejection here: with `required: false` it
  * simply means the caller is anonymous, which the read tools allow.
  */
-const verifyToken = async (_req: Request, bearerToken?: string): Promise<AuthInfo | undefined> => {
+const verifyToken = async (req: Request, bearerToken?: string): Promise<AuthInfo | undefined> => {
     const token = bearerFromHeader(bearerToken ? `Bearer ${bearerToken}` : null);
     const member = await resolveMemberFromBearer(token);
     currentMember = member;
+    currentCaller = callerKey(member ? String(member._id) : null, req.headers);
     if (!member || !token) return undefined;
 
     return {
