@@ -21,6 +21,7 @@
 "use client";
 
 import { ArrowRight } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 
 import { cn } from "@/components/web/cn";
@@ -373,14 +374,34 @@ export function InstallTabs() {
                         <CopyButton value={definition.snippet} label={`${definition.label} setup`} />
                     </div>
 
-                    {definition.footnote ? (
-                        <p className="text-term-dim mt-2.5 text-[12px] leading-relaxed">{definition.footnote}</p>
-                    ) : null}
+                    {/*
+                        The command above carries a `bb_live_...` placeholder, so
+                        nobody can finish the install without a key. This is the
+                        moment they find that out, so the way to get one belongs
+                        here rather than in the footer strip.
 
-                    <p className="text-term-dim mt-2.5 text-[12px] leading-relaxed">
-                        Replace <code className="text-term-fg font-mono">bb_live_...</code> with the key on your
-                        dashboard. It is the only secret involved.
-                    </p>
+                        The copy points at /app/key first on purpose: that page
+                        hands back the WHOLE command with the key already in it,
+                        so going there beats copying this one and patching it by
+                        hand. Accent fill with near-black text, the same pairing
+                        as the RECOMMENDED pill, which is the readable orange
+                        combination inside the terminal.
+                    */}
+                    <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+                        <Link
+                            href="/app/key"
+                            className="bg-accent text-accent-fg hover:bg-accent-hover inline-flex shrink-0 items-center gap-1.5 rounded-sm px-3 py-1.5 font-mono text-[11.5px] font-semibold tracking-wide uppercase transition-colors">
+                            Get your key
+                            <ArrowRight aria-hidden="true" className="size-3.5" />
+                        </Link>
+                        <p className="text-term-dim text-[12px] leading-relaxed">
+                            It hands you this line with the key already in it, so there is nothing to paste over.
+                        </p>
+                    </div>
+
+                    {definition.footnote ? (
+                        <p className="text-term-dim mt-3 text-[12px] leading-relaxed">{definition.footnote}</p>
+                    ) : null}
                 </div>
             ))}
 
