@@ -157,7 +157,7 @@ export default function TermsPage() {
                                     free of anything you would not want a stranger to read.
                                 </li>
                                 <li>
-                                    <strong>Domain Rating comes from Ahrefs and is fetched by us.</strong> It is a
+                                    <strong>Domain Rating comes from VerifiedDR and is fetched by us.</strong> It is a
                                     sorting hint, never a gate, and it is never accepted from a caller, so there is
                                     nothing to inflate.
                                 </li>

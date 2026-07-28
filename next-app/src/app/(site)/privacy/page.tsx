@@ -7,14 +7,14 @@
  *   - the stored fields come from the four schemas in `src/lib/models`
  *   - "only a SHA-256 hash of the key" comes from `lib/auth/api-key.ts`
  *   - the crawler user agent is the literal string in `lib/analyze/fetch-html.ts`
- *   - the OpenRouter and Ahrefs disclosures come from `lib/analyze/describe.ts`
- *     and `lib/analyze/ahrefs.ts`, including the detail that the model is never
+ *   - the OpenRouter and VerifiedDR disclosures come from `lib/analyze/describe.ts`
+ *     and `lib/analyze/verifieddr.ts`, including the detail that the model is never
  *     given the domain
  *   - the masked/revealed boundary comes from `lib/services/mask.ts`
  *
  * Those third-party disclosures are the reason this page exists in a form
  * longer than one paragraph. A member submitting a URL has no way to know that
- * their homepage text reaches an LLM vendor and their domain reaches Ahrefs
+ * their homepage text reaches an LLM vendor and their domain reaches VerifiedDR
  * unless we say so, and both are genuinely happening.
  *
  * Server component.
@@ -60,7 +60,7 @@ export default function PrivacyPage() {
                 <PageHeader
                     eyebrow="Privacy notice"
                     title="What we hold, and who else sees it"
-                    lede="Submitting a site sends your homepage text to a language model and your domain to Ahrefs. That is worth knowing before you paste a URL, so this page says it plainly rather than burying it."
+                    lede="Submitting a site sends your homepage text to a language model and your domain to VerifiedDR. That is worth knowing before you paste a URL, so this page says it plainly rather than burying it."
                     meta={`Last updated ${LAST_UPDATED}`}>
                     <OnThisPage items={SECTIONS} />
                 </PageHeader>
@@ -92,8 +92,8 @@ export default function PrivacyPage() {
                                 </li>
                                 <li>
                                     Your homepage text goes to an LLM vendor (OpenRouter) to draft your listing, and
-                                    your domain goes to Ahrefs for a Domain Rating. Those are the only two places your
-                                    site data leaves us.
+                                    your domain goes to VerifiedDR for a Domain Rating. Those are the only two places
+                                    your site data leaves us.
                                 </li>
                                 <li>
                                     No partner learns your domain or your email until you and they have both accepted a
@@ -120,9 +120,9 @@ export default function PrivacyPage() {
                             <p>
                                 <strong>About each site you list.</strong> The domain and the full URL, the category,
                                 the anchor phrases you want to be linked as, the identity-scrubbed description written
-                                for you, the Ahrefs Domain Rating and when it was checked, what kind of placement you
-                                said you can offer, the review status and any review note, and counters for links given
-                                and received.
+                                for you, the Domain Rating and TrueDR and when they were checked, what kind of placement
+                                you said you can offer, the review status and any review note, and counters for links
+                                given and received.
                             </p>
                             <p>
                                 <strong>About matches.</strong> Which two sites were paired, the category, the matching
@@ -247,17 +247,18 @@ export default function PrivacyPage() {
                             </p>
                         </Callout>
 
-                        <Callout title="Ahrefs: your domain is sent for a Domain Rating">
+                        <Callout title="VerifiedDR: your domain is sent for a Domain Rating">
                             <p>
-                                We send your domain to the free{" "}
+                                We send your domain to
                                 <a
-                                    href="https://ahrefs.com/website-authority-checker"
+                                    href="https://verifieddr.com"
                                     rel="noopener nofollow"
                                     className="text-accent underline decoration-from-font underline-offset-[3px]">
-                                    Ahrefs Domain Rating
-                                </a>{" "}
-                                endpoint to look up a score between 0 and 100. Nothing else about you is included. If
-                                the lookup fails, your DR is simply unknown and your submission carries on.
+                                    VerifiedDR
+                                </a>
+                                to look up its Ahrefs Domain Rating and their own TrueDR, both scored 0 to 100. Your
+                                domain is the only thing sent: no page content, no email, nothing about you. If the
+                                lookup fails, the scores are simply unknown and your submission carries on.
                             </p>
                         </Callout>
 

@@ -1,0 +1,268 @@
+import { DigestEmail } from "@/emails/digest";
+import { LinkRemovedEmail } from "@/emails/link-removed";
+import { LinkVerifiedEmail } from "@/emails/link-verified";
+import { MatchAgreedEmail } from "@/emails/match-agreed";
+import { MatchProposedEmail } from "@/emails/match-proposed";
+import type { Category } from "@/lib/categories";
+import type { MaskedPartner } from "@/lib/contracts";
+import { connectMongo } from "@/lib/db/mongoose";
+import { sendEmail } from "@/lib/email/send";
+import type { Placement } from "@/lib/models/ExchangeLink";
+import { ExchangeMember } from "@/lib/models/ExchangeMember";
+import type { ExchangeSiteHydrated } from "@/lib/models/ExchangeSite";
+import type { LinkBrief } from "@/lib/services/links";
+import { toMaskedPartner, toRevealedPartner } from "@/lib/services/mask";
+
+/**
+ * @file The trigger layer: every email the product sends is fired from here.
+ *
+ * Subjects live in this file, not in the templates, matching the sibling app.
+ * A template renders a body and knows nothing about when it is sent.
+ *
+ * TWO RULES, both load-bearing.
+ *
+ * 1. **Every export is fire and forget.** Each one catches its own errors and
+ *    resolves to void, and callers invoke them with `void`. A flaky SES must
+ *    never break a submission, a tool call, or a cron run. Email is the least
+ *    important thing happening in any of those code paths.
+ *
+ * 2. **Masked views are built here, from `services/mask.ts`, never by hand.**
+ *    `notifyMatchProposed` passes a `MaskedPartner`, which structurally has no
+ *    domain to leak. `notifyMatchAgreed` passes a `RevealedPartner`, which
+ *    `toRevealedPartner` refuses to build unless the match actually reached
+ *    `agreed`. That means the identity boundary is enforced by the same code as
+ *    the API, rather than by remembering to be careful in a template.
+ */
+
+/** Resolves the member email behind a site. Null when the member row is gone. */
+async function emailForSite(site: ExchangeSiteHydrated): Promise<string | null> {
+    await connectMongo();
+    const member = await ExchangeMember.findOne({ user: site.owner }).select("email unsubscribedAt").exec();
+    return member?.email ?? null;
+}
+
+/** Wraps a send so a failure is logged and swallowed. See rule 1. */
+async function safely(label: string, run: () => Promise<unknown>): Promise<void> {
+    try {
+        await run();
+    } catch (err) {
+        console.error(`notify: ${label} failed`, err);
+    }
+}
+
+/**
+ * Tells both sides a match exists. Partners are masked in both directions.
+ *
+ * Sent from `autoPair`, which is called synchronously on submit and from the
+ * weekly cron. Before this existed a member could be matched and never told,
+ * which made instant matching invisible.
+ */
+export async function notifyMatchProposed(input: {
+    matchId: string;
+    siteA: ExchangeSiteHydrated;
+    siteB: ExchangeSiteHydrated;
+    expiresAt: Date;
+    widened?: boolean;
+}): Promise<void> {
+    const { matchId, siteA, siteB, expiresAt, widened } = input;
+
+    await safely("match-proposed", async () => {
+        const [emailA, emailB] = await Promise.all([emailForSite(siteA), emailForSite(siteB)]);
+
+        // Each side is shown the OTHER, masked.
+        const sends: Promise<unknown>[] = [];
+        if (emailA) {
+            sends.push(
+                sendEmail({
+                    to: emailA,
+                    subject: "You have a new match in the exchange",
+                    react: MatchProposedEmail({ matchId, partner: toMaskedPartner(siteB), expiresAt, widened }),
+                }),
+            );
+        }
+        if (emailB) {
+            sends.push(
+                sendEmail({
+                    to: emailB,
+                    subject: "You have a new match in the exchange",
+                    react: MatchProposedEmail({ matchId, partner: toMaskedPartner(siteA), expiresAt, widened }),
+                }),
+            );
+        }
+        await Promise.all(sends);
+    });
+}
+
+/**
+ * Tells both sides they agreed, and reveals them to each other.
+ *
+ * The brief differs per recipient: each is told the URL THEY need to link to,
+ * which is the other person's. Getting this backwards would have everyone
+ * linking to themselves, so the two briefs are passed in explicitly rather than
+ * derived here.
+ */
+export async function notifyMatchAgreed(input: {
+    matchId: string;
+    siteA: ExchangeSiteHydrated;
+    siteB: ExchangeSiteHydrated;
+    /** Brief for A, whose target is B. */
+    briefForA: LinkBrief;
+    /** Brief for B, whose target is A. */
+    briefForB: LinkBrief;
+}): Promise<void> {
+    const { matchId, siteA, siteB, briefForA, briefForB } = input;
+
+    await safely("match-agreed", async () => {
+        const [emailA, emailB] = await Promise.all([emailForSite(siteA), emailForSite(siteB)]);
+        const sends: Promise<unknown>[] = [];
+
+        if (emailA && emailB) {
+            sends.push(
+                sendEmail({
+                    to: emailA,
+                    subject: "You both accepted, here is who you matched with",
+                    react: MatchAgreedEmail({
+                        matchId,
+                        partner: toRevealedPartner(siteB, emailB, "agreed"),
+                        brief: briefForA,
+                    }),
+                }),
+                sendEmail({
+                    to: emailB,
+                    subject: "You both accepted, here is who you matched with",
+                    react: MatchAgreedEmail({
+                        matchId,
+                        partner: toRevealedPartner(siteA, emailA, "agreed"),
+                        brief: briefForB,
+                    }),
+                }),
+            );
+        }
+        await Promise.all(sends);
+    });
+}
+
+/** Reports a placement check to one member. */
+export async function notifyLinkVerified(input: {
+    site: ExchangeSiteHydrated;
+    direction: "given" | "received";
+    pageUrl: string;
+    targetDomain: string;
+    found: boolean;
+    inconclusive: boolean;
+    placement: Placement;
+    rel: readonly string[];
+    anchorText: string | null;
+    sitewide: boolean;
+    message: string;
+}): Promise<void> {
+    await safely("link-verified", async () => {
+        const to = await emailForSite(input.site);
+        if (!to) return;
+
+        const subject = input.found
+            ? input.direction === "received"
+                ? "Your partner's link to you is live"
+                : "Your link is live and verified"
+            : "We could not confirm that link yet";
+
+        await sendEmail({
+            to,
+            subject,
+            react: LinkVerifiedEmail({ ...input, checkedAt: new Date() }),
+        });
+    });
+}
+
+/**
+ * Tells both parties a link stopped resolving.
+ *
+ * Deliberately sent to both. The member who lost the link usually did not mean
+ * to (a redesign, a moved page), and the member who lost the benefit is the one
+ * who most needs to know. Only telling one side turns an accident into a
+ * grievance.
+ */
+export async function notifyLinkRemoved(input: {
+    matchId: string;
+    /** The site whose page was hosting the link. */
+    hostSite: ExchangeSiteHydrated;
+    /** The site the link pointed at. */
+    beneficiarySite: ExchangeSiteHydrated;
+    pageUrl: string;
+    anchorText: string | null;
+    firstSeenAt: Date | null;
+    removedAt: Date;
+}): Promise<void> {
+    const { matchId, hostSite, beneficiarySite, pageUrl, anchorText, firstSeenAt, removedAt } = input;
+
+    await safely("link-removed", async () => {
+        const [hostEmail, beneficiaryEmail] = await Promise.all([
+            emailForSite(hostSite),
+            emailForSite(beneficiarySite),
+        ]);
+        const shared = {
+            matchId,
+            pageUrl,
+            targetDomain: beneficiarySite.domain,
+            hostDomain: hostSite.domain,
+            anchorText,
+            firstSeenAt,
+            removedAt,
+        };
+        const sends: Promise<unknown>[] = [];
+
+        if (hostEmail) {
+            sends.push(
+                sendEmail({
+                    to: hostEmail,
+                    subject: "A link on your site stopped resolving",
+                    react: LinkRemovedEmail({ ...shared, role: "host" }),
+                }),
+            );
+        }
+        if (beneficiaryEmail) {
+            sends.push(
+                sendEmail({
+                    to: beneficiaryEmail,
+                    subject: "A link pointing at you stopped resolving",
+                    react: LinkRemovedEmail({ ...shared, role: "beneficiary" }),
+                }),
+            );
+        }
+        await Promise.all(sends);
+    });
+}
+
+/**
+ * The weekly digest. Category `"digest"`, so it honours the opt-out.
+ *
+ * The caller must not invoke this with an empty candidate list. An empty digest
+ * is worse than silence: it is the single most common way a matching product
+ * loses someone in its first month.
+ */
+export async function notifyDigest(input: {
+    to: string;
+    category: Category;
+    candidates: readonly MaskedPartner[];
+    widenedCount?: number;
+    standingNote?: string;
+}): Promise<void> {
+    if (input.candidates.length === 0) {
+        console.warn("notify: refusing to send an empty digest to", input.to);
+        return;
+    }
+
+    await safely("digest", () =>
+        sendEmail({
+            to: input.to,
+            subject: `Builders in ${input.category} open to a trade`,
+            react: DigestEmail({
+                category: input.category,
+                candidates: input.candidates,
+                widenedCount: input.widenedCount,
+                standingNote: input.standingNote,
+            }),
+            category: "digest",
+        }),
+    );
+}

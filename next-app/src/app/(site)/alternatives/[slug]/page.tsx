@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/web/page-header";
 import { Callout, Prose, Section } from "@/components/web/prose";
 import { SiteFooter } from "@/components/web/site-footer";
 import { SiteHeader } from "@/components/web/site-header";
-import { type Alternative, ALTERNATIVES, alternativeBySlug } from "@/content/alternatives";
+import { ALTERNATIVES, type Alternative, alternativeBySlug } from "@/content/alternatives";
 
 /**
  * @file One honest comparison per alternative.
@@ -70,7 +70,9 @@ function DifferenceTable({ entry }: { entry: Alternative }) {
             <table className="w-full min-w-[36rem] border-collapse text-left text-[14.5px]">
                 <thead>
                     <tr className="border-line bg-surface-2 border-b">
-                        <th scope="col" className="text-muted px-4 py-3 font-mono text-[11.5px] tracking-[0.1em] uppercase">
+                        <th
+                            scope="col"
+                            className="text-muted px-4 py-3 font-mono text-[11.5px] tracking-[0.1em] uppercase">
                             &nbsp;
                         </th>
                         <th scope="col" className="px-4 py-3 font-semibold">
@@ -84,7 +86,9 @@ function DifferenceTable({ entry }: { entry: Alternative }) {
                 <tbody>
                     {entry.differences.map((row) => (
                         <tr key={row.label} className="border-line border-b last:border-b-0">
-                            <th scope="row" className="text-muted px-4 py-3.5 align-top font-mono text-[12px] font-normal">
+                            <th
+                                scope="row"
+                                className="text-muted px-4 py-3.5 align-top font-mono text-[12px] font-normal">
                                 {row.label}
                             </th>
                             <td className="px-4 py-3.5 align-top leading-[1.6]">{row.them}</td>

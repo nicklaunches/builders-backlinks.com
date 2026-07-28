@@ -38,8 +38,8 @@ const BUDGETS: Record<string, { limit: number; windowMs: number }> = {
     get_categories: { limit: 120, windowMs: HOUR },
     get_rules: { limit: 120, windowMs: HOUR },
 
-    // Each call fetches a page, runs an LLM, and hits Ahrefs. Real cost per
-    // call, so this is the tightest budget on the server.
+    // Each call fetches a page, runs an LLM, and hits VerifiedDR, which has a
+    // monthly call quota. Real cost per call, so this is the tightest budget.
     submit_site: { limit: 20, windowMs: HOUR },
 
     // Fetches the member's page to verify a placement.

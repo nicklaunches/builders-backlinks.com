@@ -1,10 +1,10 @@
 import { AnalyzeError, type AnalyzeSite, type SiteAnalysis } from "@/lib/contracts";
 import { normalizeDomain } from "@/lib/models/ExchangeSite";
 
-import { getDomainRating } from "./ahrefs";
 import { describeSite } from "./describe";
 import { extractPage } from "./extract";
 import { FetchError, fetchSiteHtml, normalizeUrl } from "./fetch-html";
+import { getAuthorityScores } from "./verifieddr";
 
 /**
  * @file Everything derived from a URL at submit time, behind one function.
@@ -16,14 +16,14 @@ import { FetchError, fetchSiteHtml, normalizeUrl } from "./fetch-html";
  * to protect.
  *
  * Order of operations matters. The page fetch is first and alone, because both
- * downstream steps depend on it (the DR lookup needs the post-redirect domain,
- * the LLM needs the text). Those two are then run together: they are fully
- * independent, and running them in series would roughly double the wait on the
- * slowest, most visible step of the signup flow.
+ * downstream steps depend on it (the authority lookup needs the post-redirect
+ * domain, the LLM needs the text). Those two are then run together: they are
+ * fully independent, and running them in series would roughly double the wait on
+ * the slowest, most visible step of the signup flow.
  *
  * Failure policy: anything wrong with the site is an `AnalyzeError` with a code
- * the caller can turn into a specific message. Anything wrong with Ahrefs is not
- * an error at all, it is a null DR.
+ * the caller can turn into a specific message. Anything wrong with VerifiedDR is
+ * not an error at all, it is a null `domainRating` and a null `trueDr`.
  */
 
 /**
@@ -95,8 +95,9 @@ function withScheme(rawUrl: string): string {
 /**
  * Analyzes a submitted URL into everything the exchange needs to list it.
  *
- * Fetches the page, extracts its text, then resolves the Ahrefs DR and the LLM
- * profile in parallel. The returned `description` is identity-scrubbed and safe
+ * Fetches the page, extracts its text, then resolves the authority scores (DR and
+ * TrueDR) and the LLM profile in parallel. The returned `description` is
+ * identity-scrubbed and safe
  * to show to a partner pre-reveal; `title` is not, and is returned only for the
  * member's own confirmation screen.
  *
@@ -148,10 +149,10 @@ export const analyzeSite: AnalyzeSite = async (rawUrl: string): Promise<SiteAnal
         );
     }
 
-    // Independent legs, run together. The DR leg never rejects (it returns null
-    // on failure), so Promise.all only ever rejects for the LLM.
-    const [domainRating, described] = await Promise.all([
-        getDomainRating(domain),
+    // Independent legs, run together. The authority leg never rejects (it returns
+    // nulls on failure), so Promise.all only ever rejects for the LLM.
+    const [authority, described] = await Promise.all([
+        getAuthorityScores(domain),
         describeSite(extract, domain).catch((err: unknown) => {
             const message = err instanceof Error ? err.message : String(err);
             throw new AnalyzeError("llm_failed", `Could not generate a site description: ${message}`);
@@ -164,7 +165,8 @@ export const analyzeSite: AnalyzeSite = async (rawUrl: string): Promise<SiteAnal
         category: described.category,
         description: described.description,
         keywords: described.keywords,
-        domainRating,
+        domainRating: authority.domainRating,
+        trueDr: authority.trueDr,
         title: extract.title,
     };
 };

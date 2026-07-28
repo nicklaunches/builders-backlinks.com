@@ -786,7 +786,7 @@ export default function McpDocsPage() {
                                         A proposed match expires 14 days after it is created and returns to the pool.
                                     </li>
                                     <li>
-                                        <Code>submit_site</Code> is expensive on our side: a page fetch, an Ahrefs
+                                        <Code>submit_site</Code> is expensive on our side: a page fetch, a VerifiedDR
                                         lookup and an LLM call. Call the draft phase once, not in a retry loop.
                                     </li>
                                 </ul>
@@ -848,8 +848,8 @@ export default function McpDocsPage() {
                         <Prose className="border-line mt-16 border-t pt-8">
                             <p className="text-[14px]">
                                 Domain Rating is provided by{" "}
-                                <a href="https://ahrefs.com/website-authority-checker" rel="noopener nofollow">
-                                    Ahrefs
+                                <a href="https://verifieddr.com" rel="noopener nofollow">
+                                    VerifiedDR
                                 </a>
                                 . The house rules are on the <Link href="/#rules">landing page</Link> and are also
                                 returned by <Code>get_rules</Code>. The <a href="/terms">terms</a> and{" "}

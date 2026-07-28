@@ -5,6 +5,19 @@
  *   1. client   -> which install snippet is shown (Claude Code, Cursor, ...)
  *   2. view     -> which transcript the terminal body plays back
  *
+ * The view strip PLAYS ITSELF. connect -> submit -> match -> place is one story
+ * told in four beats, and a static strip left most readers on whichever beat
+ * happened to be selected. It advances on a timer with a progress bar, and the
+ * first deliberate interaction (click or arrow key) stops it for good: an
+ * animation that keeps yanking the panel away from someone who is reading it is
+ * worse than no animation.
+ *
+ * The transcript half also COLLAPSES, and the choice is remembered. It is the
+ * tall part of a very tall card, and a returning visitor who already watched it
+ * should not have to scroll past it again. The install command and the key
+ * button deliberately stay visible in the collapsed state: the card must keep
+ * its primary action at every size.
+ *
  * The transcripts are illustrations, not recordings, and they are written to be
  * honest about the product's actual promises:
  *   - partner domains are MASKED before mutual accept, because blindness until
@@ -20,9 +33,9 @@
 
 "use client";
 
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ChevronDown } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useId, useState, useSyncExternalStore } from "react";
 
 import { cn } from "@/components/web/cn";
 import { CopyButton } from "@/components/web/copy-button";
@@ -267,12 +280,89 @@ const TRANSCRIPTS: Record<ViewId, readonly Line[]> = {
     ],
 };
 
+/**
+ * How long each step holds before the demo advances, in milliseconds.
+ *
+ * Not a constant, and not derived from a formula: the panels are between 14 and
+ * 33 lines and a single interval either rushes `place` or strands the reader on
+ * `connect`. These are roughly "long enough to read it once", written out so
+ * the pacing can be judged and adjusted by reading the table rather than by
+ * simulating an expression.
+ */
+const VIEW_DURATION_MS: Record<ViewId, number> = {
+    connect: 5500,
+    submit: 8000,
+    match: 7000,
+    place: 9500,
+};
+
 const VIEW_CAPTION: Record<ViewId, string> = {
     connect: "One HTTP server. Nothing to install locally, nothing running on your machine.",
     submit: "Your listing is drafted from the page itself, and scrubbed of anything that names you.",
     match: "You judge a partner on category, DR and what the site does. Not on who they are.",
     place: "This is the step every other exchange leaves to you, and the step where most trades die.",
 };
+
+// ---------------------------------------------------------------------------
+// Remembering whether the demo is collapsed
+// ---------------------------------------------------------------------------
+
+/**
+ * Where the collapsed/expanded choice is kept.
+ *
+ * Namespaced because this is the first thing in the app to touch localStorage
+ * and it will not be the last. Values are `"open"` and `"closed"`; anything
+ * else, including an unreadable store, means open.
+ */
+const DEMO_STORAGE_KEY = "bb.hero.demo";
+
+/** Same-tab change notification. `storage` only fires in the OTHER tabs. */
+const DEMO_CHANGE_EVENT = "bb:hero-demo-change";
+
+/**
+ * localStorage read as an external store, rather than as state seeded from an
+ * effect.
+ *
+ * The obvious version, `useState(true)` plus an effect that reads storage and
+ * calls `setDemoOpen`, is a cascading render and the React compiler's lint
+ * rejects it. `useSyncExternalStore` is the shape this actually is: a value
+ * that lives outside React, with a server snapshot that pins the SSR output to
+ * `true` so hydration cannot mismatch. React re-renders with the real value
+ * immediately after.
+ */
+function subscribeToDemoPreference(onChange: () => void): () => void {
+    window.addEventListener("storage", onChange);
+    window.addEventListener(DEMO_CHANGE_EVENT, onChange);
+    return () => {
+        window.removeEventListener("storage", onChange);
+        window.removeEventListener(DEMO_CHANGE_EVENT, onChange);
+    };
+}
+
+function readDemoPreference(): boolean {
+    try {
+        return window.localStorage.getItem(DEMO_STORAGE_KEY) !== "closed";
+    } catch {
+        // Storage access throws outright in some hardened and private browsing
+        // profiles. The demo simply does not remember there.
+        return true;
+    }
+}
+
+/** Open on the server, always. Anything else is a hydration mismatch. */
+function demoPreferenceOnServer(): boolean {
+    return true;
+}
+
+function writeDemoPreference(open: boolean): void {
+    try {
+        window.localStorage.setItem(DEMO_STORAGE_KEY, open ? "open" : "closed");
+        window.dispatchEvent(new Event(DEMO_CHANGE_EVENT));
+    } catch {
+        // See above. Not remembering is acceptable; throwing out of a click
+        // handler is not.
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Rendering
@@ -319,7 +409,50 @@ function TranscriptBody({ lines }: { lines: readonly Line[] }) {
 
 export function InstallTabs() {
     const [client, setClient] = useState<ClientId>("claude");
-    const [view, setView] = useState<ViewId>("place");
+    // Starts at the beginning of the story now that the strip plays itself. It
+    // used to open on `place`, the payoff step, because a static strip only
+    // ever showed one. The cycle reaches `place` on its own and holds it
+    // longest, which keeps that intent.
+    const [view, setView] = useState<ViewId>("connect");
+    const [cycling, setCycling] = useState(true);
+    const demoOpen = useSyncExternalStore(subscribeToDemoPreference, readDemoPreference, demoPreferenceOnServer);
+    const demoId = useId();
+
+    // One pending timeout at a time, re-armed on every step. The reduced-motion
+    // check is what makes this safe rather than polite: globals.css clamps
+    // animation-duration to 0.01ms under that setting, so without this the
+    // progress bar would snap to full on every tick while the panel kept
+    // changing underneath a reader who asked for exactly the opposite.
+    useEffect(() => {
+        if (!cycling || !demoOpen) return;
+        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+        const timer = window.setTimeout(() => {
+            setView((current) => {
+                const index = VIEW_TABS.findIndex((tab) => tab.id === current);
+                return VIEW_TABS[(index + 1) % VIEW_TABS.length].id;
+            });
+        }, VIEW_DURATION_MS[view]);
+
+        return () => window.clearTimeout(timer);
+    }, [view, cycling, demoOpen]);
+
+    /**
+     * Any deliberate choice of step ends the cycle for this visit.
+     *
+     * Arrow-key navigation routes through the same `onChange` as a click (see
+     * `TabList.move`), so this covers the keyboard too.
+     */
+    function selectView(next: ViewId) {
+        setView(next);
+        setCycling(false);
+    }
+
+    // No local state to update: the write notifies the store, and the store is
+    // what this component renders from.
+    function toggleDemo() {
+        writeDemoPreference(!demoOpen);
+    }
 
     return (
         <div className="border-term-line bg-term-bg overflow-hidden rounded-sm border shadow-2xl shadow-black/20">
@@ -331,6 +464,19 @@ export function InstallTabs() {
                 <span className="bg-accent text-accent-fg rounded-full px-2 py-0.5 font-mono text-[10px] font-medium tracking-[0.14em] uppercase">
                     Recommended
                 </span>
+
+                <button
+                    type="button"
+                    onClick={toggleDemo}
+                    aria-expanded={demoOpen}
+                    aria-controls={demoId}
+                    className="text-term-dim hover:bg-term-bg/50 hover:text-term-fg ml-auto inline-flex items-center gap-1.5 rounded-sm px-2 py-1 font-mono text-[11px] tracking-wide transition-colors">
+                    {demoOpen ? "Hide demo" : "Show demo"}
+                    <ChevronDown
+                        aria-hidden="true"
+                        className={cn("size-3.5 transition-transform duration-200", demoOpen && "rotate-180")}
+                    />
+                </button>
             </div>
 
             {/* Client picker. */}
@@ -405,40 +551,68 @@ export function InstallTabs() {
                 </div>
             ))}
 
-            {/* View picker. */}
-            <div className="border-term-line bg-term-chrome border-b px-2">
-                <TabList
-                    label="What the agent does"
-                    idBase="view"
-                    items={VIEW_TABS}
-                    value={view}
-                    onChange={setView}
-                    variant="underline"
-                />
+            {/* The collapsible half: view picker plus transcripts. Everything
+                outside it survives collapse, so the install command and the key
+                button are never the thing that gets hidden. */}
+            <div id={demoId} hidden={!demoOpen}>
+                {/* View picker. */}
+                <div className="border-term-line bg-term-chrome border-b px-2">
+                    <TabList
+                        label="What the agent does"
+                        idBase="view"
+                        items={VIEW_TABS}
+                        value={view}
+                        onChange={selectView}
+                        variant="underline"
+                    />
+                </div>
+
+                {/* Transcript, one panel per view. */}
+                {VIEW_TABS.map((tab) => (
+                    <div
+                        key={tab.id}
+                        role="tabpanel"
+                        id={panelId("view", tab.id)}
+                        aria-labelledby={tabId("view", tab.id)}
+                        hidden={tab.id !== view}
+                        tabIndex={0}>
+                        {/* Horizontal scroll lives here, not on the page. No max height:
+                            the `place` payoff line must never sit below a hidden fold. */}
+                        <div className="min-h-[20rem] scrollbar-none overflow-x-auto px-4 py-4">
+                            <TranscriptBody lines={TRANSCRIPTS[tab.id]} />
+                        </div>
+                        <p className="border-term-line text-term-dim border-t px-4 py-3 text-[12.5px] leading-relaxed">
+                            {VIEW_CAPTION[tab.id]}
+                        </p>
+                    </div>
+                ))}
             </div>
 
-            {/* Transcript, one panel per view. */}
-            {VIEW_TABS.map((tab) => (
-                <div
-                    key={tab.id}
-                    role="tabpanel"
-                    id={panelId("view", tab.id)}
-                    aria-labelledby={tabId("view", tab.id)}
-                    hidden={tab.id !== view}
-                    tabIndex={0}>
-                    {/* Horizontal scroll lives here, not on the page. No max height:
-                        the `place` payoff line must never sit below a hidden fold. */}
-                    <div className="min-h-[20rem] scrollbar-none overflow-x-auto px-4 py-4">
-                        <TranscriptBody lines={TRANSCRIPTS[tab.id]} />
-                    </div>
-                    <p className="border-term-line text-term-dim border-t px-4 py-3 text-[12.5px] leading-relaxed">
-                        {VIEW_CAPTION[tab.id]}
-                    </p>
-                </div>
-            ))}
+            {/* Footer of the panel, and the rail the step timer runs along. */}
+            <div className="border-term-line bg-term-chrome relative flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t px-4 py-3">
+                {/*
+                    The timer sits on the card's bottom edge rather than under
+                    the tab strip it describes. It is one uninterrupted line the
+                    full width of the card, so it reads as the card's own
+                    progress instead of as a fifth underline competing with the
+                    four tabs directly above it.
 
-            {/* Footer of the panel. */}
-            <div className="border-term-line bg-term-chrome flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t px-4 py-3">
+                    Remounted by `key` on every step, which is what restarts the
+                    animation; the duration is the only per-step input. Hidden
+                    while collapsed, because the thing it is timing is not on
+                    screen. aria-hidden because the strip already announces the
+                    current step through aria-selected, and a second channel for
+                    the same fact is noise in a screen reader.
+                */}
+                {cycling && demoOpen ? (
+                    <span
+                        key={view}
+                        aria-hidden="true"
+                        style={{ animationDuration: `${VIEW_DURATION_MS[view]}ms` }}
+                        className="bg-accent tab-progress absolute inset-x-0 -top-px h-[2px]"
+                    />
+                ) : null}
+
                 <p className="text-term-fg text-[12.5px] leading-relaxed">
                     Add the server once. Then just say{" "}
                     <span className="text-term-bright font-mono">&ldquo;trade a link&rdquo;</span> in any session.

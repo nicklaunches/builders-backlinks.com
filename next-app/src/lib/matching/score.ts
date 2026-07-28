@@ -442,7 +442,14 @@ export const scoreCandidate: ScoreCandidate = (subject, candidate, ctx): ScoreBr
     }
 
     const category = exact ? CATEGORY_EXACT : CATEGORY_ADJACENT;
-    const drBand = round2(scoreDrBand(subject.domainRating, candidate.domainRating));
+    // Band on TrueDR where we have it, falling back to DR. TrueDR discounts
+    // manipulated authority, and banding is the lever someone would game by
+    // inflating DR, so the score it trusts must be the harder one to inflate.
+    // The fallback keeps a site with no TrueDR matchable rather than dropping
+    // it, and keeps every existing test in this file meaningful.
+    const drBand = round2(
+        scoreDrBand(subject.trueDr ?? subject.domainRating, candidate.trueDr ?? candidate.domainRating),
+    );
     const keywordOverlap = round2(scoreKeywordOverlap(subject.keywords, candidate.keywords));
     const placementFit = round2(scorePlacementFit(subject, candidate));
     const reciprocityHealth = round2(scoreReciprocityHealth(candidate));

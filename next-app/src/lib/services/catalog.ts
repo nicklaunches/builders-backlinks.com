@@ -1,5 +1,6 @@
 import { CATEGORIES, type Category, UNMATCHABLE, WIDEN_BELOW } from "@/lib/categories";
 import { connectMongo } from "@/lib/db/mongoose";
+import { ExchangeMember } from "@/lib/models/ExchangeMember";
 import { ExchangeSite } from "@/lib/models/ExchangeSite";
 
 /**
@@ -61,6 +62,23 @@ export async function getCategoryDepths(): Promise<CategoryDepth[]> {
             open: (row?.n ?? 0) >= WIDEN_BELOW,
         };
     });
+}
+
+/**
+ * How many people have actually joined.
+ *
+ * The one number the landing page is allowed to print, and it is read live on
+ * every revalidation rather than stored anywhere, so it cannot drift away from
+ * the truth the way a hardcoded figure does. Unsubscribed members are excluded
+ * because they are out of matching entirely (see `ExchangeMember`), so counting
+ * them would inflate the figure with people who are not participating.
+ *
+ * The caller decides how to present a small number, and is expected to print
+ * nothing rather than a zero. See the header of the landing page.
+ */
+export async function getFounderCount(): Promise<number> {
+    await connectMongo();
+    return ExchangeMember.countDocuments({ unsubscribedAt: null }).exec();
 }
 
 /**

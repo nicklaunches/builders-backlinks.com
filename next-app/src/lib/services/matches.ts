@@ -1,6 +1,7 @@
 import { type Category, candidateCategories } from "@/lib/categories";
 import type { MaskedPartner, MatchableSite, RevealedPartner, ScoreContext } from "@/lib/contracts";
 import { connectMongo } from "@/lib/db/mongoose";
+import { notifyMatchAgreed, notifyMatchProposed } from "@/lib/email/notify";
 import { findBestPartner } from "@/lib/matching";
 import {
     ExchangeMatch,
@@ -11,6 +12,7 @@ import {
 } from "@/lib/models/ExchangeMatch";
 import { ExchangeMember, type ExchangeMemberHydrated } from "@/lib/models/ExchangeMember";
 import { ExchangeSite, type ExchangeSiteHydrated } from "@/lib/models/ExchangeSite";
+import { briefFor } from "@/lib/services/links";
 import { toMaskedPartner, toRevealedPartner } from "@/lib/services/mask";
 
 /**
@@ -42,6 +44,7 @@ function toMatchable(site: ExchangeSiteHydrated): MatchableSite {
         category: site.category as Category,
         keywords: site.keywords ?? [],
         domainRating: site.domainRating ?? null,
+        trueDr: site.trueDr ?? null,
         placementOffered: site.placementOffered ?? "unsure",
         linksGiven: site.linksGiven ?? 0,
         linksGot: site.linksGot ?? 0,
@@ -167,6 +170,16 @@ export async function autoPair(site: ExchangeSiteHydrated): Promise<AutoPairResu
 
     const stamp = new Date();
     await ExchangeSite.updateMany({ _id: { $in: [site._id, partnerDoc._id] } }, { $set: { lastMatchedAt: stamp } });
+
+    // Fire and forget. A member who is matched and never told is the same as
+    // not being matched, but email must never be able to fail a submission.
+    void notifyMatchProposed({
+        matchId: String(match._id),
+        siteA: site,
+        siteB: partnerDoc,
+        expiresAt: match.expiresAt,
+        widened: Boolean(match.widened),
+    });
 
     return { matched: true, match, partner: toMaskedPartner(partnerDoc) };
 }
@@ -294,6 +307,7 @@ export async function respondToMatch(input: {
     if (!mineIsA && !mineIsB) throw new MatchError("not_yours", "That match does not involve any of your sites.");
 
     const state = match.state as MatchState;
+    const previousState = state;
     if (state === "declined" || state === "expired") {
         throw new MatchError("bad_state", `This match is already ${state}.`);
     }
@@ -315,7 +329,30 @@ export async function respondToMatch(input: {
         }
     }
 
+    const justAgreed = match.state === "agreed" && previousState !== "agreed";
     await match.save();
+
+    // The reveal moment. Both sides are told at once, each getting the other's
+    // identity and a brief pointing at the other's URL. Building the two briefs
+    // here rather than inside the notifier keeps "who links to whom" explicit:
+    // getting it backwards would have everyone linking to themselves.
+    if (justAgreed) {
+        const [siteA, siteB] = await Promise.all([
+            ExchangeSite.findById(match.siteA).exec(),
+            ExchangeSite.findById(match.siteB).exec(),
+        ]);
+        if (siteA && siteB) {
+            const matchId = String(match._id);
+            void notifyMatchAgreed({
+                matchId,
+                siteA,
+                siteB,
+                // A links to B, B links to A.
+                briefForA: briefFor(siteB, { matchId }),
+                briefForB: briefFor(siteA, { matchId }),
+            });
+        }
+    }
 
     const view = await buildMatchView(match, idSet);
     if (!view) throw new MatchError("not_found", "The other side of this match no longer exists.");

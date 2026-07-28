@@ -51,8 +51,14 @@ const ExchangeSiteSchema = new mongoose.Schema(
          */
         description: { type: String, required: true, trim: true, maxlength: 2000 },
 
-        /** Ahrefs Domain Rating. Nullable on purpose: DR is a nice-to-have, never a hard gate. */
+        /** Ahrefs Domain Rating via VerifiedDR, 0-100. Nullable: it is a sorting hint, never a gate. */
         domainRating: { type: Number, default: null, min: 0, max: 100 },
+        /**
+         * VerifiedDR's TrueDR, their manipulation-discounted recalculation of
+         * the same 0-100 scale. Matching bands on this rather than on
+         * `domainRating`, so an inflated DR cannot buy a better partner.
+         */
+        trueDr: { type: Number, default: null, min: 0, max: 100 },
         drCheckedAt: { type: Date, default: null },
 
         /**

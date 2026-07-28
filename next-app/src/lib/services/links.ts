@@ -1,4 +1,5 @@
 import { connectMongo } from "@/lib/db/mongoose";
+import { notifyLinkVerified } from "@/lib/email/notify";
 import { ExchangeLink, type ExchangeLinkDoc, type Placement } from "@/lib/models/ExchangeLink";
 import { ExchangeMatch, type MatchState, isRevealed } from "@/lib/models/ExchangeMatch";
 import type { ExchangeMemberHydrated } from "@/lib/models/ExchangeMember";
@@ -105,12 +106,30 @@ export async function getLinkBrief(input: {
     const partner = await ExchangeSite.findById(partnerSiteId).exec();
     if (!partner) throw new LinkError("not_found", "The other side of this match no longer exists.");
 
-    const format = input.format ?? "html";
+    return briefFor(partner, { matchId: String(match._id), format: input.format });
+}
+
+/**
+ * Builds a brief from a partner site, with no ownership or state checks.
+ *
+ * `getLinkBrief` is the guarded entry point and does those checks first. This
+ * exists because the agreed-match email needs the same brief for a member who
+ * is not the current caller, and duplicating the shape in the email layer is
+ * how the two drift apart.
+ *
+ * The CALLER decides whose site this is. Pass the partner, never the recipient,
+ * or everyone is told to link to themselves.
+ */
+export function briefFor(
+    partner: ExchangeSiteHydrated,
+    options: { matchId: string; format?: SnippetFormat } = { matchId: "" },
+): LinkBrief {
+    const format = options.format ?? "html";
     const anchors = (partner.keywords ?? []).slice(0, 4);
     const anchor = anchors[0] ?? partner.domain;
 
     return {
-        matchId: String(match._id),
+        matchId: options.matchId,
         targetUrl: partner.url,
         targetDomain: partner.domain,
         anchorOptions: anchors,
@@ -209,6 +228,26 @@ export async function markLinkPlaced(input: {
             match.state = "placed";
             await match.save();
         }
+    }
+
+    // Both sides hear the same result. The giver learns whether their placement
+    // registered; the receiver learns what they actually got, which is the
+    // whole point of classifying rather than refereeing placements.
+    const report = {
+        direction: "given" as const,
+        pageUrl: input.pageUrl,
+        targetDomain: partner.domain,
+        found: result.found,
+        inconclusive,
+        placement: result.placement,
+        rel: result.rel,
+        anchorText: result.anchorText,
+        sitewide: result.sitewide,
+        message: result.message,
+    };
+    void notifyLinkVerified({ ...report, site: mine });
+    if (result.found) {
+        void notifyLinkVerified({ ...report, site: partner, direction: "received" });
     }
 
     return {

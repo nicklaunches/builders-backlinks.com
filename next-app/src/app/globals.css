@@ -203,3 +203,34 @@
         display: none;
     }
 }
+
+/*
+ * The fill under the hero's transcript tabs, showing how long until the demo
+ * advances to the next step.
+ *
+ * A CSS animation rather than a timer that writes to React state: the bar has
+ * to move every frame, and re-rendering a 30-line transcript sixty times a
+ * second to animate two pixels would be absurd. The component only sets
+ * `animation-duration` per step and remounts the element to restart it.
+ *
+ * `scaleX` on a `transform-origin: left` element so the whole thing stays on
+ * the compositor. Animating `width` would lay out on every frame.
+ *
+ * Note the `prefers-reduced-motion` block above clamps this to 0.01ms, so under
+ * that setting the bar would snap to full instantly on every step. The hero
+ * checks the same media query in JS and stops cycling entirely, which is what
+ * actually makes this safe: see `install-tabs.tsx`.
+ */
+@keyframes tab-progress {
+    from {
+        transform: scaleX(0);
+    }
+    to {
+        transform: scaleX(1);
+    }
+}
+
+@utility tab-progress {
+    transform-origin: left;
+    animation: tab-progress linear forwards;
+}

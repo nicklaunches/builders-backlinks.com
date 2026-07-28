@@ -47,12 +47,12 @@ mongod --dbpath /tmp/bb-mongo --port 27717     # or point MONGODB_URI anywhere
 pnpm dev
 ```
 
-| Command | What it does |
-|---|---|
-| `pnpm test` | Unit tests for the matching engine |
-| `pnpm test:mcp` | End-to-end MCP checks over the real protocol (needs a running server and Mongo) |
-| `pnpm typecheck` | `tsc --noEmit` |
-| `pnpm lint` | ESLint, including the layering rules below |
+| Command            | What it does                                                                    |
+| ------------------ | ------------------------------------------------------------------------------- |
+| `pnpm test`      | Unit tests for the matching engine                                              |
+| `pnpm test:mcp`  | End-to-end MCP checks over the real protocol (needs a running server and Mongo) |
+| `pnpm typecheck` | `tsc --noEmit`                                                                |
+| `pnpm lint`      | ESLint, including the layering rules below                                      |
 
 `pnpm test:mcp` is the meaningful one: it drives the server with the official MCP SDK client, exactly as an agent would.
 
@@ -69,10 +69,6 @@ pnpm dev
 **Accounts are shared with nicklaunches.com.** Both apps point NextAuth's MongoDB adapter at the same `users` and `accounts` collections, so the same person resolves to the same `_id` on both domains, and `AUTH_SECRET` must match between them. No secret is in this repository, but publishing the code does document that the two properties share an auth boundary. That is deliberate and worth being explicit about rather than leaving a reader to infer it.
 
 **The anti-abuse logic is public.** Rate-limit budgets (`src/lib/mcp/limits.ts`), placement classification (`src/lib/verify`), and the intake rules are all readable. Nothing here relied on obscurity: the identity protection is the type-level boundary above, and the rate limiter is abuse control rather than a security boundary (it deliberately fails open on a database error).
-
-## Status
-
-Early. The MCP server, matching, verification, and the web surface all work. Not yet exercised against live credentials: OAuth sign-in, and the site-analysis pipeline that calls OpenRouter and Ahrefs.
 
 ## Licence
 

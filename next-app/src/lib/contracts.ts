@@ -37,8 +37,19 @@ export type SiteAnalysis = {
     description: string;
     /** Suggested anchor phrases, 1 to 25. */
     keywords: string[];
-    /** Ahrefs DR, or null on any failure. Never fail the flow over this. */
+    /** Ahrefs Domain Rating via VerifiedDR, 0-100, or null on failure. Never fail the flow over this. */
     domainRating: number | null;
+    /**
+     * VerifiedDR's TrueDR: the same 0-100 idea recalculated to discount
+     * manipulated authority. Null when unavailable.
+     *
+     * This, not `domainRating`, is what matching bands on. Inflating DR is the
+     * way someone buys a better partner than they deserve, and DR banding is
+     * the main quality lever in the engine, so the number it trusts has to be
+     * the one that is hard to inflate. DR stays for display because it is what
+     * members recognise.
+     */
+    trueDr: number | null;
     /** Raw page title, for the confirmation screen only. Never shown to partners. */
     title: string | null;
 };
@@ -108,7 +119,10 @@ export type MatchableSite = {
     ownerId: string;
     category: Category;
     keywords: string[];
+    /** Shown to partners. Not what the band score uses: see `trueDr`. */
     domainRating: number | null;
+    /** What DR banding actually scores on, falling back to `domainRating` when null. */
+    trueDr: number | null;
     placementOffered: PlacementOffer;
     linksGiven: number;
     linksGot: number;

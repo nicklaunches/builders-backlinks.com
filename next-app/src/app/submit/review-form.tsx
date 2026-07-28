@@ -25,15 +25,23 @@ import { CATEGORIES, UNMATCHABLE } from "@/lib/categories";
  * rejected one field.
  */
 
-const AHREFS_URL = "https://ahrefs.com/website-authority-checker";
+const VERIFIEDDR_URL = "https://verifieddr.com";
 
 /**
- * Domain Rating with its required credit.
+ * Domain Rating, with its source named.
  *
- * The Ahrefs Domain Rating free API is licensed on the condition that the score
- * is displayed with visible attribution linking back to their checker, wherever
- * it is shown. This is a license term, not a courtesy, so DR and the credit are
- * one component and cannot be rendered apart.
+ * This IS Ahrefs Domain Rating: we read it through VerifiedDR, who also return
+ * their own TrueDR alongside it. The label is therefore accurate, unlike the
+ * brief period when the score came from a different index and was still called
+ * Domain Rating.
+ *
+ * The credit stays regardless of whether any licence compels it. A number that
+ * decides who a member gets matched with should say where it came from, because
+ * naming the source is the only way a reader can judge it.
+ *
+ * Note the member is shown DR, but MATCHING bands on TrueDR. See
+ * `src/lib/matching/score.ts`: DR is the recognisable number and TrueDR is the
+ * one that is hard to inflate.
  */
 export function DomainRatingBadge({ value }: { value: number | null }) {
     return (
@@ -45,14 +53,14 @@ export function DomainRatingBadge({ value }: { value: number | null }) {
             <p className="text-muted mt-1.5 text-[11.5px] leading-relaxed">
                 Score from{" "}
                 <a
-                    href={AHREFS_URL}
+                    href={VERIFIEDDR_URL}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-accent rounded-sm underline underline-offset-2">
-                    Ahrefs
+                    VerifiedDR
                 </a>
                 {value == null
-                    ? ". We could not read one for this domain, which is not a problem: DR is a sorting hint, never a gate."
+                    ? ". We could not read one for this domain, which is not a problem: it is a sorting hint, never a gate."
                     : ". Partners see this band, not an exact ranking."}
             </p>
         </div>

@@ -30,6 +30,10 @@ function site(overrides: Partial<MatchableSite> = {}): MatchableSite {
         category: "SEO",
         keywords: ["seo audit", "backlinks", "serp tracking"],
         domainRating: 20,
+        // Null by default, so every existing case exercises the
+        // `trueDr ?? domainRating` fallback that a site without a TrueDR takes.
+        // Cases that care about TrueDR specifically override it.
+        trueDr: null,
         placementOffered: "blog_post",
         linksGiven: 2,
         linksGot: 2,
@@ -169,6 +173,57 @@ describe("DR band fit", () => {
 
         assert.ok(bothUnrated.drBand > 0);
         assert.ok(bothUnrated.drBand < bothMeasured.drBand);
+    });
+});
+
+describe("TrueDR overrides DR for banding", () => {
+    it("bands on trueDr when it is present, ignoring a far-apart DR", () => {
+        // DR says these two are miles apart. TrueDR says they are peers, and
+        // TrueDR is the one that should decide.
+        const subject = site({ id: "a", ownerId: "owner-1", domainRating: 5, trueDr: 24 });
+        const candidate = site({ id: "b", ownerId: "owner-2", domainRating: 70, trueDr: 26 });
+
+        const scored = scoreCandidate(subject, candidate, ctx());
+
+        assert.ok(
+            scored.drBand > 20,
+            `expected a tight TrueDR band to score well despite the DR gap, got ${scored.drBand}`,
+        );
+    });
+
+    it("falls back to domainRating when trueDr is null", () => {
+        const withFallback = scoreCandidate(
+            site({ id: "a", ownerId: "owner-1", domainRating: 20, trueDr: null }),
+            site({ id: "b", ownerId: "owner-2", domainRating: 25, trueDr: null }),
+            ctx(),
+        );
+        const withTrueDr = scoreCandidate(
+            site({ id: "c", ownerId: "owner-3", domainRating: 99, trueDr: 20 }),
+            site({ id: "d", ownerId: "owner-4", domainRating: 1, trueDr: 25 }),
+            ctx(),
+        );
+
+        // Same effective band, reached two different ways, so the fallback is
+        // not a degraded path: an unrated site stays fully matchable.
+        assert.ok(Math.abs(withFallback.drBand - withTrueDr.drBand) < 0.01);
+    });
+
+    it("stops an inflated DR from buying a better partner", () => {
+        // This is the whole reason TrueDR is stored. Someone inflates DR to 80
+        // to look like a peer of a strong site, but their TrueDR is unchanged,
+        // so the band must still read them as far apart.
+        const strongSite = site({ id: "strong", ownerId: "owner-1", domainRating: 80, trueDr: 78 });
+        const honestPeer = site({ id: "honest", ownerId: "owner-2", domainRating: 76, trueDr: 74 });
+        const inflated = site({ id: "inflated", ownerId: "owner-3", domainRating: 80, trueDr: 9 });
+
+        const honest = scoreCandidate(strongSite, honestPeer, ctx());
+        const gamed = scoreCandidate(strongSite, inflated, ctx());
+
+        assert.ok(
+            honest.drBand - gamed.drBand > 15,
+            `expected the inflated site to band far worse, got honest ${honest.drBand} vs gamed ${gamed.drBand}`,
+        );
+        assert.ok(honest.total > gamed.total, "an inflated DR must not win the match");
     });
 });
 

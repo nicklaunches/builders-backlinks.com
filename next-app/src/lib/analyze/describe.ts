@@ -27,8 +27,16 @@ import type { PageExtract } from "./extract";
 /** OpenRouter chat completions endpoint. */
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
-/** Default model when `OPENROUTER_ANALYZE_MODEL` is not set. Matches the NL prefill choice. */
-const DEFAULT_MODEL = "openai/gpt-4o-mini";
+/**
+ * Default model when `OPENROUTER_ANALYZE_MODEL` is not set.
+ *
+ * Checked against the live OpenRouter model list: this one advertises
+ * `response_format` in its supported parameters, which this module requires
+ * because the whole prompt depends on getting strict JSON back. If you swap it,
+ * confirm the replacement supports `response_format` first, or the parse below
+ * fails on every single call.
+ */
+const DEFAULT_MODEL = "deepseek/deepseek-v4-pro";
 
 /** Request budget. Generous: this call is the slow leg of the submit flow and retrying costs more. */
 const LLM_TIMEOUT_MS = 30_000;

@@ -34,7 +34,7 @@ import type { ExchangeMemberHydrated } from "@/lib/models/ExchangeMember";
  * server. Nothing in the tool layer changes.
  */
 
-// Site analysis on submit_site does a live fetch, an Ahrefs call, and an LLM
+// Site analysis on submit_site does a live fetch, a VerifiedDR call, and an LLM
 // call. Comfortably inside this, but well beyond the default.
 export const maxDuration = 60;
 

@@ -6,10 +6,13 @@
  *
  * Two rules this page is written against, both deliberate:
  *
- *   1. NO SCALE CLAIMS. No member counts, no site counts, no "N builders in
- *      Marketing". The exchange has zero members today. The reference
- *      competitor hardcodes fake numbers into its category pages and it is a
- *      liability, not an asset. Everything here argues capability instead.
+ *   1. NO INVENTED SCALE. Exactly one number appears on this page, the founders
+ *      count, and it is read live from the database on every revalidation and
+ *      suppressed while it is too small to mean anything. Nothing is ever
+ *      hardcoded, and no per-category depth ("N builders in Marketing") is
+ *      claimed at all. The reference competitor bakes fake numbers into its
+ *      category pages and it is a liability, not an asset. If you find yourself
+ *      typing a figure into this file, that is the rule breaking.
  *   2. THE PLACEMENT POLICY IS STATED PLAINLY. We classify every placement and
  *      report it to both sides, and we never reject one. Softening that into
  *      "quality placements only" would be the easy marketing move and would
@@ -26,10 +29,20 @@
  */
 import { ShieldCheck, Target, Terminal } from "lucide-react";
 
+import { FoundersRow } from "@/components/web/founders-row";
 import { InstallTabs } from "@/components/web/install-tabs";
 import { SiteFooter } from "@/components/web/site-footer";
 import { SiteHeader } from "@/components/web/site-header";
 import { SubmitFallback } from "@/components/web/submit-fallback";
+import { getFounderCount } from "@/lib/services/catalog";
+
+/**
+ * The founders count is the only dynamic thing on this page, and it moves at
+ * the speed of signups. An hour of staleness is invisible to a reader and turns
+ * the front page back into a static document that costs no database round trip
+ * per visit.
+ */
+export const revalidate = 3600;
 
 const VALUE_PROPS = [
     {
@@ -95,7 +108,26 @@ const LEDGER_RULES = RULES.filter((rule) => !rule.emphasis);
 /** The placement policy. Rendered as its own panel, see the file header. */
 const HEADLINE_RULE = RULES.find((rule) => rule.emphasis);
 
-export default function LandingPage() {
+/**
+ * The count, or null if it could not be read.
+ *
+ * Swallowing the error is the point. This page is prerendered at build time,
+ * where the database may legitimately be unreachable, and it is the front door
+ * at runtime. Neither situation is worth failing a build or serving a 500 over
+ * a decorative number, and `FoundersRow` renders a complete, honest row without
+ * one.
+ */
+async function readFounderCount(): Promise<number | null> {
+    try {
+        return await getFounderCount();
+    } catch {
+        return null;
+    }
+}
+
+export default async function LandingPage() {
+    const founderCount = await readFounderCount();
+
     return (
         <>
             <SiteHeader />
@@ -135,6 +167,7 @@ export default function LandingPage() {
                 --------------------------------------------------------------- */}
                 <section className="mx-auto max-w-5xl px-5 pb-16 sm:px-6 sm:pb-20">
                     <SubmitFallback />
+                    <FoundersRow count={founderCount} />
                 </section>
 
                 {/* ---------------------------------------------------------------

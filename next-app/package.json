@@ -12,7 +12,8 @@
         "format": "prettier . --write",
         "mcp:inspect": "npx @modelcontextprotocol/inspector",
         "test": "node --import tsx --test \"src/**/*.test.ts\"",
-        "test:mcp": "node --import tsx scripts/mcp-smoke.ts"
+        "test:mcp": "node --import tsx scripts/mcp-smoke.ts",
+        "emails:render": "node --import tsx scripts/render-emails.ts"
     },
     "dependencies": {
         "@auth/mongodb-adapter": "^3.11.2",

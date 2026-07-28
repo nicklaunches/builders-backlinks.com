@@ -69,7 +69,7 @@ export type CommitSiteInput = {
     description: string;
     keywords: string[];
     placementOffered?: string;
-    /** Ahrefs DR from the draft. Refetched server-side, never trusted from here. */
+    /** Domain Rating from the draft. Derived server-side, never trusted from the client. */
     domainRating?: number | null;
 };
 
