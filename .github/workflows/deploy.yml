@@ -1,0 +1,70 @@
+# Migrate, then build, then deploy. Pushing to main is the whole ritual.
+#
+# Migrations run BEFORE the deploy so the schema is never behind the code that
+# depends on it. That ordering is only safe while migrations are additive: a
+# column the old code does not know about is harmless, whereas a dropped or
+# renamed column breaks the still-running old version the moment it applies. For
+# a destructive change, ship it in two passes (stop using the column, deploy,
+# then drop it in the next one) rather than reordering these steps.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  # Lets you re-run a failed deploy without an empty commit.
+  workflow_dispatch:
+
+# Never let two deploys race. A second push while one is mid-flight waits rather
+# than applying migrations concurrently against the same database.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: next-app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: next-app/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      # Cheap gates first. A deploy that ships a type error or a failing test is
+      # worse than one that never started, and these take seconds.
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+
+      - name: Apply migrations
+        run: pnpm db:migrate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      # NEXT_PUBLIC_* are inlined by the bundler at build time, so they have to
+      # be present HERE. Setting them as Worker secrets does nothing: by the time
+      # the Worker runs, the value is already baked into the bundle or missing
+      # from it. This is a repository variable, not a secret, because anything
+      # NEXT_PUBLIC_ is shipped to every browser that loads the page.
+      #
+      # Analytics needs nothing here: Cloudflare Web Analytics is on "Automatic
+      # setup", so the JS Snippet will be automatically injected at the edge.
+      - name: Build
+        run: pnpm exec opennextjs-cloudflare build
+        env:
+          NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL }}
+
+      - name: Deploy
+        run: pnpm exec wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

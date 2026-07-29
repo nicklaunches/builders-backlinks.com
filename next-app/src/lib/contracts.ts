@@ -12,8 +12,7 @@
  * interfaces have already started to drift.
  */
 import type { Category } from "@/lib/categories";
-import type { Placement } from "@/lib/models/ExchangeLink";
-import type { PlacementOffer } from "@/lib/models/ExchangeSite";
+import type { Placement, PlacementOffer } from "@/lib/exchange";
 
 // ---------------------------------------------------------------------------
 // src/lib/analyze  ->  analyzeSite()

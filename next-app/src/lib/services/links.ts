@@ -1,9 +1,9 @@
-import { connectMongo } from "@/lib/db/mongoose";
+import { and, count, desc, eq, inArray, or, sql } from "drizzle-orm";
+
+import { db } from "@/lib/db";
+import { type ExchangeMember, type ExchangeSite, exchangeLinks, exchangeMatches, exchangeSites } from "@/lib/db/schema";
 import { notifyLinkVerified } from "@/lib/email/notify";
-import { ExchangeLink, type ExchangeLinkDoc, type Placement } from "@/lib/models/ExchangeLink";
-import { ExchangeMatch, type MatchState, isRevealed } from "@/lib/models/ExchangeMatch";
-import type { ExchangeMemberHydrated } from "@/lib/models/ExchangeMember";
-import { ExchangeSite, type ExchangeSiteHydrated } from "@/lib/models/ExchangeSite";
+import { type LinkStatus, type Placement, isRevealed } from "@/lib/exchange";
 import { verifyLink } from "@/lib/verify";
 
 /**
@@ -72,6 +72,15 @@ function buildSnippet(format: SnippetFormat, url: string, anchor: string): strin
     }
 }
 
+/** The site ids a member owns. Every ownership check in this file starts here. */
+async function mySiteIds(member: ExchangeMember): Promise<string[]> {
+    const rows = await db()
+        .select({ id: exchangeSites.id })
+        .from(exchangeSites)
+        .where(eq(exchangeSites.ownerId, member.userId));
+    return rows.map((r) => r.id);
+}
+
 /**
  * Returns everything needed to place a partner's link, once both sides agreed.
  *
@@ -79,34 +88,31 @@ function buildSnippet(format: SnippetFormat, url: string, anchor: string): strin
  *   mutual accept. The target URL simply does not exist before that point.
  */
 export async function getLinkBrief(input: {
-    member: ExchangeMemberHydrated;
+    member: ExchangeMember;
     matchId: string;
     format?: SnippetFormat;
 }): Promise<LinkBrief> {
-    await connectMongo();
-
-    const match = await ExchangeMatch.findById(input.matchId).exec();
+    const [match] = await db().select().from(exchangeMatches).where(eq(exchangeMatches.id, input.matchId)).limit(1);
     if (!match) throw new LinkError("not_found", "No match with that id.");
 
-    const mySites = await ExchangeSite.find({ owner: input.member.user }).select("_id").exec();
-    const idSet = new Set(mySites.map((s) => String(s._id)));
-    const mineIsA = idSet.has(String(match.siteA));
-    if (!mineIsA && !idSet.has(String(match.siteB))) {
+    const idSet = new Set(await mySiteIds(input.member));
+    const mineIsA = idSet.has(match.siteAId);
+    if (!mineIsA && !idSet.has(match.siteBId)) {
         throw new LinkError("not_yours", "That match does not involve any of your sites.");
     }
 
-    if (!isRevealed(match.state as MatchState)) {
+    if (!isRevealed(match.state)) {
         throw new LinkError(
             "not_agreed",
             "Both sides have to accept before URLs are revealed. Call respond_to_match with accept first.",
         );
     }
 
-    const partnerSiteId = mineIsA ? match.siteB : match.siteA;
-    const partner = await ExchangeSite.findById(partnerSiteId).exec();
+    const partnerSiteId = mineIsA ? match.siteBId : match.siteAId;
+    const [partner] = await db().select().from(exchangeSites).where(eq(exchangeSites.id, partnerSiteId)).limit(1);
     if (!partner) throw new LinkError("not_found", "The other side of this match no longer exists.");
 
-    return briefFor(partner, { matchId: String(match._id), format: input.format });
+    return briefFor(partner, { matchId: match.id, format: input.format });
 }
 
 /**
@@ -121,11 +127,11 @@ export async function getLinkBrief(input: {
  * or everyone is told to link to themselves.
  */
 export function briefFor(
-    partner: ExchangeSiteHydrated,
+    partner: ExchangeSite,
     options: { matchId: string; format?: SnippetFormat } = { matchId: "" },
 ): LinkBrief {
     const format = options.format ?? "html";
-    const anchors = (partner.keywords ?? []).slice(0, 4);
+    const anchors = partner.keywords.slice(0, 4);
     const anchor = anchors[0] ?? partner.domain;
 
     return {
@@ -134,7 +140,7 @@ export function briefFor(
         targetDomain: partner.domain,
         anchorOptions: anchors,
         partnerDescription: partner.description,
-        partnerOffers: partner.placementOffered ?? "unsure",
+        partnerOffers: partner.placementOffered,
         snippet: buildSnippet(format, partner.url, anchor),
         guidance: GUIDANCE,
     };
@@ -142,7 +148,7 @@ export function briefFor(
 
 export type PlacementReport = {
     linkId: string;
-    status: ExchangeLinkDoc["status"];
+    status: LinkStatus;
     placement: Placement;
     rel: string[];
     anchorText: string | null;
@@ -167,25 +173,23 @@ export type PlacementReport = {
  * can make.
  */
 export async function markLinkPlaced(input: {
-    member: ExchangeMemberHydrated;
+    member: ExchangeMember;
     matchId: string;
     pageUrl: string;
     anchorUsed?: string;
 }): Promise<PlacementReport> {
-    await connectMongo();
-
-    const match = await ExchangeMatch.findById(input.matchId).exec();
+    const [match] = await db().select().from(exchangeMatches).where(eq(exchangeMatches.id, input.matchId)).limit(1);
     if (!match) throw new LinkError("not_found", "No match with that id.");
-    if (!isRevealed(match.state as MatchState)) {
+    if (!isRevealed(match.state)) {
         throw new LinkError("not_agreed", "This match is not agreed yet, so there is no link to place.");
     }
 
-    const mySites = await ExchangeSite.find({ owner: input.member.user }).exec();
-    const mine = mySites.find((s) => String(s._id) === String(match.siteA) || String(s._id) === String(match.siteB));
+    const mySites = await db().select().from(exchangeSites).where(eq(exchangeSites.ownerId, input.member.userId));
+    const mine = mySites.find((s) => s.id === match.siteAId || s.id === match.siteBId);
     if (!mine) throw new LinkError("not_yours", "That match does not involve any of your sites.");
 
-    const partnerSiteId = String(mine._id) === String(match.siteA) ? match.siteB : match.siteA;
-    const partner = await ExchangeSite.findById(partnerSiteId).exec();
+    const partnerSiteId = mine.id === match.siteAId ? match.siteBId : match.siteAId;
+    const [partner] = await db().select().from(exchangeSites).where(eq(exchangeSites.id, partnerSiteId)).limit(1);
     if (!partner) throw new LinkError("not_found", "The other side of this match no longer exists.");
 
     const result = await verifyLink({
@@ -196,37 +200,73 @@ export async function markLinkPlaced(input: {
 
     const inconclusive = result.error !== null;
     const now = new Date();
+    const status: LinkStatus = result.found ? "live" : inconclusive ? "promised" : "missing";
 
-    const link = await ExchangeLink.findOneAndUpdate(
-        { match: match._id, fromSite: mine._id, toSite: partner._id },
-        {
-            $set: {
+    // Upsert on the unique `(match, from, to)` index: one link per direction per
+    // match, and re-reporting the same placement is a correction rather than a
+    // second link. `checkCount` is incremented in SQL rather than read and
+    // written back, so two agents reporting at once cannot lose a count.
+    const [link] = await db()
+        .insert(exchangeLinks)
+        .values({
+            matchId: match.id,
+            fromSiteId: mine.id,
+            toSiteId: partner.id,
+            pageUrl: input.pageUrl,
+            anchorText: result.anchorText ?? input.anchorUsed ?? null,
+            status,
+            placement: result.placement,
+            rel: [...result.rel],
+            sitewide: result.sitewide,
+            firstSeenAt: result.found ? now : null,
+            lastCheckedAt: now,
+            checkCount: 1,
+            lastMessage: result.message,
+        })
+        .onConflictDoUpdate({
+            target: [exchangeLinks.matchId, exchangeLinks.fromSiteId, exchangeLinks.toSiteId],
+            set: {
                 pageUrl: input.pageUrl,
                 anchorText: result.anchorText ?? input.anchorUsed ?? null,
-                status: result.found ? "live" : inconclusive ? "promised" : "missing",
+                status,
                 placement: result.placement,
-                rel: result.rel,
+                rel: [...result.rel],
                 sitewide: result.sitewide,
                 lastCheckedAt: now,
                 lastMessage: result.message,
+                checkCount: sql`${exchangeLinks.checkCount} + 1`,
+                updatedAt: now,
+                // Stamped only on a hit, exactly as before: a miss must not
+                // erase the date the recheck schedule counts from.
                 ...(result.found ? { firstSeenAt: now } : {}),
             },
-            $inc: { checkCount: 1 },
-            $setOnInsert: { match: match._id, fromSite: mine._id, toSite: partner._id },
-        },
-        { upsert: true, new: true },
-    ).exec();
+        })
+        .returning();
+
+    if (!link) throw new LinkError("not_found", "The placement could not be recorded.");
 
     if (result.found) {
-        await ExchangeSite.updateOne({ _id: mine._id }, { $inc: { linksGiven: 1 } });
-        await ExchangeSite.updateOne({ _id: partner._id }, { $inc: { linksGot: 1 } });
+        await db()
+            .update(exchangeSites)
+            .set({ linksGiven: sql`${exchangeSites.linksGiven} + 1`, updatedAt: now })
+            .where(eq(exchangeSites.id, mine.id));
+        await db()
+            .update(exchangeSites)
+            .set({ linksGot: sql`${exchangeSites.linksGot} + 1`, updatedAt: now })
+            .where(eq(exchangeSites.id, partner.id));
 
         // Both directions live promotes the match. Counted rather than assumed:
         // one side placing does not make a trade complete.
-        const liveCount = await ExchangeLink.countDocuments({ match: match._id, status: "live" });
-        if (liveCount >= 2 && match.state !== "placed") {
-            match.state = "placed";
-            await match.save();
+        const [live] = await db()
+            .select({ n: count() })
+            .from(exchangeLinks)
+            .where(and(eq(exchangeLinks.matchId, match.id), eq(exchangeLinks.status, "live")));
+
+        if ((live?.n ?? 0) >= 2 && match.state !== "placed") {
+            await db()
+                .update(exchangeMatches)
+                .set({ state: "placed", updatedAt: now })
+                .where(eq(exchangeMatches.id, match.id));
         }
     }
 
@@ -251,7 +291,7 @@ export async function markLinkPlaced(input: {
     }
 
     return {
-        linkId: String(link._id),
+        linkId: link.id,
         status: link.status,
         placement: result.placement,
         rel: result.rel,
@@ -268,7 +308,7 @@ export type LinkLedgerRow = {
     matchId: string;
     pageUrl: string | null;
     anchorText: string | null;
-    status: ExchangeLinkDoc["status"];
+    status: LinkStatus;
     placement: Placement;
     rel: string[];
     lastCheckedAt: Date | null;
@@ -280,29 +320,28 @@ export type LinkLedgerRow = {
  * Both directions on purpose. Seeing what you received, classified honestly, is
  * the whole reason disclosure beats enforcement.
  */
-export async function checkLinks(member: ExchangeMemberHydrated): Promise<LinkLedgerRow[]> {
-    await connectMongo();
-
-    const mySites = await ExchangeSite.find({ owner: member.user }).select("_id").exec();
-    const ids = mySites.map((s) => s._id);
+export async function checkLinks(member: ExchangeMember): Promise<LinkLedgerRow[]> {
+    const ids = await mySiteIds(member);
     if (ids.length === 0) return [];
 
-    const links = await ExchangeLink.find({ $or: [{ fromSite: { $in: ids } }, { toSite: { $in: ids } }] })
-        .sort({ updatedAt: -1 })
-        .limit(100)
-        .exec();
+    const links = await db()
+        .select()
+        .from(exchangeLinks)
+        .where(or(inArray(exchangeLinks.fromSiteId, ids), inArray(exchangeLinks.toSiteId, ids)))
+        .orderBy(desc(exchangeLinks.updatedAt))
+        .limit(100);
 
-    const idSet = new Set(ids.map(String));
+    const idSet = new Set(ids);
     return links.map((l) => ({
-        linkId: String(l._id),
-        direction: idSet.has(String(l.fromSite)) ? ("given" as const) : ("received" as const),
-        matchId: String(l.match),
-        pageUrl: l.pageUrl ?? null,
-        anchorText: l.anchorText ?? null,
+        linkId: l.id,
+        direction: idSet.has(l.fromSiteId) ? ("given" as const) : ("received" as const),
+        matchId: l.matchId,
+        pageUrl: l.pageUrl,
+        anchorText: l.anchorText,
         status: l.status,
-        placement: l.placement as Placement,
-        rel: l.rel ?? [],
-        lastCheckedAt: l.lastCheckedAt ?? null,
+        placement: l.placement,
+        rel: l.rel,
+        lastCheckedAt: l.lastCheckedAt,
     }));
 }
 
@@ -322,12 +361,14 @@ export type Standing = {
  * first link in any pair, and penalising the person who does is exactly
  * backwards.
  */
-export async function getStanding(member: ExchangeMemberHydrated): Promise<Standing> {
-    await connectMongo();
+export async function getStanding(member: ExchangeMember): Promise<Standing> {
+    const sites = await db()
+        .select({ linksGiven: exchangeSites.linksGiven, linksGot: exchangeSites.linksGot })
+        .from(exchangeSites)
+        .where(eq(exchangeSites.ownerId, member.userId));
 
-    const sites: ExchangeSiteHydrated[] = await ExchangeSite.find({ owner: member.user }).exec();
-    const given = sites.reduce((n, s) => n + (s.linksGiven ?? 0), 0);
-    const received = sites.reduce((n, s) => n + (s.linksGot ?? 0), 0);
+    const given = sites.reduce((n, s) => n + s.linksGiven, 0);
+    const received = sites.reduce((n, s) => n + s.linksGot, 0);
 
     if (given + received < 2) {
         return {

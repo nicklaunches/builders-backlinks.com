@@ -23,8 +23,8 @@ import { enforceRateLimit } from "@/lib/rate-limit";
  * analysis costs real money per call, so `submit_site` is the tightest of them.
  *
  * The limiter fails OPEN on a database error (see `rate-limit.ts`). That is the
- * right call: a Mongo blip should not take the product down. It does mean this
- * is abuse control, not a security boundary, and the masking in
+ * right call: a database blip should not take the product down. It does mean
+ * this is abuse control, not a security boundary, and the masking in
  * `services/mask.ts` is what actually protects identities.
  */
 
@@ -66,11 +66,15 @@ export class RateLimited extends Error {
  */
 export function callerKey(memberId: string | null, headers: Headers): string {
     if (memberId) return `member:${memberId}`;
-    // x-forwarded-for is a client-controlled header, but on Vercel the platform
-    // rewrites it, so the leftmost entry is the real client. Trusting it off
-    // Vercel would let a caller mint unlimited buckets by varying the header.
+    // CF-Connecting-IP is set by Cloudflare's edge on every request it proxies
+    // and any inbound copy is overwritten, so it cannot be spoofed by the
+    // caller. x-forwarded-for is the fallback for anything not behind the edge
+    // (local `wrangler dev`, a direct origin hit), and it IS caller-controlled
+    // there, which is why the anonymous budgets assume a bucket can be minted
+    // rather than treating one as a hard identity.
+    const edge = headers.get("cf-connecting-ip")?.trim();
     const forwarded = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-    return `ip:${forwarded || headers.get("x-real-ip") || "unknown"}`;
+    return `ip:${edge || forwarded || headers.get("x-real-ip") || "unknown"}`;
 }
 
 /**

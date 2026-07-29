@@ -1,6 +1,8 @@
+import { eq } from "drizzle-orm";
+
 import { auth } from "@/auth";
-import { connectMongo } from "@/lib/db/mongoose";
-import { ExchangeMember, type ExchangeMemberHydrated } from "@/lib/models/ExchangeMember";
+import { db } from "@/lib/db";
+import { type ExchangeMember, exchangeMembers } from "@/lib/db/schema";
 
 /**
  * @file THE single session-lookup seam for all server-side code.
@@ -8,14 +10,16 @@ import { ExchangeMember, type ExchangeMemberHydrated } from "@/lib/models/Exchan
  * Deliberately mirrors the same file in the Nick Launches app, name for name.
  * Both apps plan to swap NextAuth for better-auth eventually, and keeping one
  * seam per app means that swap is one file each rather than a search through
- * every route.
+ * every route. The Mongo to Postgres move was the first time that paid off: the
+ * store underneath changed completely and the two exported functions below kept
+ * their names, parameters and return shapes.
  *
  * Nothing outside this file should import from `@/auth` directly.
  */
 
 /** The shape the rest of the app knows a signed-in person by. */
 export type SessionUser = {
-    /** The shared Nick Launches user `_id`. Same person, same id, on both sites. */
+    /** This app's own `users.id`, a uuid. Meaningful nowhere else. */
     id: string;
     email: string | null;
     name: string | null;
@@ -40,22 +44,31 @@ export async function getSessionUser(): Promise<SessionUser | null> {
 /**
  * The exchange-side record for the current user, created on first use.
  *
- * A person can exist in the shared `users` collection (because they signed in
- * on Nick Launches) long before they have anything to do with the exchange, so
- * the `ExchangeMember` row is created lazily the first time they touch an
- * exchange surface rather than at sign-up. `user` is uniquely indexed, so the
- * upsert is safe against two concurrent first requests.
+ * A person can exist in `users` (they signed in, or they crossed over from Nick
+ * Launches) long before they have anything to do with the exchange, so the
+ * `exchange_members` row is created lazily the first time they touch an
+ * exchange surface rather than at sign-up.
+ *
+ * Read first, then insert: the common case is an existing member and that is
+ * one query. `user_id` is uniquely indexed, so two concurrent first requests
+ * cannot both insert. The loser of that race gets nothing back from
+ * `onConflictDoNothing` and re-reads the winner's row.
  *
  * @returns The member record, or null when signed out.
  */
-export async function getSessionMember(): Promise<ExchangeMemberHydrated | null> {
+export async function getSessionMember(): Promise<ExchangeMember | null> {
     const user = await getSessionUser();
     if (!user?.email) return null;
 
-    await connectMongo();
-    return ExchangeMember.findOneAndUpdate(
-        { user: user.id },
-        { $setOnInsert: { user: user.id, email: user.email.toLowerCase(), verifiedAt: new Date() } },
-        { upsert: true, new: true },
-    ).exec();
+    const existing = await db().query.exchangeMembers.findFirst({ where: eq(exchangeMembers.userId, user.id) });
+    if (existing) return existing;
+
+    const [created] = await db()
+        .insert(exchangeMembers)
+        .values({ userId: user.id, email: user.email.toLowerCase(), verifiedAt: new Date() })
+        .onConflictDoNothing({ target: exchangeMembers.userId })
+        .returning();
+    if (created) return created;
+
+    return (await db().query.exchangeMembers.findFirst({ where: eq(exchangeMembers.userId, user.id) })) ?? null;
 }

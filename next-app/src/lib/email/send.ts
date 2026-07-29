@@ -1,10 +1,12 @@
 import { render } from "@react-email/render";
 import type { ReactElement } from "react";
 
+import { eq } from "drizzle-orm";
+
 import { buildUnsubscribeUrl, runWithEmailContext } from "@/emails/_context";
-import { connectMongo } from "@/lib/db/mongoose";
+import { db } from "@/lib/db";
+import { exchangeMembers } from "@/lib/db/schema";
 import { type SesHeader, sendSesEmail } from "@/lib/email/ses";
-import { ExchangeMember } from "@/lib/models/ExchangeMember";
 
 /**
  * @file The one entry point for outgoing mail.
@@ -96,11 +98,10 @@ function listUnsubscribeHeaders(unsubscribeUrl: string, sender: string): SesHead
  */
 async function allowsDigest(email: string): Promise<boolean> {
     try {
-        await connectMongo();
-        const member = await ExchangeMember.findOne({ email: email.trim().toLowerCase() })
-            .select("unsubscribedAt")
-            .lean()
-            .exec();
+        const member = await db().query.exchangeMembers.findFirst({
+            where: eq(exchangeMembers.email, email.trim().toLowerCase()),
+            columns: { unsubscribedAt: true },
+        });
         // No member row means this is not a digest recipient we know about.
         // Sending is still the caller's call; the gate only enforces a stored
         // opt-out, and inventing one from an absent record would silently

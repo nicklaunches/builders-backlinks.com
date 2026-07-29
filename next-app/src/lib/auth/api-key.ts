@@ -1,7 +1,8 @@
+import { eq } from "drizzle-orm";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
-import { connectMongo } from "@/lib/db/mongoose";
-import { ExchangeMember, type ExchangeMemberHydrated } from "@/lib/models/ExchangeMember";
+import { db } from "@/lib/db";
+import { type ExchangeMember, exchangeMembers } from "@/lib/db/schema";
 
 /**
  * @file MCP bearer tokens.
@@ -79,14 +80,13 @@ export function bearerFromHeader(headerValue: string | null | undefined): string
  * confusing rather than helpful.
  *
  * @param token - The raw `bb_live_...` token from the Authorization header.
- * @returns The member document, or null when the token is unknown or disabled.
+ * @returns The member row, or null when the token is unknown or disabled.
  */
-export async function resolveMemberFromBearer(token: string | null): Promise<ExchangeMemberHydrated | null> {
+export async function resolveMemberFromBearer(token: string | null): Promise<ExchangeMember | null> {
     if (!token) return null;
     const hash = hashApiKey(token);
 
-    await connectMongo();
-    const member = await ExchangeMember.findOne({ apiKeyHash: hash }).exec();
+    const member = await db().query.exchangeMembers.findFirst({ where: eq(exchangeMembers.apiKeyHash, hash) });
     if (!member?.apiKeyHash) return null;
 
     const a = Buffer.from(member.apiKeyHash, "utf8");
@@ -97,8 +97,10 @@ export async function resolveMemberFromBearer(token: string | null): Promise<Exc
 
     // Best-effort last-used stamp. Never block a tool call on this write, and
     // never fail the request if it errors: it is telemetry, not authorization.
-    void ExchangeMember.updateOne({ _id: member._id }, { $set: { apiKeyLastUsedAt: new Date() } })
-        .exec()
+    void db()
+        .update(exchangeMembers)
+        .set({ apiKeyLastUsedAt: new Date() })
+        .where(eq(exchangeMembers.id, member.id))
         .catch(() => {});
 
     return member;

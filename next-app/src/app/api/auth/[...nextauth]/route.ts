@@ -9,8 +9,9 @@ import { handlers } from "@/auth";
  * `/api/auth/callback/{google,github}`. Moving this directory means updating
  * both provider consoles.
  *
- * Node runtime, not edge: the MongoDB adapter uses the native driver, which
- * needs TCP sockets. Stated rather than inherited so nobody flips it by habit.
+ * Node runtime, not edge: the Drizzle adapter reaches Postgres over TCP, which
+ * on Workers means `nodejs_compat` and the Hyperdrive binding. Stated rather
+ * than inherited so nobody flips it by habit.
  */
 
 export const runtime = "nodejs";

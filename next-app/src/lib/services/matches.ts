@@ -1,17 +1,19 @@
-import { type Category, candidateCategories } from "@/lib/categories";
+import { and, count, desc, eq, gte, inArray, lte, ne, or, sql } from "drizzle-orm";
+
+import { type Category, candidateCategories, isCategory } from "@/lib/categories";
 import type { MaskedPartner, MatchableSite, RevealedPartner, ScoreContext } from "@/lib/contracts";
-import { connectMongo } from "@/lib/db/mongoose";
-import { notifyMatchAgreed, notifyMatchProposed } from "@/lib/email/notify";
-import { findBestPartner } from "@/lib/matching";
+import { db } from "@/lib/db";
 import {
-    ExchangeMatch,
-    type ExchangeMatchHydrated,
-    type MatchState,
-    isRevealed,
-    orderPair,
-} from "@/lib/models/ExchangeMatch";
-import { ExchangeMember, type ExchangeMemberHydrated } from "@/lib/models/ExchangeMember";
-import { ExchangeSite, type ExchangeSiteHydrated } from "@/lib/models/ExchangeSite";
+    type ExchangeMatch,
+    type ExchangeMember,
+    type ExchangeSite,
+    exchangeMatches,
+    exchangeMembers,
+    exchangeSites,
+} from "@/lib/db/schema";
+import { notifyMatchAgreed, notifyMatchProposed } from "@/lib/email/notify";
+import { type MatchState, isRevealed, orderPair } from "@/lib/exchange";
+import { findBestPartner } from "@/lib/matching";
 import { briefFor } from "@/lib/services/links";
 import { toMaskedPartner, toRevealedPartner } from "@/lib/services/mask";
 
@@ -29,6 +31,13 @@ import { toMaskedPartner, toRevealedPartner } from "@/lib/services/mask";
  * matches with you" is being told something true and mildly flattering. An
  * empty digest with no explanation is the single most common way a matching
  * product loses someone on day one.
+ *
+ * ON SORTING BY `lastMatchedAt`: every query that orders by it asks for NULLS
+ * FIRST explicitly. A site that has never been matched is the stalest thing in
+ * the pool and must surface first, which is what Mongo did for free by sorting
+ * nulls low. Postgres puts NULLs last on an ascending sort, so leaving it
+ * implicit would silently bury exactly the members this product cannot afford
+ * to ignore.
  */
 
 /** How long a proposed match stays open before it expires back into the pool. */
@@ -37,18 +46,18 @@ const MATCH_TTL_DAYS = 14;
 /** Maximum partners any search returns. Deliberately low: this is not a directory to enumerate. */
 const MAX_SEARCH_RESULTS = 20;
 
-function toMatchable(site: ExchangeSiteHydrated): MatchableSite {
+function toMatchable(site: ExchangeSite): MatchableSite {
     return {
-        id: String(site._id),
-        ownerId: String(site.owner),
-        category: site.category as Category,
-        keywords: site.keywords ?? [],
-        domainRating: site.domainRating ?? null,
-        trueDr: site.trueDr ?? null,
-        placementOffered: site.placementOffered ?? "unsure",
-        linksGiven: site.linksGiven ?? 0,
-        linksGot: site.linksGot ?? 0,
-        lastMatchedAt: site.lastMatchedAt ?? null,
+        id: site.id,
+        ownerId: site.ownerId,
+        category: site.category,
+        keywords: site.keywords,
+        domainRating: site.domainRating,
+        trueDr: site.trueDr,
+        placementOffered: site.placementOffered,
+        linksGiven: site.linksGiven,
+        linksGot: site.linksGot,
+        lastMatchedAt: site.lastMatchedAt,
     };
 }
 
@@ -67,24 +76,31 @@ export async function searchPartners(input: {
     drMax?: number;
     limit?: number;
 }): Promise<MaskedPartner[]> {
-    await connectMongo();
-
     const limit = Math.min(Math.max(input.limit ?? 5, 1), MAX_SEARCH_RESULTS);
-    const query: Record<string, unknown> = { status: "active" };
-    if (input.category) query.category = input.category;
-    if (input.drMin != null || input.drMax != null) {
-        query.domainRating = {
-            ...(input.drMin != null ? { $gte: input.drMin } : {}),
-            ...(input.drMax != null ? { $lte: input.drMax } : {}),
-        };
-    }
 
-    const sites = await ExchangeSite.find(query).sort({ lastMatchedAt: 1, createdAt: -1 }).limit(limit).exec();
+    // An unknown category name matches nothing, which is what the old query did
+    // too. Returning early rather than casting keeps the column type honest.
+    if (input.category != null && !isCategory(input.category)) return [];
+
+    const filters = [
+        eq(exchangeSites.status, "active"),
+        input.category != null ? eq(exchangeSites.category, input.category) : undefined,
+        input.drMin != null ? gte(exchangeSites.domainRating, input.drMin) : undefined,
+        input.drMax != null ? lte(exchangeSites.domainRating, input.drMax) : undefined,
+    ];
+
+    const sites = await db()
+        .select()
+        .from(exchangeSites)
+        .where(and(...filters))
+        .orderBy(sql`${exchangeSites.lastMatchedAt} asc nulls first`, desc(exchangeSites.createdAt))
+        .limit(limit);
+
     return sites.map(toMaskedPartner);
 }
 
 export type AutoPairResult =
-    | { matched: true; match: ExchangeMatchHydrated; partner: MaskedPartner }
+    | { matched: true; match: ExchangeMatch; partner: MaskedPartner }
     | { matched: false; reason: "first_in_category" | "no_eligible_partner"; category: Category };
 
 /**
@@ -95,24 +111,31 @@ export type AutoPairResult =
  * @param site - The site needing a partner.
  * @returns The created match and a masked view of the partner, or a reason why not.
  */
-export async function autoPair(site: ExchangeSiteHydrated): Promise<AutoPairResult> {
-    await connectMongo();
+export async function autoPair(site: ExchangeSite): Promise<AutoPairResult> {
+    const category = site.category;
 
-    const category = site.category as Category;
-    const activeInCategory = await ExchangeSite.countDocuments({ category, status: "active" });
-    const pools = candidateCategories(category, activeInCategory);
+    const [active] = await db()
+        .select({ n: count() })
+        .from(exchangeSites)
+        .where(and(eq(exchangeSites.category, category), eq(exchangeSites.status, "active")));
+
+    const pools = candidateCategories(category, active?.n ?? 0);
     if (pools.length === 0) {
         return { matched: false, reason: "no_eligible_partner", category };
     }
 
-    const candidates = await ExchangeSite.find({
-        category: { $in: pools },
-        status: "active",
-        _id: { $ne: site._id },
-        owner: { $ne: site.owner },
-    })
-        .limit(200)
-        .exec();
+    const candidates = await db()
+        .select()
+        .from(exchangeSites)
+        .where(
+            and(
+                inArray(exchangeSites.category, pools),
+                eq(exchangeSites.status, "active"),
+                ne(exchangeSites.id, site.id),
+                ne(exchangeSites.ownerId, site.ownerId),
+            ),
+        )
+        .limit(200);
 
     if (candidates.length === 0) {
         // Nobody else is here yet. This is not a failure, it is the queue
@@ -120,14 +143,19 @@ export async function autoPair(site: ExchangeSiteHydrated): Promise<AutoPairResu
         return { matched: false, reason: "first_in_category", category };
     }
 
-    const priorMatches = await ExchangeMatch.find({ $or: [{ siteA: site._id }, { siteB: site._id }] })
-        .select("siteA siteB state")
-        .exec();
+    const priorMatches = await db()
+        .select({
+            siteAId: exchangeMatches.siteAId,
+            siteBId: exchangeMatches.siteBId,
+            state: exchangeMatches.state,
+        })
+        .from(exchangeMatches)
+        .where(or(eq(exchangeMatches.siteAId, site.id), eq(exchangeMatches.siteBId, site.id)));
 
     const alreadyMatched = new Set<string>();
     const previouslyDeclined = new Set<string>();
     for (const m of priorMatches) {
-        const other = String(m.siteA) === String(site._id) ? String(m.siteB) : String(m.siteA);
+        const other = m.siteAId === site.id ? m.siteBId : m.siteAId;
         alreadyMatched.add(other);
         if (m.state === "declined") previouslyDeclined.add(other);
     }
@@ -143,45 +171,84 @@ export async function autoPair(site: ExchangeSiteHydrated): Promise<AutoPairResu
     const best = findBestPartner(subject, candidates.map(toMatchable), ctx);
     if (!best) return { matched: false, reason: "no_eligible_partner", category };
 
-    const partnerDoc = candidates.find((c) => String(c._id) === best.candidate.id);
-    if (!partnerDoc) return { matched: false, reason: "no_eligible_partner", category };
+    const partnerSite = candidates.find((c) => c.id === best.candidate.id);
+    if (!partnerSite) return { matched: false, reason: "no_eligible_partner", category };
 
-    const [siteA, siteB] = orderPair(String(site._id), String(partnerDoc._id));
-
-    // Upsert rather than create: two concurrent submissions can select each
-    // other in the same instant, and the unique (siteA, siteB) index is what
-    // stops that becoming two matches for one pair.
-    const match = await ExchangeMatch.findOneAndUpdate(
-        { siteA, siteB },
-        {
-            $setOnInsert: {
-                siteA,
-                siteB,
-                category: best.candidate.category,
-                score: best.score.total,
-                widened: best.candidate.category !== category,
-                state: "proposed" as MatchState,
-                proposedBy: null,
-                expiresAt: new Date(Date.now() + MATCH_TTL_DAYS * 24 * 60 * 60 * 1000),
-            },
-        },
-        { upsert: true, new: true },
-    ).exec();
+    const match = await upsertMatch({
+        siteId: site.id,
+        partnerSiteId: partnerSite.id,
+        category: best.candidate.category,
+        score: best.score.total,
+        widened: best.candidate.category !== category,
+    });
 
     const stamp = new Date();
-    await ExchangeSite.updateMany({ _id: { $in: [site._id, partnerDoc._id] } }, { $set: { lastMatchedAt: stamp } });
+    await db()
+        .update(exchangeSites)
+        .set({ lastMatchedAt: stamp, updatedAt: stamp })
+        .where(inArray(exchangeSites.id, [site.id, partnerSite.id]));
 
     // Fire and forget. A member who is matched and never told is the same as
     // not being matched, but email must never be able to fail a submission.
     void notifyMatchProposed({
-        matchId: String(match._id),
+        matchId: match.id,
         siteA: site,
-        siteB: partnerDoc,
+        siteB: partnerSite,
         expiresAt: match.expiresAt,
-        widened: Boolean(match.widened),
+        widened: match.widened,
     });
 
-    return { matched: true, match, partner: toMaskedPartner(partnerDoc) };
+    return { matched: true, match, partner: toMaskedPartner(partnerSite) };
+}
+
+/**
+ * Creates the match for a pair, or returns the one that already exists.
+ *
+ * Two concurrent submissions can select each other in the same instant, so this
+ * cannot be a read-then-insert. `INSERT ... ON CONFLICT DO NOTHING RETURNING`
+ * against the unique `(site_a_id, site_b_id)` index makes the database the
+ * arbiter: the winner gets its row back, the loser gets an empty array and
+ * re-selects the row the winner wrote. Both callers end up holding the same
+ * single thread for the pair, which is the entire point of the sorted-pair rule.
+ *
+ * The re-select is by the ordered pair rather than by id because the loser
+ * never learns the winner's id, and that is exactly what `orderPair` guarantees
+ * is enough to find it.
+ */
+async function upsertMatch(input: {
+    siteId: string;
+    partnerSiteId: string;
+    category: Category;
+    score: number;
+    widened: boolean;
+}): Promise<ExchangeMatch> {
+    const [siteAId, siteBId] = orderPair(input.siteId, input.partnerSiteId);
+    const pair = and(eq(exchangeMatches.siteAId, siteAId), eq(exchangeMatches.siteBId, siteBId));
+
+    const [inserted] = await db()
+        .insert(exchangeMatches)
+        .values({
+            siteAId,
+            siteBId,
+            category: input.category,
+            score: input.score,
+            widened: input.widened,
+            state: "proposed",
+            proposedById: null,
+            expiresAt: new Date(Date.now() + MATCH_TTL_DAYS * 24 * 60 * 60 * 1000),
+        })
+        .onConflictDoNothing({ target: [exchangeMatches.siteAId, exchangeMatches.siteBId] })
+        .returning();
+
+    if (inserted) return inserted;
+
+    const [existing] = await db().select().from(exchangeMatches).where(pair).limit(1);
+    if (!existing) {
+        // Only reachable if the conflicting row was deleted between the insert
+        // and this read, which nothing in the product does.
+        throw new Error(`Match for pair (${siteAId}, ${siteBId}) conflicted on insert but could not be read back`);
+    }
+    return existing;
 }
 
 export type MatchView = {
@@ -198,22 +265,24 @@ export type MatchView = {
     expiresAt: Date;
 };
 
-async function buildMatchView(match: ExchangeMatchHydrated, viewerSiteIds: Set<string>): Promise<MatchView | null> {
-    const aId = String(match.siteA);
-    const bId = String(match.siteB);
-    const mineIsA = viewerSiteIds.has(aId);
-    const mySiteId = mineIsA ? aId : bId;
-    const partnerSiteId = mineIsA ? bId : aId;
+async function buildMatchView(match: ExchangeMatch, viewerSiteIds: Set<string>): Promise<MatchView | null> {
+    const mineIsA = viewerSiteIds.has(match.siteAId);
+    const mySiteId = mineIsA ? match.siteAId : match.siteBId;
+    const partnerSiteId = mineIsA ? match.siteBId : match.siteAId;
 
-    const partnerSite = await ExchangeSite.findById(partnerSiteId).exec();
+    const [partnerSite] = await db().select().from(exchangeSites).where(eq(exchangeSites.id, partnerSiteId)).limit(1);
     if (!partnerSite) return null;
 
-    const state = match.state as MatchState;
+    const state = match.state;
     const revealed = isRevealed(state);
 
     let partner: MaskedPartner | RevealedPartner;
     if (revealed) {
-        const partnerMember = await ExchangeMember.findOne({ user: partnerSite.owner }).select("email").exec();
+        const [partnerMember] = await db()
+            .select({ email: exchangeMembers.email })
+            .from(exchangeMembers)
+            .where(eq(exchangeMembers.userId, partnerSite.ownerId))
+            .limit(1);
         partner = toRevealedPartner(partnerSite, partnerMember?.email ?? "", state);
     } else {
         partner = toMaskedPartner(partnerSite);
@@ -237,9 +306,9 @@ async function buildMatchView(match: ExchangeMatchHydrated, viewerSiteIds: Set<s
                       : "This match expired and went back into the pool.";
 
     return {
-        matchId: String(match._id),
+        matchId: match.id,
         state,
-        category: match.category as Category,
+        category: match.category,
         mySiteId,
         partner,
         revealed,
@@ -248,22 +317,35 @@ async function buildMatchView(match: ExchangeMatchHydrated, viewerSiteIds: Set<s
     };
 }
 
+/** The site ids a member owns. Every ownership check in this file starts here. */
+async function mySiteIds(member: ExchangeMember): Promise<string[]> {
+    const rows = await db()
+        .select({ id: exchangeSites.id })
+        .from(exchangeSites)
+        .where(eq(exchangeSites.ownerId, member.userId));
+    return rows.map((r) => r.id);
+}
+
 /**
  * Lists a member's matches across all of their sites.
  */
-export async function listMatches(member: ExchangeMemberHydrated, state?: MatchState): Promise<MatchView[]> {
-    await connectMongo();
-
-    const mySites = await ExchangeSite.find({ owner: member.user }).select("_id").exec();
-    const ids = mySites.map((s) => String(s._id));
+export async function listMatches(member: ExchangeMember, state?: MatchState): Promise<MatchView[]> {
+    const ids = await mySiteIds(member);
     if (ids.length === 0) return [];
 
-    const query: Record<string, unknown> = { $or: [{ siteA: { $in: ids } }, { siteB: { $in: ids } }] };
-    if (state) query.state = state;
+    const matches = await db()
+        .select()
+        .from(exchangeMatches)
+        .where(
+            and(
+                or(inArray(exchangeMatches.siteAId, ids), inArray(exchangeMatches.siteBId, ids)),
+                state ? eq(exchangeMatches.state, state) : undefined,
+            ),
+        )
+        .orderBy(desc(exchangeMatches.updatedAt))
+        .limit(50);
 
-    const matches = await ExchangeMatch.find(query).sort({ updatedAt: -1 }).limit(50).exec();
     const idSet = new Set(ids);
-
     const views = await Promise.all(matches.map((m) => buildMatchView(m, idSet)));
     return views.filter((v): v is MatchView => v !== null);
 }
@@ -289,72 +371,86 @@ export class MatchError extends Error {
  *   has already been resolved.
  */
 export async function respondToMatch(input: {
-    member: ExchangeMemberHydrated;
+    member: ExchangeMember;
     matchId: string;
     accept: boolean;
     reason?: string;
 }): Promise<MatchView> {
     const { member, matchId, accept } = input;
-    await connectMongo();
 
-    const match = await ExchangeMatch.findById(matchId).exec();
+    const [match] = await db().select().from(exchangeMatches).where(eq(exchangeMatches.id, matchId)).limit(1);
     if (!match) throw new MatchError("not_found", "No match with that id.");
 
-    const mySites = await ExchangeSite.find({ owner: member.user }).select("_id").exec();
-    const idSet = new Set(mySites.map((s) => String(s._id)));
-    const mineIsA = idSet.has(String(match.siteA));
-    const mineIsB = idSet.has(String(match.siteB));
+    const ids = await mySiteIds(member);
+    const idSet = new Set(ids);
+    const mineIsA = idSet.has(match.siteAId);
+    const mineIsB = idSet.has(match.siteBId);
     if (!mineIsA && !mineIsB) throw new MatchError("not_yours", "That match does not involve any of your sites.");
 
-    const state = match.state as MatchState;
-    const previousState = state;
-    if (state === "declined" || state === "expired") {
-        throw new MatchError("bad_state", `This match is already ${state}.`);
+    const previousState = match.state;
+    if (previousState === "declined" || previousState === "expired") {
+        throw new MatchError("bad_state", `This match is already ${previousState}.`);
     }
 
+    // Built as a patch rather than mutated in place: one UPDATE, and the fields
+    // that do not change are not written at all.
+    const patch: { state?: MatchState; declineReason?: string | null; agreedAt?: Date } = {};
+
     if (!accept) {
-        match.state = "declined";
-        match.declineReason = input.reason ?? null;
-    } else if (state === "agreed" || state === "placed") {
+        patch.state = "declined";
+        patch.declineReason = input.reason ?? null;
+    } else if (previousState === "agreed" || previousState === "placed") {
         // Already through. Accepting again is a no-op rather than an error:
         // agents retry, and a retry should be harmless.
     } else {
         const myAccept = mineIsA ? "a_accepted" : "b_accepted";
         const theirAccept = mineIsA ? "b_accepted" : "a_accepted";
-        if (state === theirAccept) {
-            match.state = "agreed";
-            match.agreedAt = new Date();
+        if (previousState === theirAccept) {
+            patch.state = "agreed";
+            patch.agreedAt = new Date();
         } else {
-            match.state = myAccept as MatchState;
+            patch.state = myAccept;
         }
     }
 
-    const justAgreed = match.state === "agreed" && previousState !== "agreed";
-    await match.save();
+    let updated = match;
+    if (Object.keys(patch).length > 0) {
+        const [row] = await db()
+            .update(exchangeMatches)
+            .set({ ...patch, updatedAt: new Date() })
+            .where(eq(exchangeMatches.id, match.id))
+            .returning();
+        if (!row) throw new MatchError("not_found", "No match with that id.");
+        updated = row;
+    }
+
+    const justAgreed = updated.state === "agreed" && previousState !== "agreed";
 
     // The reveal moment. Both sides are told at once, each getting the other's
     // identity and a brief pointing at the other's URL. Building the two briefs
     // here rather than inside the notifier keeps "who links to whom" explicit:
     // getting it backwards would have everyone linking to themselves.
     if (justAgreed) {
-        const [siteA, siteB] = await Promise.all([
-            ExchangeSite.findById(match.siteA).exec(),
-            ExchangeSite.findById(match.siteB).exec(),
-        ]);
+        const sites = await db()
+            .select()
+            .from(exchangeSites)
+            .where(inArray(exchangeSites.id, [updated.siteAId, updated.siteBId]));
+        const siteA = sites.find((s) => s.id === updated.siteAId);
+        const siteB = sites.find((s) => s.id === updated.siteBId);
         if (siteA && siteB) {
-            const matchId = String(match._id);
+            const agreedMatchId = updated.id;
             void notifyMatchAgreed({
-                matchId,
+                matchId: agreedMatchId,
                 siteA,
                 siteB,
                 // A links to B, B links to A.
-                briefForA: briefFor(siteB, { matchId }),
-                briefForB: briefFor(siteA, { matchId }),
+                briefForA: briefFor(siteB, { matchId: agreedMatchId }),
+                briefForB: briefFor(siteA, { matchId: agreedMatchId }),
             });
         }
     }
 
-    const view = await buildMatchView(match, idSet);
+    const view = await buildMatchView(updated, idSet);
     if (!view) throw new MatchError("not_found", "The other side of this match no longer exists.");
     return view;
 }

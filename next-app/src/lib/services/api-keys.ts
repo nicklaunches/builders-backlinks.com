@@ -1,13 +1,15 @@
+import { eq } from "drizzle-orm";
+
 import { mintApiKey } from "@/lib/auth/api-key";
-import { connectMongo } from "@/lib/db/mongoose";
-import { ExchangeMember, type ExchangeMemberHydrated } from "@/lib/models/ExchangeMember";
+import { db } from "@/lib/db";
+import { type ExchangeMember, exchangeMembers } from "@/lib/db/schema";
 
 /**
  * @file Issuing the MCP bearer key a member installs into their agent.
  *
  * `src/lib/auth/api-key.ts` mints and verifies; this is the service layer on top
  * of it, so the web action and any future agent-side rotation tool go through
- * one function rather than each writing the member document themselves.
+ * one function rather than each writing the member row themselves.
  *
  * The plaintext key exists exactly once, in the return value of `issueApiKey`.
  * Only its SHA-256 is persisted. There is deliberately no "fetch my key"
@@ -27,11 +29,11 @@ export type ApiKeyStatus = {
 /**
  * Describes the member's current key. Reads only metadata, never a secret.
  */
-export function describeApiKey(member: ExchangeMemberHydrated): ApiKeyStatus {
+export function describeApiKey(member: ExchangeMember): ApiKeyStatus {
     return {
         issued: Boolean(member.apiKeyHash),
-        issuedAt: member.apiKeyIssuedAt ?? null,
-        lastUsedAt: member.apiKeyLastUsedAt ?? null,
+        issuedAt: member.apiKeyIssuedAt,
+        lastUsedAt: member.apiKeyLastUsedAt,
     };
 }
 
@@ -46,23 +48,22 @@ export type IssuedApiKey = {
 /**
  * Issues a new key for a member, replacing any existing one immediately.
  *
- * There is one key per member by construction: the hash is a single field, so
+ * There is one key per member by construction: the hash is a single column, so
  * writing a new one revokes the old one in the same operation and there is no
  * window where both work. `apiKeyLastUsedAt` is cleared because a previous
  * key's usage says nothing about this one.
  *
  * @returns The plaintext to show once, plus when it was issued.
  */
-export async function issueApiKey(member: ExchangeMemberHydrated): Promise<IssuedApiKey> {
+export async function issueApiKey(member: ExchangeMember): Promise<IssuedApiKey> {
     const replaced = Boolean(member.apiKeyHash);
     const { plaintext, hash } = mintApiKey();
     const issuedAt = new Date();
 
-    await connectMongo();
-    await ExchangeMember.updateOne(
-        { _id: member._id },
-        { $set: { apiKeyHash: hash, apiKeyIssuedAt: issuedAt, apiKeyLastUsedAt: null } },
-    ).exec();
+    await db()
+        .update(exchangeMembers)
+        .set({ apiKeyHash: hash, apiKeyIssuedAt: issuedAt, apiKeyLastUsedAt: null, updatedAt: issuedAt })
+        .where(eq(exchangeMembers.id, member.id));
 
     return { plaintext, issuedAt, replaced };
 }

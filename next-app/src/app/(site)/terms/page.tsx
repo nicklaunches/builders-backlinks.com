@@ -100,20 +100,11 @@ export default function TermsPage() {
                     {/* -------------------------------------------------------
                         Account
                     ------------------------------------------------------- */}
-                    <Section id="account" title="2. Your account is shared with nicklaunches.com">
+                    <Section id="account" title="2. Your account">
                         <Prose>
                             <p>
-                                Builders Backlinks and <a href="https://nicklaunches.com">nicklaunches.com</a> are run
-                                by the same person and share one account system. Signing in on either site resolves to
-                                the same underlying user, so the email address, the sign-in method and the identity
-                                behind them are common to both. Your session cookie is per-domain, so signing in on one
-                                does not silently sign you in on the other, but it is one account.
-                            </p>
-                            <p>
-                                Exchange-specific state (your sites, matches, links, API key hash and digest settings)
-                                is kept separately from that shared account, and this service never writes to the shared
-                                user record. Deleting your exchange data does not delete your nicklaunches.com account,
-                                and the reverse is also true. Ask if you want both gone.
+                                Sign in with Google or GitHub and an account is created for you here. That account, and
+                                everything attached to it, belongs to this site alone.
                             </p>
                             <p>
                                 You need to be old enough to enter into a contract where you live, and you must give a
@@ -136,8 +127,7 @@ export default function TermsPage() {
                                 <li>
                                     <strong>Every new site is reviewed before it goes active.</strong> A submitted site
                                     starts as <Code>pending_review</Code>. It is not matched with anyone until a human
-                                    has looked at it. Sites imported from an already-approved nicklaunches.com product
-                                    skip that step, because they were reviewed there.
+                                    has looked at it.
                                 </li>
                                 <li>
                                     <strong>One domain belongs to one member, permanently.</strong> A domain can be

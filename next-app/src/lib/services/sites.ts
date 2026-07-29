@@ -1,15 +1,11 @@
+import { count, desc, eq } from "drizzle-orm";
+
 import { analyzeSite } from "@/lib/analyze";
 import { type Category, UNMATCHABLE, isCategory } from "@/lib/categories";
 import { AnalyzeError, type SiteAnalysis } from "@/lib/contracts";
-import { connectMongo } from "@/lib/db/mongoose";
-import { type ExchangeMemberHydrated } from "@/lib/models/ExchangeMember";
-import {
-    ExchangeSite,
-    type ExchangeSiteHydrated,
-    PLACEMENT_OFFERS,
-    type PlacementOffer,
-    normalizeDomain,
-} from "@/lib/models/ExchangeSite";
+import { db } from "@/lib/db";
+import { type ExchangeMember, type ExchangeSite, exchangeSites } from "@/lib/db/schema";
+import { PLACEMENT_OFFERS, type PlacementOffer, normalizeDomain } from "@/lib/exchange";
 
 /**
  * @file Listing a site in the exchange.
@@ -56,14 +52,19 @@ export type SiteDraft = SiteAnalysis & {
 export async function draftSite(rawUrl: string): Promise<SiteDraft> {
     const analysis = await analyzeSite(rawUrl);
 
-    await connectMongo();
-    const existing = await ExchangeSite.exists({ domain: analysis.domain });
+    // Existence only: one row, one column, no need to hydrate a listing we are
+    // never going to show.
+    const existing = await db()
+        .select({ id: exchangeSites.id })
+        .from(exchangeSites)
+        .where(eq(exchangeSites.domain, analysis.domain))
+        .limit(1);
 
-    return { ...analysis, alreadyListed: Boolean(existing) };
+    return { ...analysis, alreadyListed: existing.length > 0 };
 }
 
 export type CommitSiteInput = {
-    member: ExchangeMemberHydrated;
+    member: ExchangeMember;
     url: string;
     category: string;
     description: string;
@@ -82,10 +83,10 @@ export type CommitSiteInput = {
  * step already fetched it server-side; the value is carried through here rather
  * than fetched twice, but it never originates outside the server.
  *
- * @returns The created site document.
+ * @returns The created site row.
  * @throws `SiteError` for domain collisions, bad categories, or over-listing.
  */
-export async function commitSite(input: CommitSiteInput): Promise<ExchangeSiteHydrated> {
+export async function commitSite(input: CommitSiteInput): Promise<ExchangeSite> {
     const { member, url, description, keywords } = input;
 
     if (!isCategory(input.category)) {
@@ -120,16 +121,22 @@ export async function commitSite(input: CommitSiteInput): Promise<ExchangeSiteHy
 
     const domain = normalizeDomain(url);
 
-    await connectMongo();
-
-    const owned = await ExchangeSite.countDocuments({ owner: member.user });
-    if (owned >= MAX_SITES_PER_MEMBER) {
+    const [owned] = await db()
+        .select({ n: count() })
+        .from(exchangeSites)
+        .where(eq(exchangeSites.ownerId, member.userId));
+    if ((owned?.n ?? 0) >= MAX_SITES_PER_MEMBER) {
         throw new SiteError("too_many_sites", `You can list up to ${MAX_SITES_PER_MEMBER} sites.`);
     }
 
-    try {
-        return await ExchangeSite.create({
-            owner: member.user,
+    // `ON CONFLICT DO NOTHING` on the unique `domain` index rather than catching
+    // a driver error code: a domain belongs to exactly one member, ever, and
+    // getting nothing back is an unambiguous statement that somebody else has
+    // it. It is also race-safe, which a check-then-insert would not be.
+    const [created] = await db()
+        .insert(exchangeSites)
+        .values({
+            ownerId: member.userId,
             domain,
             url,
             category,
@@ -138,29 +145,28 @@ export async function commitSite(input: CommitSiteInput): Promise<ExchangeSiteHy
             domainRating: input.domainRating ?? null,
             drCheckedAt: input.domainRating == null ? null : new Date(),
             placementOffered,
-            source: "direct",
-            // Direct submissions are reviewed. Nick Launches imports skip this
-            // (see importNlProduct): those products were already admin-approved
-            // there, and free-plan ones additionally passed a badge backlink
-            // crawl, so re-vetting them is redundant.
+            // Every submission is reviewed before it can be matched. No path
+            // skips this, which is exactly what /terms promises.
             status: "pending_review",
-        });
-    } catch (err) {
-        // Duplicate key on the unique `domain` index. A domain belongs to
-        // exactly one member, ever.
-        if (typeof err === "object" && err !== null && (err as { code?: number }).code === 11000) {
-            throw new SiteError("domain_taken", `${domain} is already listed in the exchange by another member.`);
-        }
-        throw err;
+        })
+        .onConflictDoNothing({ target: exchangeSites.domain })
+        .returning();
+
+    if (!created) {
+        throw new SiteError("domain_taken", `${domain} is already listed in the exchange by another member.`);
     }
+    return created;
 }
 
 /**
  * Lists the sites a member owns, newest first.
  */
-export async function listMySites(member: ExchangeMemberHydrated): Promise<ExchangeSiteHydrated[]> {
-    await connectMongo();
-    return ExchangeSite.find({ owner: member.user }).sort({ createdAt: -1 }).exec();
+export async function listMySites(member: ExchangeMember): Promise<ExchangeSite[]> {
+    return db()
+        .select()
+        .from(exchangeSites)
+        .where(eq(exchangeSites.ownerId, member.userId))
+        .orderBy(desc(exchangeSites.createdAt));
 }
 
 export { AnalyzeError };

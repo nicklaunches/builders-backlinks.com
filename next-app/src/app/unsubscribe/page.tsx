@@ -2,9 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { connectMongo } from "@/lib/db/mongoose";
+import { eq } from "drizzle-orm";
+
+import { db } from "@/lib/db";
+import { exchangeMembers } from "@/lib/db/schema";
 import { verifyUnsubscribeToken } from "@/lib/email/unsubscribe-token";
-import { ExchangeMember } from "@/lib/models/ExchangeMember";
 
 /**
  * @file The opt-out page every email footer links to.
@@ -80,9 +82,12 @@ async function setUnsubscribed(formData: FormData, value: Date | null): Promise<
     }
 
     try {
-        await connectMongo();
-        const result = await ExchangeMember.updateOne({ email }, { $set: { unsubscribedAt: value } }).exec();
-        if (result.matchedCount === 0) {
+        const updated = await db()
+            .update(exchangeMembers)
+            .set({ unsubscribedAt: value })
+            .where(eq(exchangeMembers.email, email))
+            .returning({ id: exchangeMembers.id });
+        if (updated.length === 0) {
             redirect(selfUrl(email, token, "not-found"));
         }
     } catch (error) {
@@ -116,8 +121,10 @@ export default async function UnsubscribePage({ searchParams }: { searchParams: 
     let currentlyOff = false;
     if (verified) {
         try {
-            await connectMongo();
-            const member = await ExchangeMember.findOne({ email }).select("unsubscribedAt").lean().exec();
+            const member = await db().query.exchangeMembers.findFirst({
+                where: eq(exchangeMembers.email, email),
+                columns: { unsubscribedAt: true },
+            });
             currentlyOff = member?.unsubscribedAt != null;
         } catch (error) {
             console.error("unsubscribe state read failed:", error);

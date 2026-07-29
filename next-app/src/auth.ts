@@ -1,90 +1,74 @@
-import { MongoDBAdapter } from "@auth/mongodb-adapter";
+import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import NextAuth from "next-auth";
 import GitHub from "next-auth/providers/github";
 import Google from "next-auth/providers/google";
 
-import { mongoClientPromise } from "@/lib/db/mongodb-client";
+import { db, schema } from "@/lib/db";
 
 /**
  * @file NextAuth v5 configuration. The identity source for this app.
  *
- * ONE ACCOUNT ACROSS TWO DOMAINS. This is the part a future reader will most
- * easily break, so it is spelled out:
+ * SELF-CONTAINED ACCOUNTS. This app is its own identity boundary: it owns its
+ * `users` and `accounts` tables and shares them with nothing. Signing in here
+ * creates a user here.
  *
- *   - This app and nicklaunches.com run separate NextAuth instances against the
- *     SAME Atlas cluster, the SAME database, and the SAME `users` / `accounts`
- *     collections. The adapter is what makes that true, and the collection
- *     names below are pinned rather than left to the adapter's defaults so a
- *     future default change cannot quietly fork the two stores.
- *   - Consequence: someone who signed in on nicklaunches.com already has a row
- *     in `users`. Signing in here with the same provider resolves to that row,
- *     so they get the SAME `_id` on both sites. `src/lib/session.ts` hands that
- *     `_id` to the rest of the app as `SessionUser.id`, and `ExchangeMember`
- *     rows key off it. If the `_id` ever stopped being shared, every exchange
- *     record would attach to the wrong person.
- *   - `AUTH_SECRET` MUST be the same value as the Nick Launches app. Sessions
- *     are JWTs, and the secret is what signs and encrypts them, so a shared
- *     secret is what lets a token minted by either side be read by the other
- *     (which the planned cross-domain handoff depends on). Only the cookie is
- *     per-domain: each site issues its own, on its own host.
+ * `AUTH_SECRET` is this app's JWT signing key and nothing else. It does not need
+ * to match any other app's, and should not: no token crosses between them, so a
+ * shared key would only widen the blast radius if either side leaked it.
  *
- * SESSION STRATEGY is `jwt`, matching Nick Launches. That app cannot use
- * database sessions because its Credentials provider does not support them, and
- * having one side write `sessions` rows while the other does not would be a
- * pointless asymmetry on a shared cluster. It also means a normal page render
- * here reads the cookie only, with no round trip to Atlas.
+ * `session.user.id` is this app's own `users.id` (a uuid). `src/lib/session.ts`
+ * hands it to the rest of the app as `SessionUser.id`, and
+ * `exchange_members.user_id` references it.
  *
- * PROVIDERS are Google and GitHub only, for now. Nick Launches additionally has
- * X (Twitter), email + password, and magic links. Magic-link sign-in is
- * DEFERRED here until the SES email stack is wired up in this app: a sign-in
- * path that silently fails to deliver mail is worse than one that is absent.
- * Password sign-in is deliberately not mirrored either, since it would need the
- * password-reset mail that same stack sends.
+ * SESSION STRATEGY is `jwt`. A normal page render reads the cookie only, with
+ * no round trip to Postgres: the adapter is touched on sign-in, not on every
+ * request.
+ *
+ * PROVIDERS are Google and GitHub only, for now. Magic-link sign-in is DEFERRED
+ * until the SES email stack is wired up in this app: a sign-in path that
+ * silently fails to deliver mail is worse than one that is absent. Password
+ * sign-in is deliberately absent too, since it would need the password-reset
+ * mail that same stack sends.
  *
  * WRITES: the adapter is the only thing in this app that writes to `users` or
- * `accounts` (it has to, since a person can start on this domain). No custom
- * profile syncing lives here. Nick Launches owns the extra user fields
- * (`firstName`, `avatar`, `role`, `createdAt`) and backfills them in its own
- * `signIn` event, so a row created here fills out the first time that person
- * visits Nick Launches. See the note in `src/lib/db/mongoose.ts`.
+ * `accounts`, and it manages every column in both. No custom profile syncing
+ * lives here.
+ *
+ * LAZY CONFIG: the config is a function rather than an object so `db()` runs per
+ * request instead of at module load. `src/lib/db/index.ts` reads its connection
+ * string at call time on purpose (a build or a script that imports this module
+ * before its env is loaded would otherwise throw), and an eagerly constructed
+ * adapter would have thrown that property away.
  *
  * PRODUCTION NOTE: Auth.js only trusts the request host automatically on Vercel
  * or outside production. Anywhere else, set `AUTH_URL` (or `AUTH_TRUST_HOST`)
  * or every callback fails with `UntrustedHost`.
  */
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
-    adapter: MongoDBAdapter(mongoClientPromise, {
-        databaseName: process.env.MONGODB_DB,
-        // Pinned, not defaulted. These two names ARE the integration with
-        // nicklaunches.com; see the file header.
-        collections: {
-            Users: "users",
-            Accounts: "accounts",
-            Sessions: "sessions",
-            VerificationTokens: "verification_tokens",
-        },
+export const { handlers, auth, signIn, signOut } = NextAuth(() => ({
+    // Tables are passed explicitly rather than left to the adapter's defaults,
+    // so a future default change cannot quietly point auth at other tables.
+    adapter: DrizzleAdapter(db(), {
+        usersTable: schema.users,
+        accountsTable: schema.accounts,
+        sessionsTable: schema.sessions,
+        verificationTokensTable: schema.verificationTokens,
     }),
 
     // Credentials come from `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` and
     // `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` by Auth.js env inference.
     //
-    // `allowDangerousEmailAccountLinking` is set to MATCH Nick Launches, which
-    // sets it on GitHub, Google, and Twitter. Two apps writing one shared
-    // `users`/`accounts` store must apply the same linking policy: with
-    // different policies, the same action (sign in with GitHub on an account
-    // created with Google) succeeds on one domain and dead-ends with
-    // `OAuthAccountNotLinked` on the other, which is incoherent for a product
-    // whose pitch is that it is the same account.
+    // `allowDangerousEmailAccountLinking` lets someone who first signed up with
+    // Google sign in later with GitHub on the same verified email, instead of
+    // dead-ending on `OAuthAccountNotLinked` with no way forward. Members here
+    // arrive months apart from an agent, a digest email or a match notification,
+    // and will not reliably remember which button they pressed the first time.
     //
-    // On the security tradeoff, and why the stricter setting bought nothing
-    // here: the flag is dangerous when a provider does not verify email
-    // ownership, since someone could register that email at a second provider
-    // and attach themselves to an existing row. Google and GitHub both verify.
-    // More decisively, Nick Launches already links on this exact store with
-    // these exact providers, so refusing to link here does not protect the
-    // account: the same linking is available one domain over. It only made this
-    // site worse at the thing it exists to do.
+    // On the security tradeoff: the flag is dangerous when a provider does not
+    // verify email ownership, since someone could register that email at a
+    // second provider and attach themselves to an existing row. Google and
+    // GitHub both verify, which is why these two are the only providers here.
+    // Adding one that does not verify email means revisiting this flag.
     //
     // The `?error=OAuthAccountNotLinked` copy on /signin is kept: the code is
     // still reachable (a provider can decline to release a verified email), and
@@ -94,7 +78,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         GitHub({ allowDangerousEmailAccountLinking: true }),
     ],
 
-    session: { strategy: "jwt" },
+    session: { strategy: "jwt" as const },
 
     // Both point at our own page so users never see the stock Auth.js screens.
     // `error` matters as much as `signIn`: OAuth failures redirect to the error
@@ -103,11 +87,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
     callbacks: {
         /**
-         * `user` is only populated on the sign-in pass. `user.id` is the Mongo
-         * `_id` as a hex string, handed back by the adapter, which is exactly
-         * the shared id we need to survive into every later request. Copy it
-         * onto the token explicitly rather than relying on `sub`, because Nick
-         * Launches writes `token.id` too and the two token shapes should match.
+         * `user` is only populated on the sign-in pass. `user.id` is this app's
+         * `users.id` uuid, handed back by the adapter, which is exactly the id
+         * that has to survive into every later request. Copy it onto the token
+         * explicitly rather than relying on `sub`, so the field the session
+         * callback below reads is one this file actually sets.
          */
         async jwt({ token, user }) {
             if (user?.id) token.id = user.id;
@@ -116,7 +100,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         /**
          * The contract `src/lib/session.ts` is written against:
-         * `session.user.id` is the shared Mongo `_id` as a string.
+         * `session.user.id` is this app's `users.id` as a string.
          *
          * `token.id` is `unknown` (the JWT is an open record), so it is
          * type-checked rather than cast. Falling back to `token.sub` covers
@@ -132,4 +116,4 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             return session;
         },
     },
-});
+}));

@@ -553,8 +553,9 @@ export default function McpDocsPage() {
                                         Endpoint: <Code>{MCP_URL}</Code>
                                     </li>
                                     <li>
-                                        Transport: Streamable HTTP. A legacy SSE endpoint is also served at{" "}
-                                        <Code>/api/sse</Code>, but use <Code>/api/mcp</Code> unless your client cannot.
+                                        Transport: Streamable HTTP, on <Code>/api/mcp</Code>. Older clients that speak
+                                        the 2025 revision are served on the same URL, so there is no separate endpoint
+                                        to choose.
                                     </li>
                                     <li>
                                         Server identity: <Code>builders-backlinks</Code>, version <Code>0.1.0</Code>.

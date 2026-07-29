@@ -1,6 +1,6 @@
 import { FetchError, fetchSiteHtml, normalizeUrl } from "@/lib/analyze/fetch-html";
 import type { LinkVerification, VerifyLink } from "@/lib/contracts";
-import type { Placement } from "@/lib/models/ExchangeLink";
+import type { Placement } from "@/lib/exchange";
 
 import {
     type ParsedAnchor,

@@ -1,10 +1,11 @@
+import { eq, inArray, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
-import { connectMongo } from "@/lib/db/mongoose";
+import { db } from "@/lib/db";
+import { exchangeLinks, exchangeSites } from "@/lib/db/schema";
 import { isAuthorizedCron } from "@/lib/email/cron-auth";
 import { notifyLinkRemoved } from "@/lib/email/notify";
-import { ExchangeLink, nextCheckAt } from "@/lib/models/ExchangeLink";
-import { ExchangeSite } from "@/lib/models/ExchangeSite";
+import { nextCheckAt } from "@/lib/exchange";
 import { verifyLink } from "@/lib/verify";
 
 /**
@@ -37,23 +38,22 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: "unauthorized" }, { status: 403 });
     }
 
-    await connectMongo();
     const now = new Date();
 
     // Oldest checked first, so a backlog drains fairly rather than starving the
-    // links that have waited longest.
-    const candidates = await ExchangeLink.find({ status: { $in: ["live", "missing"] } })
-        .sort({ lastCheckedAt: 1 })
-        .limit(BATCH * 3)
-        .exec();
+    // links that have waited longest. NULLS FIRST is explicit: a link that has
+    // never been checked has waited longest of all, and an ascending sort in
+    // Postgres would otherwise put it at the very back of the queue.
+    const candidates = await db()
+        .select()
+        .from(exchangeLinks)
+        .where(inArray(exchangeLinks.status, ["live", "missing"]))
+        .orderBy(sql`${exchangeLinks.lastCheckedAt} asc nulls first`)
+        .limit(BATCH * 3);
 
     const due = candidates
         .filter((link) => {
-            const at = nextCheckAt({
-                status: link.status,
-                firstSeenAt: link.firstSeenAt,
-                checkCount: link.checkCount,
-            });
+            const at = nextCheckAt(link);
             return at === null ? false : at <= now;
         })
         .slice(0, BATCH);
@@ -65,10 +65,12 @@ export async function GET(request: Request) {
     for (const link of due) {
         if (!link.pageUrl) continue;
 
-        const [hostSite, beneficiarySite] = await Promise.all([
-            ExchangeSite.findById(link.fromSite).exec(),
-            ExchangeSite.findById(link.toSite).exec(),
-        ]);
+        const sites = await db()
+            .select()
+            .from(exchangeSites)
+            .where(inArray(exchangeSites.id, [link.fromSiteId, link.toSiteId]));
+        const hostSite = sites.find((s) => s.id === link.fromSiteId);
+        const beneficiarySite = sites.find((s) => s.id === link.toSiteId);
         if (!hostSite || !beneficiarySite) continue;
 
         const result = await verifyLink({
@@ -77,45 +79,58 @@ export async function GET(request: Request) {
         });
         checked++;
 
-        link.lastCheckedAt = now;
-        link.checkCount = (link.checkCount ?? 0) + 1;
-        link.lastMessage = result.message;
+        // Every branch below writes these three, so they are the base of each patch.
+        const touched = {
+            lastCheckedAt: now,
+            checkCount: link.checkCount + 1,
+            lastMessage: result.message,
+            updatedAt: now,
+        };
 
         if (result.error !== null) {
             // Inconclusive. Leave the status alone and try again next run.
             inconclusive++;
-            await link.save();
+            await db().update(exchangeLinks).set(touched).where(eq(exchangeLinks.id, link.id));
             continue;
         }
 
         if (result.found) {
-            link.status = "live";
-            link.placement = result.placement;
-            link.rel = [...result.rel];
-            await link.save();
+            await db()
+                .update(exchangeLinks)
+                .set({ ...touched, status: "live", placement: result.placement, rel: [...result.rel] })
+                .where(eq(exchangeLinks.id, link.id));
             continue;
         }
 
         // Genuinely gone, and it was live before.
         const wasLive = link.status === "live";
-        link.status = "removed";
-        link.removedAt = now;
-        await link.save();
+        await db()
+            .update(exchangeLinks)
+            .set({ ...touched, status: "removed", removedAt: now })
+            .where(eq(exchangeLinks.id, link.id));
 
         if (wasLive) {
             removed++;
             // Reciprocity is derived from what is actually live, so the giver
-            // loses the credit for a link that no longer exists.
-            await ExchangeSite.updateOne({ _id: hostSite._id }, { $inc: { linksGiven: -1 } });
-            await ExchangeSite.updateOne({ _id: beneficiarySite._id }, { $inc: { linksGot: -1 } });
+            // loses the credit for a link that no longer exists. Floored at
+            // zero in SQL: the counters are non-negative by definition, and an
+            // unmatched decrement would otherwise be permanent.
+            await db()
+                .update(exchangeSites)
+                .set({ linksGiven: sql`greatest(${exchangeSites.linksGiven} - 1, 0)`, updatedAt: now })
+                .where(eq(exchangeSites.id, hostSite.id));
+            await db()
+                .update(exchangeSites)
+                .set({ linksGot: sql`greatest(${exchangeSites.linksGot} - 1, 0)`, updatedAt: now })
+                .where(eq(exchangeSites.id, beneficiarySite.id));
 
             void notifyLinkRemoved({
-                matchId: String(link.match),
+                matchId: link.matchId,
                 hostSite,
                 beneficiarySite,
                 pageUrl: link.pageUrl,
-                anchorText: link.anchorText ?? null,
-                firstSeenAt: link.firstSeenAt ?? null,
+                anchorText: link.anchorText,
+                firstSeenAt: link.firstSeenAt,
                 removedAt: now,
             });
         }

@@ -14,21 +14,13 @@ import { getSessionUser } from "@/lib/session";
  * Server component, zero client JavaScript: both buttons are form submits into
  * server actions, so this page works before hydration and with scripting off.
  *
- * Two things it is written to do beyond collecting a sign-in:
- *
- *   1. SAY THE SHARED-ACCOUNT PART OUT LOUD. Accounts here are the same
- *      accounts as nicklaunches.com, same row, same `_id`. People find that out
- *      one of two ways: we tell them here, or they are surprised by it later
- *      (their name already filled in, or an `OAuthAccountNotLinked` error about
- *      an account they do not remember creating on this site). Telling them is
- *      cheaper and it is a genuine benefit.
- *   2. EXPLAIN FAILURES. Auth.js hands failures back as a bare `?error=` code
- *      and, unhandled, the user just gets this page again with no explanation.
- *      See `sign-in-errors.ts`.
+ * Beyond collecting a sign-in it EXPLAINS FAILURES. Auth.js hands failures back
+ * as a bare `?error=` code and, unhandled, the user just gets this page again
+ * with no explanation. See `sign-in-errors.ts`.
  *
  * Deliberately NOT here: email and password, and magic links. The SES stack is
  * not wired up in this app yet, so both would be sign-in paths that quietly
- * fail to deliver. Nick Launches offers them; this app will once email works.
+ * fail to deliver. Both arrive once the email stack works.
  *
  * The page reads the session through `@/lib/session`, not `@/auth` directly,
  * per the rule at the top of that file. Only `auth-actions.ts` touches `@/auth`.
@@ -36,7 +28,7 @@ import { getSessionUser } from "@/lib/session";
 
 export const metadata: Metadata = {
     title: "Sign in",
-    description: "Sign in to Builders Backlinks with Google or GitHub. Your Nick Launches account works here too.",
+    description: "Sign in to Builders Backlinks with Google or GitHub.",
     // A sign-in page has nothing to rank for and every query string variant of
     // it is a duplicate, so keep it out of the index entirely.
     robots: { index: false, follow: false },
@@ -112,19 +104,6 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
                             <div className="mt-6 flex flex-col gap-3">
                                 <ProviderButton provider="google" label="Google" callbackUrl={callbackUrl} />
                                 <ProviderButton provider="github" label="GitHub" callbackUrl={callbackUrl} />
-                            </div>
-
-                            {/* The shared-account explanation. Placed under the
-                                buttons on purpose: it answers the question
-                                someone asks right after they press one. */}
-                            <div className="border-line mt-7 border-t pt-5">
-                                <p className="text-muted text-[13.5px] leading-relaxed">
-                                    <span className="text-fg font-medium">
-                                        Already have a Nick Launches account? It works here.
-                                    </span>{" "}
-                                    It is the same account, not a linked one: one profile, one identity, both sites.
-                                    Sign in with the provider you already use there and everything comes with you.
-                                </p>
                             </div>
                         </>
                     )}

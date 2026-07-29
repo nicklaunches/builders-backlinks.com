@@ -1,8 +1,7 @@
 import { Body, Container, Head, Hr, Html, Link, Preview, Section, Text } from "@react-email/components";
 import type { CSSProperties, ReactNode } from "react";
 
-import type { Placement } from "@/lib/models/ExchangeLink";
-import type { PlacementOffer } from "@/lib/models/ExchangeSite";
+import type { Placement, PlacementOffer } from "@/lib/exchange";
 
 import { getEmailContext, getSiteOrigin } from "./_context";
 

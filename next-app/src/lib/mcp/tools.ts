@@ -1,11 +1,11 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 import { CATEGORIES } from "@/lib/categories";
 import { AnalyzeError } from "@/lib/contracts";
+import type { ExchangeMember } from "@/lib/db/schema";
+import { PLACEMENT_OFFERS } from "@/lib/exchange";
 import { RateLimited, enforceToolLimit } from "@/lib/mcp/limits";
-import type { ExchangeMemberHydrated } from "@/lib/models/ExchangeMember";
-import { PLACEMENT_OFFERS } from "@/lib/models/ExchangeSite";
 import { getCategoryDepths, getRules } from "@/lib/services/catalog";
 import { LinkError, checkLinks, getLinkBrief, getStanding, markLinkPlaced } from "@/lib/services/links";
 import { MatchError, autoPair, listMatches, respondToMatch, searchPartners } from "@/lib/services/matches";
@@ -28,6 +28,13 @@ import { SiteError, commitSite, draftSite, listMySites } from "@/lib/services/si
  *    prompt each individual step.
  * 2. Errors are instructions, not status codes. "You are not signed in" is
  *    useless; "run this to add your key, then retry" gets the member unstuck.
+ *
+ * `registerTool` is SDK-level, so this file survived the move off Vercel's
+ * transport onto Cloudflare's untouched apart from where the two SDK versions
+ * differ: v2 takes a Standard Schema rather than a raw Zod shape, so each
+ * `inputSchema` is wrapped in `z.object()`. Argument names are unchanged and
+ * deliberately snake_case (`dr_min`, `match_id`, `page_url`) because that is
+ * what the published tool contract already says.
  */
 
 /**
@@ -39,7 +46,7 @@ import { SiteError, commitSite, draftSite, listMySites } from "@/lib/services/si
  * to remember to, which is the kind of thing that gets forgotten on the one
  * tool that most needed it.
  */
-export type ToolContext = { member: ExchangeMemberHydrated | null; caller: string };
+export type ToolContext = { member: ExchangeMember | null; caller: string };
 
 type TextResult = { content: Array<{ type: "text"; text: string }>; isError?: boolean };
 
@@ -64,7 +71,7 @@ const SIGN_IN_HINT = [
     "Everything read-only (search_partners, get_categories, get_rules) works without a key.",
 ].join("\n");
 
-function requireMember(ctx: ToolContext): ExchangeMemberHydrated {
+function requireMember(ctx: ToolContext): ExchangeMember {
     if (!ctx.member) throw new NotSignedIn();
     return ctx.member;
 }
@@ -130,7 +137,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
             title: "Exchange rules",
             description:
                 "The house rules of the backlink exchange. Read this before submitting a site or placing a link: it explains what counts as a valid placement and what does not get matched.",
-            inputSchema: {},
+            inputSchema: z.object({}),
         },
         guard(ctx, "get_rules", async () => {
             const { summary, rules } = getRules();
@@ -144,7 +151,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
             title: "Category depth",
             description:
                 "Lists every category in the exchange with how many active sites it has and the median Domain Rating. Use it to see whether a category can match today, or whether the member would be first in it.",
-            inputSchema: {},
+            inputSchema: z.object({}),
         },
         guard(ctx, "get_categories", async () => {
             const depths = await getCategoryDepths();
@@ -180,12 +187,12 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
             title: "Search partners",
             description:
                 "Finds sites in the exchange that are open to trading a link. Results are masked: you get what each site is about, its Domain Rating, and the anchors it wants, but never its domain. Domains are only revealed once both sides accept a match.",
-            inputSchema: {
+            inputSchema: z.object({
                 category: z.enum(CATEGORIES).optional().describe("Restrict to one category."),
                 dr_min: z.number().int().min(0).max(100).optional(),
                 dr_max: z.number().int().min(0).max(100).optional(),
                 limit: z.number().int().min(1).max(20).default(5),
-            },
+            }),
         },
         guard(ctx, "search_partners", async (args) => {
             const partners = await searchPartners({
@@ -224,7 +231,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
             title: "Submit a site",
             description:
                 "Lists a site in the exchange. Call it FIRST without `confirm` to get a drafted listing (category, description, suggested anchors) and show it to the member. Only call again with confirm=true after they have seen and approved the wording, because the description is shown to strangers.",
-            inputSchema: {
+            inputSchema: z.object({
                 url: z.string().describe("The site's URL, e.g. https://yourproduct.com"),
                 confirm: z.boolean().default(false).describe("Set true only after the member has approved the draft."),
                 category: z.enum(CATEGORIES).optional().describe("Overrides the drafted category on confirm."),
@@ -234,7 +241,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
                     .enum(PLACEMENT_OFFERS)
                     .optional()
                     .describe("What the member can offer a partner in return."),
-            },
+            }),
         },
         guard(ctx, "submit_site", async (args) => {
             const member = requireMember(ctx);
@@ -286,7 +293,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
         {
             title: "My sites",
             description: "Lists the sites this member has in the exchange, with status and link standing.",
-            inputSchema: {},
+            inputSchema: z.object({}),
         },
         guard(ctx, "list_my_sites", async () => {
             const member = requireMember(ctx);
@@ -311,11 +318,11 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
             title: "My matches",
             description:
                 "Lists this member's matches. Partners are masked until both sides accept, at which point the domain and email are revealed and you can call get_link_brief.",
-            inputSchema: {
+            inputSchema: z.object({
                 state: z
                     .enum(["proposed", "a_accepted", "b_accepted", "agreed", "placed", "declined", "expired"])
                     .optional(),
-            },
+            }),
         },
         guard(ctx, "list_matches", async (args) => {
             const member = requireMember(ctx);
@@ -346,11 +353,11 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
             title: "Accept or decline a match",
             description:
                 "Accepts or declines a proposed match. When both sides accept, the two domains and emails are revealed to each other and the link brief becomes available.",
-            inputSchema: {
+            inputSchema: z.object({
                 match_id: z.string(),
                 accept: z.boolean(),
                 reason: z.string().max(500).optional().describe("Optional note when declining."),
-            },
+            }),
         },
         guard(ctx, "respond_to_match", async (args) => {
             const member = requireMember(ctx);
@@ -381,10 +388,10 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
             title: "Get the link brief",
             description:
                 "Returns everything needed to place a partner's link: the target URL, approved anchor options, what their site is about, and a paste-ready snippet. Use this to write the link into the member's own site, in a relevant existing page, in their own words. Where it goes is entirely the member's choice.",
-            inputSchema: {
+            inputSchema: z.object({
                 match_id: z.string(),
                 format: z.enum(["html", "markdown", "mdx", "jsx"]).default("html"),
-            },
+            }),
         },
         guard(ctx, "get_link_brief", async (args) => {
             const member = requireMember(ctx);
@@ -413,11 +420,11 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
             title: "Mark a link as placed",
             description:
                 "Tells the exchange a partner's link is now live on a given page, and verifies it immediately. Returns what we actually found: whether it is there, whether it sits in content or in a footer, and whether it is dofollow.",
-            inputSchema: {
+            inputSchema: z.object({
                 match_id: z.string(),
                 page_url: z.string().describe("The exact page the link was placed on."),
                 anchor_used: z.string().optional(),
-            },
+            }),
         },
         guard(ctx, "mark_link_placed", async (args) => {
             const member = requireMember(ctx);
@@ -458,7 +465,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
             title: "Check my links",
             description:
                 "Every link this member has given and received, with its current verified state, placement, and rel.",
-            inputSchema: {},
+            inputSchema: z.object({}),
         },
         guard(ctx, "check_links", async () => {
             const member = requireMember(ctx);
@@ -482,7 +489,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
         {
             title: "My standing",
             description: "How many links this member has given versus received, and whether matching favours them.",
-            inputSchema: {},
+            inputSchema: z.object({}),
         },
         guard(ctx, "get_my_standing", async () => {
             const member = requireMember(ctx);

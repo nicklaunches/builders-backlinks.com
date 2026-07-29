@@ -1,6 +1,6 @@
 import { Button, Link, Section, Text } from "@react-email/components";
 
-import type { Placement } from "@/lib/models/ExchangeLink";
+import type { Placement } from "@/lib/exchange";
 
 import { getSiteOrigin } from "./_context";
 import { EmailLayout, Facts, palette, placementLabel, relLabel, styles } from "./_layout";

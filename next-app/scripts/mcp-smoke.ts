@@ -1,15 +1,15 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { config as loadEnv } from "dotenv";
-import mongoose from "mongoose";
+import { eq } from "drizzle-orm";
+
+import { hashApiKey, mintApiKey } from "@/lib/auth/api-key";
+import { db } from "@/lib/db";
+import { exchangeMembers, users } from "@/lib/db/schema";
 
 // Next loads .env.local automatically; a plain node script does not. Load it
 // before anything imports a module that reads process.env at call time.
 loadEnv({ path: ".env.local", quiet: true });
-
-import { hashApiKey, mintApiKey } from "@/lib/auth/api-key";
-import { connectMongo } from "@/lib/db/mongoose";
-import { ExchangeMember } from "@/lib/models/ExchangeMember";
 
 /**
  * @file End-to-end smoke test for the MCP server.
@@ -20,10 +20,15 @@ import { ExchangeMember } from "@/lib/models/ExchangeMember";
  * wire against a running dev server: no mocks, no direct service calls.
  *
  * Usage:
- *   pnpm dev            (in another shell, on PORT=3100)
+ *   pnpm dev                              (in another shell, on PORT=3100)
  *   pnpm test:mcp
  *
- * Requires a local mongod. It writes one throwaway member and deletes it again.
+ * Or against the real runtime, which is the one that matters:
+ *   npx opennextjs-cloudflare build && npx wrangler dev --port 8788 --local
+ *   MCP_SMOKE_BASE=http://localhost:8788 pnpm test:mcp
+ *
+ * Requires a reachable Postgres. It writes one throwaway user and member, and
+ * deletes them again.
  */
 
 const BASE = process.env.MCP_SMOKE_BASE ?? "http://localhost:3100";
@@ -85,7 +90,11 @@ async function main() {
         "submit_site",
     ];
     const missing = expected.filter((n) => !names.includes(n));
-    check("every expected tool is registered", missing.length === 0, missing.length ? `missing: ${missing}` : undefined);
+    check(
+        "every expected tool is registered",
+        missing.length === 0,
+        missing.length ? `missing: ${missing}` : undefined,
+    );
 
     const rules = textOf(await anon.callTool({ name: "get_rules", arguments: {} }));
     check("get_rules works without auth", rules.includes("reciprocal"), rules.slice(0, 120));
@@ -121,12 +130,12 @@ async function main() {
 
     // --- authenticated session ---------------------------------------------
     console.log("\nauthenticated");
-    await connectMongo();
     const key = mintApiKey();
-    const userId = new mongoose.Types.ObjectId();
-    const member = await ExchangeMember.create({
-        user: userId,
-        email: "smoke@builders-backlinks.test",
+    const email = `smoke+${Date.now()}@builders-backlinks.test`;
+    const [user] = await db().insert(users).values({ email }).returning({ id: users.id });
+    await db().insert(exchangeMembers).values({
+        userId: user.id,
+        email,
         apiKeyHash: key.hash,
         apiKeyIssuedAt: new Date(),
         verifiedAt: new Date(),
@@ -152,7 +161,7 @@ async function main() {
         const matches = textOf(await auth.callTool({ name: "list_matches", arguments: {} }));
         check("list_matches works", matches.length > 0, matches.slice(0, 120));
 
-        const badBrief = await auth.callTool({ name: "get_link_brief", arguments: { match_id: String(userId) } });
+        const badBrief = await auth.callTool({ name: "get_link_brief", arguments: { match_id: user.id } });
         check("get_link_brief refuses an unknown match", (badBrief as { isError?: boolean }).isError === true);
 
         const badKey = await connect("bb_live_totally-not-a-real-key");
@@ -162,8 +171,8 @@ async function main() {
 
         await auth.close();
     } finally {
-        await ExchangeMember.deleteOne({ _id: member._id });
-        await mongoose.disconnect();
+        // The member row cascades off the user row, so one delete is enough.
+        await db().delete(users).where(eq(users.id, user.id));
     }
 
     console.log(`\n${passed} passed, ${failed} failed`);

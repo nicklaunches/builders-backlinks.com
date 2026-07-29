@@ -4,13 +4,17 @@
  * Every claim on this page is checkable against the code, and was written by
  * reading it rather than by adapting a template:
  *
- *   - the stored fields come from the four schemas in `src/lib/models`
+ *   - the stored fields come from the tables in `src/lib/db/schema.ts`
  *   - "only a SHA-256 hash of the key" comes from `lib/auth/api-key.ts`
  *   - the crawler user agent is the literal string in `lib/analyze/fetch-html.ts`
  *   - the OpenRouter and VerifiedDR disclosures come from `lib/analyze/describe.ts`
  *     and `lib/analyze/verifieddr.ts`, including the detail that the model is never
  *     given the domain
  *   - the masked/revealed boundary comes from `lib/services/mask.ts`
+ *   - the analytics claims describe Cloudflare Web Analytics, injected at the
+ *     edge on "Automatic setup" rather than rendered by this app. It was chosen
+ *     precisely BECAUSE it sets no cookie, which is what lets section 8 say the
+ *     only cookie here is your sign-in session
  *
  * Those third-party disclosures are the reason this page exists in a form
  * longer than one paragraph. A member submitting a URL has no way to know that
@@ -100,7 +104,9 @@ export default function PrivacyPage() {
                                     match. Then they learn both, at once, and that cannot be undone.
                                 </li>
                                 <li>
-                                    We do not sell anything to anyone, and we run no advertising or tracking scripts.
+                                    We do not sell anything to anyone, and we run no advertising scripts and no
+                                    cross-site trackers. The one analytics script is cookieless and counts pages, not
+                                    people. See section 8.
                                 </li>
                             </ul>
                         </Prose>
@@ -112,10 +118,8 @@ export default function PrivacyPage() {
                     <Section id="stored" title="2. What we store">
                         <Prose>
                             <p>
-                                <strong>About you.</strong> Your email address, and the account id you share with{" "}
-                                <a href="https://nicklaunches.com">nicklaunches.com</a> (the two sites use one account
-                                system, so the same person is the same user on both). Exchange data is kept separately
-                                from that shared account record, which this service only ever reads.
+                                <strong>About you.</strong> Your email address, your account id on this site, and
+                                whatever name and avatar Google or GitHub hands over when you sign in.
                             </p>
                             <p>
                                 <strong>About each site you list.</strong> The domain and the full URL, the category,
@@ -143,9 +147,7 @@ export default function PrivacyPage() {
                             </p>
                             <p>
                                 <strong>About your preferences.</strong> Your digest cadence, when the last digest was
-                                sent, and whether you have unsubscribed. Also two timestamps recording whether we have
-                                asked you to launch on nicklaunches.com and whether you did, which is how we measure
-                                whether the two products help each other at all.
+                                sent, and whether you have unsubscribed.
                             </p>
                             <p>
                                 Server logs from our host retain the ordinary request metadata (IP address, user agent,
@@ -265,14 +267,17 @@ export default function PrivacyPage() {
                         <Prose className="mt-6">
                             <p>
                                 <strong>Amazon SES</strong> sends our email, so your address passes through it in order
-                                to reach you. <strong>MongoDB</strong> stores the data described above, and the
-                                application runs on <strong>Vercel</strong>, which means both hold it on our behalf as
-                                infrastructure providers.
+                                to reach you. <strong>Neon</strong> stores the data described above, and the application
+                                runs on <strong>Cloudflare</strong>, which also provides the privacy-preserving page
+                                analytics described in section 8. All three hold data on our behalf as infrastructure
+                                providers.
                             </p>
                             <p>
-                                We do not sell, rent or share member data with anyone else, and there is no advertising
-                                network, data broker or analytics vendor in the picture. If that ever changes, it will
-                                be on this page before it happens, and members will be emailed.
+                                We do not sell, rent or share member data with anyone else. There is no advertising
+                                network and no data broker in the picture. The only analytics is Cloudflare Web
+                                Analytics, described in section 8, which is cookieless and reports page-level counts
+                                rather than anything about you as a person. If that ever changes, it will be on this
+                                page before it happens, and members will be emailed.
                             </p>
                         </Prose>
                     </Section>
@@ -340,11 +345,26 @@ export default function PrivacyPage() {
                     ------------------------------------------------------- */}
                     <Section id="cookies" title="8. Cookies and tracking">
                         <Prose>
-                            <p>One cookie, for your sign-in session, scoped to this domain. That is the whole list.</p>
                             <p>
-                                There is no analytics script, no advertising pixel, no session recorder and no
-                                cross-site tracker on this site. The MCP server sets no cookies at all: it authenticates
-                                with a bearer token and nothing else.
+                                One cookie, for your sign-in session, scoped to this domain. That is still the whole
+                                list, and it is the reason we use the analytics we do.
+                            </p>
+                            <p>
+                                This site runs <strong>Cloudflare Web Analytics</strong>. It sets no cookie, writes
+                                nothing to your browser storage, and builds no profile or identifier that follows you
+                                between sites or between visits. It reports counts: which pages were viewed, roughly
+                                where visits came from, and which browsers and countries, in aggregate.
+                            </p>
+                            <p>
+                                We chose it over Google Analytics deliberately. Google Analytics would have set
+                                cookies, sent your visit to an advertising company, and made three other statements on
+                                this page untrue. The trade is that we get materially less: no funnels, no per-visitor
+                                journeys, no custom events. That was worth it.
+                            </p>
+                            <p>
+                                There is still no advertising pixel, no session recorder and no cross-site tracker on
+                                this site. The MCP server sets no cookies at all: it authenticates with a bearer token
+                                and nothing else.
                             </p>
                         </Prose>
                     </Section>
@@ -374,11 +394,7 @@ export default function PrivacyPage() {
                                     already has your domain and email address. Deleting our copy does not delete theirs.
                                 </li>
                             </ul>
-                            <p>
-                                Your shared nicklaunches.com account is a separate thing and is not deleted by this
-                                request unless you ask for that too. Backups roll off on their own within a short
-                                window.
-                            </p>
+                            <p>Backups roll off on their own within a short window.</p>
                         </Prose>
                     </Section>
 

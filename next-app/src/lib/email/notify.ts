@@ -1,3 +1,5 @@
+import { eq } from "drizzle-orm";
+
 import { DigestEmail } from "@/emails/digest";
 import { LinkRemovedEmail } from "@/emails/link-removed";
 import { LinkVerifiedEmail } from "@/emails/link-verified";
@@ -5,11 +7,10 @@ import { MatchAgreedEmail } from "@/emails/match-agreed";
 import { MatchProposedEmail } from "@/emails/match-proposed";
 import type { Category } from "@/lib/categories";
 import type { MaskedPartner } from "@/lib/contracts";
-import { connectMongo } from "@/lib/db/mongoose";
+import { db } from "@/lib/db";
+import { type ExchangeSite, exchangeMembers } from "@/lib/db/schema";
 import { sendEmail } from "@/lib/email/send";
-import type { Placement } from "@/lib/models/ExchangeLink";
-import { ExchangeMember } from "@/lib/models/ExchangeMember";
-import type { ExchangeSiteHydrated } from "@/lib/models/ExchangeSite";
+import type { Placement } from "@/lib/exchange";
 import type { LinkBrief } from "@/lib/services/links";
 import { toMaskedPartner, toRevealedPartner } from "@/lib/services/mask";
 
@@ -35,9 +36,12 @@ import { toMaskedPartner, toRevealedPartner } from "@/lib/services/mask";
  */
 
 /** Resolves the member email behind a site. Null when the member row is gone. */
-async function emailForSite(site: ExchangeSiteHydrated): Promise<string | null> {
-    await connectMongo();
-    const member = await ExchangeMember.findOne({ user: site.owner }).select("email unsubscribedAt").exec();
+async function emailForSite(site: ExchangeSite): Promise<string | null> {
+    const [member] = await db()
+        .select({ email: exchangeMembers.email })
+        .from(exchangeMembers)
+        .where(eq(exchangeMembers.userId, site.ownerId))
+        .limit(1);
     return member?.email ?? null;
 }
 
@@ -59,8 +63,8 @@ async function safely(label: string, run: () => Promise<unknown>): Promise<void>
  */
 export async function notifyMatchProposed(input: {
     matchId: string;
-    siteA: ExchangeSiteHydrated;
-    siteB: ExchangeSiteHydrated;
+    siteA: ExchangeSite;
+    siteB: ExchangeSite;
     expiresAt: Date;
     widened?: boolean;
 }): Promise<void> {
@@ -103,8 +107,8 @@ export async function notifyMatchProposed(input: {
  */
 export async function notifyMatchAgreed(input: {
     matchId: string;
-    siteA: ExchangeSiteHydrated;
-    siteB: ExchangeSiteHydrated;
+    siteA: ExchangeSite;
+    siteB: ExchangeSite;
     /** Brief for A, whose target is B. */
     briefForA: LinkBrief;
     /** Brief for B, whose target is A. */
@@ -144,7 +148,7 @@ export async function notifyMatchAgreed(input: {
 
 /** Reports a placement check to one member. */
 export async function notifyLinkVerified(input: {
-    site: ExchangeSiteHydrated;
+    site: ExchangeSite;
     direction: "given" | "received";
     pageUrl: string;
     targetDomain: string;
@@ -185,9 +189,9 @@ export async function notifyLinkVerified(input: {
 export async function notifyLinkRemoved(input: {
     matchId: string;
     /** The site whose page was hosting the link. */
-    hostSite: ExchangeSiteHydrated;
+    hostSite: ExchangeSite;
     /** The site the link pointed at. */
-    beneficiarySite: ExchangeSiteHydrated;
+    beneficiarySite: ExchangeSite;
     pageUrl: string;
     anchorText: string | null;
     firstSeenAt: Date | null;

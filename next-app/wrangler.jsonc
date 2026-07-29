@@ -1,0 +1,88 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "builders-backlinks",
+	// worker.ts, not .open-next/worker.js directly: it re-exports OpenNext's
+	// fetch handler and the Durable Objects unchanged, and adds the scheduled()
+	// handler that Cron Triggers need. OpenNext does not generate one.
+	"main": "worker.ts",
+	// worker.ts imports the generated bundle under this stable name rather than
+	// its real relative path, so that type-checking behaves identically whether
+	// or not a build has run. open-next-worker.d.ts explains why.
+	"alias": {
+		"open-next/worker": "./.open-next/worker.js"
+	},
+	"compatibility_date": "2025-03-01",
+	// Required by @opennextjs/cloudflare. This app additionally needs
+	// node:crypto (API key hashing, the unsubscribe HMAC), AsyncLocalStorage
+	// (the email render context) and node:dns (the SSRF guard in
+	// lib/analyze/fetch-html.ts). All three were spiked on workerd and work.
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"assets": {
+		"directory": ".open-next/assets",
+		"binding": "ASSETS"
+	},
+	// Serve the apex domain directly. Requires the zone to already be in this
+	// Cloudflare account, so this fails to deploy until the nameservers are
+	// moved. Comment it out to deploy to *.workers.dev first.
+	"routes": [
+		{
+			"pattern": "builders-backlinks.com",
+			"custom_domain": true
+		}
+	],
+	// Non-secret config. Everything here is readable by anyone who can see the
+	// repo, which is the test for whether it belongs in this block rather than
+	// in `wrangler secret put`.
+	//
+	// AUTH_URL and AUTH_TRUST_HOST are not optional off Vercel: Auth.js refuses
+	// any request it cannot attribute to a known host, so without one of them
+	// every single sign-in fails with UntrustedHost.
+	//
+	// There is deliberately no DATABASE_URL here. In the Worker the connection
+	// string comes from the Hyperdrive binding below; DATABASE_URL is only for
+	// local runs and migration scripts.
+	//
+	// AWS_REGION is us-west-2 because that is where this account already holds
+	// SES production access. SES is regional in every respect that matters:
+	// the identity, its DKIM tokens, the sending quota and production access
+	// are all per-region, and an identity verified in one region is invisible
+	// from another. Moving the region means reissuing the DKIM CNAMEs and
+	// repointing the IAM policy ARN, so it is not a value to change casually.
+	"vars": {
+		"AUTH_URL": "https://builders-backlinks.com",
+		"AUTH_TRUST_HOST": "true",
+		"AWS_REGION": "us-west-2",
+		"EMAIL_FROM": "hello@builders-backlinks.com"
+	},
+	// Neon Postgres, pooled at the edge. A Hyperdrive binding is NOT an
+	// environment variable: the connection string arrives on the Cloudflare
+	// context, which is why lib/db/index.ts reads getCloudflareContext() and
+	// only falls back to DATABASE_URL when there is no request context (scripts,
+	// drizzle-kit, tests).
+	"hyperdrive": [
+		{
+			"binding": "HYPERDRIVE",
+			"id": "f3ba7f40a44c4ecd8ceccfddb959cf4a",
+			"localConnectionString": "postgresql://postgres:postgres@localhost:5432/builders_backlinks"
+		}
+	],
+	// Replaces the two entries that were in vercel.json. Note the shape change:
+	// a Cron Trigger invokes the Worker's scheduled() handler rather than
+	// fetching a URL, so the handler dispatches to the route logic. The HTTP
+	// routes stay reachable for manual runs and keep failing closed without
+	// CRON_SECRET.
+	// Each expression must have a matching entry in CRON_ROUTES in worker.ts.
+	// An unmapped one fires, finds no route and logs an error rather than
+	// running the wrong job.
+	"triggers": {
+		"crons": [
+			"0 9 * * 2", // weekly digest, Tuesday 09:00 UTC
+			"0 4 * * *" // link rechecks, daily 04:00 UTC
+		]
+	},
+	"observability": {
+		"enabled": true
+	}
+}

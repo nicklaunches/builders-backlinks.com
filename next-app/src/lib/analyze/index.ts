@@ -1,5 +1,5 @@
 import { AnalyzeError, type AnalyzeSite, type SiteAnalysis } from "@/lib/contracts";
-import { normalizeDomain } from "@/lib/models/ExchangeSite";
+import { normalizeDomain } from "@/lib/exchange";
 
 import { describeSite } from "./describe";
 import { extractPage } from "./extract";

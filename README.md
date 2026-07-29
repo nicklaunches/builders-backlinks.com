@@ -12,7 +12,7 @@ Submit a site, get matched with another builder in your category, and trade one 
 
 Ranking Raccoon publishes that 71% of link requests get a reply and only 35% become a published link. So roughly half of *agreed* trades die, not because anyone changed their mind, but because placing the link means opening an editor, finding the right page, writing a sentence, committing, and deploying.
 
-An agent is already sitting in that repository. It can accept the match, write the link into a real page in the member's own words, and report it back for verification. That gap is the whole reason this exists.
+An agent is already sitting in that repository.
 
 ```
 > trade a link
@@ -38,37 +38,24 @@ Eleven tools, fully documented at [`/docs/mcp`](https://builders-backlinks.com/d
 
 ## Local development
 
-Requires Node 20+, pnpm, and a local MongoDB.
+Requires Node 20+, pnpm, and a local PostgreSQL. The app lives in `next-app/`; there is no root package.
 
 ```bash
+cd next-app
 pnpm install
-cp next-app/.env.example next-app/.env.local   # then fill it in
-mongod --dbpath /tmp/bb-mongo --port 27717     # or point MONGODB_URI anywhere
+cp .env.example .env.local     # then fill it in
+createdb builders_backlinks    # or point DATABASE_URL anywhere
+pnpm db:migrate
 pnpm dev
 ```
 
-| Command            | What it does                                                                    |
-| ------------------ | ------------------------------------------------------------------------------- |
-| `pnpm test`      | Unit tests for the matching engine                                              |
-| `pnpm test:mcp`  | End-to-end MCP checks over the real protocol (needs a running server and Mongo) |
-| `pnpm typecheck` | `tsc --noEmit`                                                                |
-| `pnpm lint`      | ESLint, including the layering rules below                                      |
+`pnpm dev` is Next on Node, which is convenient and is *not* the production runtime. [CLAUDE.md](./CLAUDE.md) has the full command list, how to run it the way it actually deploys, and the workerd behaviour that only shows up there.
 
-`pnpm test:mcp` is the meaningful one: it drives the server with the official MCP SDK client, exactly as an agent would.
+## Hosting
 
-## Architecture, in three rules
+Cloudflare Workers via [OpenNext](https://opennext.js.org/cloudflare), with Postgres (Neon in production) behind a Hyperdrive binding. Analytics is [Cloudflare Web Analytics](https://developers.cloudflare.com/web-analytics/), which is cookieless, and which is what keeps the claim on `/privacy` true: the only cookie this site sets is your sign-in session.
 
-**1. One service layer.** MCP tools and web routes both call `src/lib/services/*`. A tool handler contains no logic. The moment a tool does something a web route would not, the agent path and the browser path have started to drift, and the agent path is supposed to be first-class. There is an ESLint rule enforcing this.
-
-**2. The masking boundary is structural.** A partner's domain and email are not returned by any read path before a match is agreed. This is enforced by types, not discipline: `MaskedPartner` has no `domain` field to accidentally populate, and `toRevealedPartner` throws unless handed an agreed match. See `src/lib/services/mask.ts`.
-
-**3. Placements are classified, never refereed.** Verification records whether a link sits in content or a footer, and whether it is dofollow, then shows both parties exactly what was given and received. It does not reject anything. Members were promised that where the link lands is their call. If you are about to add a rejection branch, that is a product decision, not a bug fix.
-
-## Two things worth knowing before you read the code
-
-**Accounts are shared with nicklaunches.com.** Both apps point NextAuth's MongoDB adapter at the same `users` and `accounts` collections, so the same person resolves to the same `_id` on both domains, and `AUTH_SECRET` must match between them. No secret is in this repository, but publishing the code does document that the two properties share an auth boundary. That is deliberate and worth being explicit about rather than leaving a reader to infer it.
-
-**The anti-abuse logic is public.** Rate-limit budgets (`src/lib/mcp/limits.ts`), placement classification (`src/lib/verify`), and the intake rules are all readable. Nothing here relied on obscurity: the identity protection is the type-level boundary above, and the rate limiter is abuse control rather than a security boundary (it deliberately fails open on a database error).
+Deploys are automatic. Push to `main` and `.github/workflows/deploy.yml` typechecks, lints, tests, applies migrations, builds and deploys. Nothing is run by hand.
 
 ## Licence
 

@@ -1,0 +1,199 @@
+# builders-backlinks.com
+
+A free backlink exchange for indie builders, exposed as an MCP server so the trade
+happens inside the member's coding agent. See `README.md` for what it is and why.
+
+## Orientation
+
+One Next.js app, nested one level down in `next-app/`. There is no root
+`package.json` and no pnpm workspace, so **every command runs from `next-app/`**.
+Path alias `@/*` maps to `next-app/src/*`; relative imports are rare.
+
+```
+next-app/src/
+  app/            App Router. (site)/ is the marketing shell, api/mcp/ is the MCP
+                  endpoint, api/cron/* are the two scheduled jobs.
+  lib/services/   The data-access seam. Everything goes through here.
+  lib/db/         Drizzle schema and the per-request connection handle.
+  lib/mcp/        Tool registration and rate-limit budgets. No logic of its own.
+  lib/exchange.ts Pure domain rules, and enum values derived from the pgEnums.
+  components/web/ All shared components, flat, kebab-case, named exports.
+  emails/         React Email templates.
+```
+
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| `pnpm dev` | Next on Node. Convenient, and **not** the production runtime. |
+| `pnpm typecheck` | `tsc --noEmit` |
+| `pnpm lint` | ESLint, including the layering rule below |
+| `pnpm format` | Prettier. Do not hand-order imports, this does it. |
+| `pnpm test` | Node's built-in runner over `src/**/*.test.ts` |
+| `pnpm test:mcp` | Drives the server with the real MCP SDK client. Needs a running server and Postgres. |
+| `pnpm emails:render` | Renders every template to `.render/` for eyeballing |
+| `pnpm preview` | Build for Workers and serve it locally |
+| `pnpm run deploy` | Migrate, build, deploy from your machine |
+| `pnpm cf-typegen` | Regenerate `worker-configuration.d.ts` after a binding change |
+| `pnpm db:generate` | Write a migration from `src/lib/db/schema.ts` |
+| `pnpm db:migrate` | Apply pending migrations |
+| `pnpm db:studio` | Drizzle Studio |
+
+`pnpm run deploy`, not `pnpm deploy`. In pnpm 10 `deploy` is a built-in
+workspace command and silently shadows the script.
+
+`pnpm test:mcp` is the meaningful test. It exercises the server exactly as an
+agent would, over the real protocol, and it writes and deletes one throwaway user.
+
+## Architecture, in three rules
+
+**1. One service layer.** MCP tools and web routes both call `src/lib/services/*`.
+A tool handler contains no logic. The moment a tool does something a web route
+would not, the agent path and the browser path have started to drift, and the
+agent path is supposed to be first-class. `eslint.config.mjs` enforces this: code
+under `src/lib/mcp/**` and `src/app/api/mcp/**` cannot import `@/lib/db`, the
+Drizzle table objects, `drizzle-orm`, or the `analyze` and `verify` leaf modules.
+Types and enums from the schema are fine, it is data *access* that is banned.
+
+**2. The masking boundary is structural.** A partner's domain and email are not
+returned by any read path before a match is agreed. This is enforced by types,
+not discipline: `MaskedPartner` (`src/lib/contracts.ts`) has no `domain` field to
+accidentally populate, and `toRevealedPartner` throws unless handed an agreed
+match. There is deliberately no lint rule on top of it, and `eslint.config.mjs`
+explains why at length. Do not add one.
+
+**3. Placements are classified, never refereed.** Verification records whether a
+link sits in content or a footer and whether it is dofollow, then shows both
+parties what was given and received. It rejects nothing. Members were promised
+that where the link lands is their call. Adding a rejection branch is a product
+decision, not a bug fix.
+
+## Runtime traps
+
+**A database client cached across requests does not error, it hangs.** workerd
+binds an I/O object to the request that opened it. `src/lib/db/index.ts` therefore
+keeps one Drizzle handle per request in a `WeakMap` keyed on the `ExecutionContext`,
+and `db()` resolves the connection string at call time, never at module load. Do
+not hoist it into a module-level `const`.
+
+**The Hyperdrive connection string arrives on the Cloudflare context, not as an
+env var.** `DATABASE_URL` exists only for scripts, drizzle-kit, tests and `pnpm dev`.
+In the Worker it is the binding or nothing.
+
+**`pnpm dev` will not catch either of the above.** Before trusting a change:
+
+```bash
+pnpm exec opennextjs-cloudflare build
+pnpm exec wrangler dev --port 8788 --test-scheduled
+MCP_SMOKE_BASE=http://localhost:8788 pnpm test:mcp
+```
+
+`--test-scheduled` exposes the cron handler over HTTP, so the two jobs can be
+fired by hand:
+
+```bash
+curl "http://localhost:8788/__scheduled?cron=0+9+*+*+2"   # weekly digest
+curl "http://localhost:8788/__scheduled?cron=0+4+*+*+*"   # link rechecks
+```
+
+**Migrations run before the deploy**, in CI and in `pnpm run deploy` alike, so the
+schema is never behind the code. That is only safe while migrations are additive.
+A dropped or renamed column breaks the still-running old version the moment it
+applies, so split destructive changes across two deploys: stop using the column,
+ship, then drop it.
+
+**`NEXT_PUBLIC_*` is inlined into the browser bundle at build time.** It has to be
+present during the build step, which is why `NEXT_PUBLIC_SITE_URL` is a repository
+*variable* and not a Worker secret. As a secret it would arrive too late to be
+inlined at all.
+
+**Cron Triggers invoke `scheduled()`, they do not fetch a URL.** OpenNext emits a
+fetch-only worker, so `worker.ts` wraps it and dispatches each cron expression to
+the matching `/api/cron/*` route over a synthetic request. Adding a cron means
+editing both `wrangler.jsonc` `triggers.crons` and `CRON_ROUTES` in `worker.ts`.
+
+**SES is regional, and this app uses `us-west-2`.** The identity, its DKIM
+tokens, the sending quota and production access are all per-region, and an
+identity verified in one region is invisible from another. `us-west-2` was
+chosen because the account already holds production access there; `us-east-1`
+was sandboxed at 200 sends a day. The IAM policy on `builders-backlinks-ses`
+scopes to the region-qualified identity ARN, so changing region means reissuing
+the DKIM CNAMEs and rewriting that ARN as well as `AWS_REGION` in
+`wrangler.jsonc`.
+
+## Data invariants
+
+Encoded in `src/lib/db/schema.ts` as constraints, not just conventions:
+
+- `exchange_sites.domain` is globally unique. One domain belongs to one member, ever.
+- `exchange_matches` is unique on `(site_a, site_b)`, with `site_a` **always** the
+  lexicographically smaller uuid. Enforced in code by `orderPair` in
+  `src/lib/exchange.ts`. Write a pair in the other order and the uniqueness
+  constraint stops meaning anything.
+
+Enum values are derived from the pgEnums via `src/lib/exchange.ts` rather than
+re-declared, so the database constraint and the TypeScript union cannot drift.
+Add a status in `schema.ts` and it is valid everywhere; remove one and every use
+site becomes a compile error rather than a runtime surprise.
+
+## Auth
+
+Two independent paths.
+
+**People** sign in with Google or GitHub (NextAuth v5, JWT sessions, Drizzle
+adapter). `src/lib/session.ts` is the single session-lookup seam: `getSessionUser`
+and `getSessionMember`, and nothing outside it should import `@/auth` except the
+route handler and the sign-in server actions that have to. Both providers verify
+email ownership, which is what makes `allowDangerousEmailAccountLinking` safe;
+adding a provider that does not means revisiting that flag.
+
+**Agents** present a `bb_live_…` bearer key, minted at `/app/key`, stored hashed,
+resolved in `src/lib/auth/api-key.ts`. Anonymous MCP callers are allowed through
+to the read tools by design, so the server is useful before anyone signs in.
+
+Cron routes fail **closed** without `CRON_SECRET`. The rate limiter fails **open**
+on a database error, deliberately: it is abuse control, not a security boundary.
+
+## Conventions
+
+Prettier at 4 spaces, 120 columns, `bracketSameLine`, with enforced import order
+(third-party, then `react/*`, then `@/*`, then relative, blank-line separated).
+Run `pnpm format` rather than arranging imports by hand.
+
+Shared components live flat in `src/components/web/` with kebab-case filenames and
+named exports. Components used by exactly one route sit beside that route instead.
+
+Theming is CSS custom properties in `src/app/globals.css` (`--bg`, `--surface`,
+`--line`, `--fg`, `--muted`, `--accent`, `--focus`, `--term-*`), consumed as
+Tailwind v4 utilities: `bg-bg`, `text-muted`, `border-line`. No hex literals in
+components. The accent role is split three ways for contrast reasons.
+
+Tests are colocated `*.test.ts` on node's built-in runner via `tsx`. Pure logic
+like `matching/score.ts` is kept free of database and network access specifically
+so it stays testable that way.
+
+**Keep the `@file` JSDoc blocks.** They are the strongest convention in this repo
+and they record *why* a decision was made and what was tried first: the neon-http
+driver that Hyperdrive rejected, the workerd hang, the module-level `let` bug, the
+accent-colour contrast math. They are the reason this codebase is cheap to return
+to. Write them for new files and extend them when you change the reasoning.
+
+## Known gaps
+
+- **Nothing ever sets `exchange_sites.status = 'active'`.** Every submission is
+  written `pending_review`, and matching, digests and the public catalog all filter
+  on `active`. Deployed as-is, people can sign up and submit and nothing will ever
+  match. Needs either an admin page or manual SQL:
+  `update exchange_sites set status = 'active', updated_at = now() where status = 'pending_review';`
+- `ADMIN_EMAILS` is declared in `.env.example` and read by no code. It is the
+  intended gate for the admin page that does not exist yet.
+- `wrangler.jsonc` still holds `REPLACE_WITH_HYPERDRIVE_ID`. Deploys fail until a
+  real Hyperdrive config id replaces it.
+- `MCP_SMOKE_BASE` is used by `scripts/mcp-smoke.ts` but is not in `.env.example`.
+- The `TODO(verify)` markers are live, not stale. `src/lib/analyze/verifieddr.ts`
+  has an unconfirmed response schema and logs the actual field names at runtime
+  when it cannot find what it expects. `src/components/web/install-tabs.tsx` has
+  Codex and Gemini CLI config forms unverified against the real clients.
+- CI runs `pnpm db:migrate`, which skips the `assert-prod-db.ts` guard that
+  `db:migrate:deploy` has. That is intentional: CI's `DATABASE_URL` comes from a
+  repository secret. Do not "fix" it.

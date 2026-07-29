@@ -12,13 +12,14 @@
  * the value is in the URL, so rendering it verbatim would be a reflected-text
  * injection point for a convincing fake error.
  *
- * OAuthAccountNotLinked is the one real users will actually hit, because
- * accounts are shared with nicklaunches.com: someone who signed up there with
- * Google and then presses GitHub here has an email that already belongs to a
- * user row with no GitHub account attached. Auth.js refuses to attach it (see
- * the `allowDangerousEmailAccountLinking` note in `src/auth.ts`), so the copy
- * has to explain both what happened and the one move that fixes it, which is
- * to use the provider they started with.
+ * OAuthAccountNotLinked is the one real users will actually hit: someone who
+ * signed up with Google and then presses GitHub has an email that already
+ * belongs to a user row with no GitHub account attached. This app sets
+ * `allowDangerousEmailAccountLinking`, so that normally links silently, but the
+ * code stays reachable when a provider declines to release a verified email
+ * (see the note in `src/auth.ts`). The copy therefore has to explain both what
+ * happened and the one move that fixes it, which is to use the provider they
+ * started with.
  */
 
 export type SignInErrorMessage = {
@@ -32,8 +33,7 @@ const MESSAGES: Record<string, SignInErrorMessage> = {
         body:
             "This email address already has an account, created with the other sign-in button. " +
             "Sign in with the provider you used the first time (Google if you started with Google, " +
-            "GitHub if you started with GitHub) and you will land in the same account, with everything in it. " +
-            "Your account is shared with Nick Launches, so this can be a sign-in you made over there.",
+            "GitHub if you started with GitHub) and you will land in the same account, with everything in it.",
     },
     // Older alias for the same condition, kept so a version bump cannot quietly
     // turn a handled error back into a blank page.

@@ -56,9 +56,8 @@ export async function signInWithProvider(formData: FormData): Promise<void> {
 /**
  * Clears the session cookie and returns the person to the home page.
  *
- * Only this domain's cookie is cleared. The Nick Launches session is a separate
- * cookie on a separate host and is untouched, which is the behaviour people
- * expect from two sites even when the account behind them is one account.
+ * The session is a JWT in a cookie on this host, so clearing that cookie is the
+ * whole of signing out. There is no server-side session row to revoke.
  */
 export async function signOutAction(): Promise<void> {
     await signOut({ redirectTo: DEFAULT_CALLBACK_URL });

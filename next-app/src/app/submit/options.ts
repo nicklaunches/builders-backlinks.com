@@ -1,16 +1,16 @@
 /**
  * @file Client-safe labels for the placement-offer enum.
  *
- * `PLACEMENT_OFFERS` lives on the Mongoose model, and importing that module into
- * a client component would drag mongoose into the browser bundle. The `import
- * type` below is erased at build time, so this file carries the labels while the
- * `Record<PlacementOffer, ...>` still fails to compile the moment someone adds a
- * new offer to the model without giving it words here.
+ * `PlacementOffer` is derived from the pgEnum in the schema, and importing that
+ * module into a client component would pull the database layer into the browser
+ * bundle. The `import type` below is erased at build time, so this file carries
+ * the labels while the `Record<PlacementOffer, ...>` still fails to compile the
+ * moment someone adds a new offer to the enum without giving it words here.
  *
  * The server never trusts these values: `commitSite` re-checks the submitted
  * string against the real enum and falls back to "unsure".
  */
-import type { PlacementOffer } from "@/lib/models/ExchangeSite";
+import type { PlacementOffer } from "@/lib/exchange";
 
 /** Order shown in the radio group. Broadest offer first, "unsure" last. */
 const ORDER = ["blog_post", "existing_article", "resources_page", "unsure"] as const;

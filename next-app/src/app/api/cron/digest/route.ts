@@ -1,12 +1,11 @@
+import { and, count, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
-import { type Category, candidateCategories } from "@/lib/categories";
-import { connectMongo } from "@/lib/db/mongoose";
+import { candidateCategories } from "@/lib/categories";
+import { db } from "@/lib/db";
+import { exchangeMatches, exchangeMembers, exchangeSites } from "@/lib/db/schema";
 import { isAuthorizedCron } from "@/lib/email/cron-auth";
 import { notifyDigest } from "@/lib/email/notify";
-import { ExchangeMatch } from "@/lib/models/ExchangeMatch";
-import { ExchangeMember } from "@/lib/models/ExchangeMember";
-import { ExchangeSite } from "@/lib/models/ExchangeSite";
 import { toMaskedPartner } from "@/lib/services/mask";
 
 /**
@@ -25,6 +24,12 @@ import { toMaskedPartner } from "@/lib/services/mask";
  * Members with an open match are skipped too. They already have something to
  * act on, and nudging them toward new candidates while one is pending is how
  * you end up with a pile of half-answered proposals.
+ *
+ * Both sweeps here order by a nullable timestamp and both ask for NULLS FIRST
+ * explicitly. A member who has never been sent a digest, and a site that has
+ * never been matched, are the most overdue rows in their respective tables.
+ * Postgres sorts NULLs last on an ascending sort, so left implicit this cron
+ * would serve everyone except the people it exists for.
  */
 
 export const maxDuration = 60;
@@ -37,21 +42,22 @@ const MAX_CANDIDATES = 5;
 
 const CADENCE_DAYS: Record<string, number> = { weekly: 7, biweekly: 14 };
 
+/** States that still want a decision from somebody. */
+const OPEN_STATES = ["proposed", "a_accepted", "b_accepted", "agreed"] as const;
+
 export async function GET(request: Request) {
     if (!isAuthorizedCron(request)) {
         return NextResponse.json({ error: "unauthorized" }, { status: 403 });
     }
 
-    await connectMongo();
     const now = new Date();
 
-    const members = await ExchangeMember.find({
-        unsubscribedAt: null,
-        digestCadence: { $ne: "paused" },
-    })
-        .sort({ lastDigestSentAt: 1 })
-        .limit(BATCH * 2)
-        .exec();
+    const members = await db()
+        .select()
+        .from(exchangeMembers)
+        .where(and(isNull(exchangeMembers.unsubscribedAt), ne(exchangeMembers.digestCadence, "paused")))
+        .orderBy(sql`${exchangeMembers.lastDigestSentAt} asc nulls first`)
+        .limit(BATCH * 2);
 
     let sent = 0;
     let skippedNoSites = 0;
@@ -62,7 +68,7 @@ export async function GET(request: Request) {
     for (const member of members) {
         if (sent >= BATCH) break;
 
-        const dueAfterDays = CADENCE_DAYS[member.digestCadence ?? "weekly"] ?? 7;
+        const dueAfterDays = CADENCE_DAYS[member.digestCadence] ?? 7;
         if (member.lastDigestSentAt) {
             const dueAt = new Date(member.lastDigestSentAt.getTime() + dueAfterDays * 24 * 60 * 60 * 1000);
             if (dueAt > now) {
@@ -71,28 +77,37 @@ export async function GET(request: Request) {
             }
         }
 
-        const sites = await ExchangeSite.find({ owner: member.user, status: "active" }).exec();
+        const sites = await db()
+            .select()
+            .from(exchangeSites)
+            .where(and(eq(exchangeSites.ownerId, member.userId), eq(exchangeSites.status, "active")));
         if (sites.length === 0) {
             skippedNoSites++;
             continue;
         }
 
-        const siteIds = sites.map((s) => s._id);
+        const siteIds = sites.map((s) => s.id);
+        const involvesMe = or(inArray(exchangeMatches.siteAId, siteIds), inArray(exchangeMatches.siteBId, siteIds));
 
         // Anything still awaiting a decision counts as an open match.
-        const openMatch = await ExchangeMatch.exists({
-            $or: [{ siteA: { $in: siteIds } }, { siteB: { $in: siteIds } }],
-            state: { $in: ["proposed", "a_accepted", "b_accepted", "agreed"] },
-        });
-        if (openMatch) {
+        const openMatch = await db()
+            .select({ id: exchangeMatches.id })
+            .from(exchangeMatches)
+            .where(and(involvesMe, inArray(exchangeMatches.state, [...OPEN_STATES])))
+            .limit(1);
+        if (openMatch.length > 0) {
             skippedOpenMatch++;
             continue;
         }
 
         const subject = sites[0]!;
-        const category = subject.category as Category;
-        const activeInCategory = await ExchangeSite.countDocuments({ category, status: "active" });
-        const pools = candidateCategories(category, activeInCategory);
+        const category = subject.category;
+
+        const [activeInCategory] = await db()
+            .select({ n: count() })
+            .from(exchangeSites)
+            .where(and(eq(exchangeSites.category, category), eq(exchangeSites.status, "active")));
+        const pools = candidateCategories(category, activeInCategory?.n ?? 0);
         if (pools.length === 0) {
             skippedNoCandidates++;
             continue;
@@ -100,28 +115,31 @@ export async function GET(request: Request) {
 
         // Exclude anyone already matched with, so a digest never re-offers a
         // partner this member has already seen and passed on.
-        const priorMatches = await ExchangeMatch.find({
-            $or: [{ siteA: { $in: siteIds } }, { siteB: { $in: siteIds } }],
-        })
-            .select("siteA siteB")
-            .exec();
+        const priorMatches = await db()
+            .select({ siteAId: exchangeMatches.siteAId, siteBId: exchangeMatches.siteBId })
+            .from(exchangeMatches)
+            .where(involvesMe);
         const seen = new Set<string>();
         for (const m of priorMatches) {
-            seen.add(String(m.siteA));
-            seen.add(String(m.siteB));
+            seen.add(m.siteAId);
+            seen.add(m.siteBId);
         }
 
         const candidates = (
-            await ExchangeSite.find({
-                category: { $in: pools },
-                status: "active",
-                owner: { $ne: member.user },
-            })
-                .sort({ lastMatchedAt: 1 })
+            await db()
+                .select()
+                .from(exchangeSites)
+                .where(
+                    and(
+                        inArray(exchangeSites.category, pools),
+                        eq(exchangeSites.status, "active"),
+                        ne(exchangeSites.ownerId, member.userId),
+                    ),
+                )
+                .orderBy(sql`${exchangeSites.lastMatchedAt} asc nulls first`)
                 .limit(MAX_CANDIDATES * 4)
-                .exec()
         )
-            .filter((c) => !seen.has(String(c._id)))
+            .filter((c) => !seen.has(c.id))
             .slice(0, MAX_CANDIDATES);
 
         if (candidates.length === 0) {
@@ -139,8 +157,10 @@ export async function GET(request: Request) {
             widenedCount,
         });
 
-        member.lastDigestSentAt = now;
-        await member.save();
+        await db()
+            .update(exchangeMembers)
+            .set({ lastDigestSentAt: now, updatedAt: now })
+            .where(eq(exchangeMembers.id, member.id));
         sent++;
     }
 

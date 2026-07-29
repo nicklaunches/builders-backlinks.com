@@ -9,6 +9,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 
+
 import "./globals.css";
 
 const sans = Inter({
@@ -72,7 +73,13 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
     return (
         <html lang="en" className={`${sans.variable} ${mono.variable}`}>
-            <body className="bg-bg text-fg min-h-dvh antialiased">{children}</body>
+            <body className="bg-bg text-fg min-h-dvh antialiased">
+                {children}
+                {/* No analytics script here on purpose. Cloudflare Web Analytics
+                    is on "Automatic setup" for this zone, so the JS Snippet will
+                    be automatically injected at the edge. Rendering one here as
+                    well would double-count every pageview. */}
+            </body>
         </html>
     );
 }

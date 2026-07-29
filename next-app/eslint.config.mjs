@@ -3,39 +3,65 @@ import nextTs from "eslint-config-next/typescript";
 import { defineConfig, globalIgnores } from "eslint/config";
 
 const DATA_ACCESS_MSG =
-    "MCP tools must go through src/lib/services rather than querying a model directly. The web routes call the same services, and reaching past them is exactly how the agent interface and the browser interface drift apart.";
+    "MCP tools must go through src/lib/services rather than querying the database directly. The web routes call the same services, and reaching past them is exactly how the agent interface and the browser interface drift apart.";
 
 /**
  * Guards the layering the whole architecture rests on.
  *
  * MCP tools and web routes must both go through `src/lib/services`. If a tool
- * handler reaches past the service layer into a model or a leaf module, the
- * agent interface and the browser interface have started to diverge, and the
- * agent one is supposed to be first-class. That is very hard to spot in review
- * and trivial to catch here.
+ * handler reaches past the service layer into the database or a leaf module,
+ * the agent interface and the browser interface have started to diverge, and
+ * the agent one is supposed to be first-class. That is very hard to spot in
+ * review and trivial to catch here.
+ *
+ * The globs must track where the MCP layer actually lives. An earlier version
+ * pointed at `src/app/api/[transport]/**`, which stopped existing when the
+ * route moved to `src/app/api/mcp/`, and the rule then guarded one directory
+ * less than it claimed to while still passing. A layering rule that matches
+ * nothing is worse than no rule, because the README says it is enforced.
  */
 const mcpLayering = {
-    files: ["src/lib/mcp/**/*.ts", "src/app/api/[transport]/**/*.ts"],
+    files: ["src/lib/mcp/**/*.ts", "src/app/api/mcp/**/*.ts"],
     rules: {
         "no-restricted-imports": [
             "error",
             {
                 paths: [
-                    // The Mongoose model objects specifically, not the module.
-                    // Types and constants (PLACEMENT_OFFERS, the Hydrated
-                    // aliases) are fine to import here: it is direct data
-                    // ACCESS that has to go through a service, so that the web
-                    // routes and the tools cannot drift apart.
-                    { name: "@/lib/models/ExchangeSite", importNames: ["ExchangeSite"], message: DATA_ACCESS_MSG },
-                    { name: "@/lib/models/ExchangeMatch", importNames: ["ExchangeMatch"], message: DATA_ACCESS_MSG },
-                    { name: "@/lib/models/ExchangeLink", importNames: ["ExchangeLink"], message: DATA_ACCESS_MSG },
-                    { name: "@/lib/models/ExchangeMember", importNames: ["ExchangeMember"], message: DATA_ACCESS_MSG },
+                    // The connection handle, and the Drizzle table objects
+                    // specifically rather than the whole schema module. Types
+                    // (`ExchangeMember` and the other $inferSelect aliases) and
+                    // the pgEnum exports are fine to import here: it is direct
+                    // data ACCESS that has to go through a service, so that the
+                    // web routes and the tools cannot drift apart.
+                    { name: "@/lib/db", message: DATA_ACCESS_MSG },
+                    {
+                        name: "@/lib/db/schema",
+                        importNames: [
+                            "users",
+                            "accounts",
+                            "sessions",
+                            "verificationTokens",
+                            "exchangeMembers",
+                            "exchangeSites",
+                            "exchangeMatches",
+                            "exchangeLinks",
+                            "rateLimits",
+                        ],
+                        message: DATA_ACCESS_MSG,
+                    },
                 ],
                 patterns: [
                     {
                         group: ["@/lib/analyze", "@/lib/analyze/*", "@/lib/verify", "@/lib/verify/*"],
                         message:
                             "MCP tools must call src/lib/services, not the leaf modules directly. Web routes use the same services, and reaching past them is how the two interfaces drift.",
+                    },
+                    {
+                        // Nothing in this layer should be assembling a query.
+                        // Importing `eq` or `sql` here means the service call
+                        // that belongs one level down is being written inline.
+                        group: ["drizzle-orm", "drizzle-orm/*"],
+                        message: DATA_ACCESS_MSG,
                     },
                 ],
             },
@@ -60,7 +86,19 @@ const mcpLayering = {
  */
 
 const eslintConfig = defineConfig([
-    globalIgnores([".next/**", "node_modules/**", "next-env.d.ts"]),
+    // Everything generated. `.open-next` matters most: it is tens of megabytes
+    // of bundled server JavaScript, and with `allowJs` on, leaving it out makes
+    // `pnpm lint` run out of heap the moment anyone has run a build. CI never
+    // hit it because it lints before it builds.
+    globalIgnores([
+        ".next/**",
+        ".open-next/**",
+        ".wrangler/**",
+        ".render/**",
+        "node_modules/**",
+        "next-env.d.ts",
+        "worker-configuration.d.ts",
+    ]),
     ...nextVitals,
     ...nextTs,
     mcpLayering,

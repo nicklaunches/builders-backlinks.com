@@ -13,42 +13,60 @@
         "mcp:inspect": "npx @modelcontextprotocol/inspector",
         "test": "node --import tsx --test \"src/**/*.test.ts\"",
         "test:mcp": "node --import tsx scripts/mcp-smoke.ts",
-        "emails:render": "node --import tsx scripts/render-emails.ts"
+        "emails:render": "node --import tsx scripts/render-emails.ts",
+        "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+        "deploy": "pnpm db:migrate:deploy && opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+        "cf-typegen": "wrangler types",
+        "db:generate": "drizzle-kit generate",
+        "db:migrate": "drizzle-kit migrate",
+        "db:push": "drizzle-kit push",
+        "db:studio": "drizzle-kit studio",
+        "db:migrate:deploy": "node --import tsx scripts/assert-prod-db.ts && drizzle-kit migrate"
     },
     "dependencies": {
-        "@auth/mongodb-adapter": "^3.11.2",
+        "@auth/drizzle-adapter": "^1.11.3",
         "@aws-sdk/client-sesv2": "^3.1041.0",
-        "@modelcontextprotocol/sdk": "1.26.0",
+        "@modelcontextprotocol/sdk": "1.29.0",
+        "@modelcontextprotocol/server": "2.0.0-beta.5",
         "@react-email/components": "^1.0.12",
         "@react-email/render": "^2.0.8",
+        "agents": "^0.20.0",
         "clsx": "^2.1.1",
-        "disposable-email-domains": "^1.0.62",
+        "drizzle-orm": "^0.45.2",
         "lucide-react": "^1.11.0",
-        "mcp-handler": "^1.1.0",
-        "mongodb": "^6.21.0",
-        "mongoose": "^8.23.1",
-        "next": "16.2.9",
+        "next": "16.2.12",
         "next-auth": "5.0.0-beta.31",
+        "postgres": "^3.4.9",
         "react": "19.2.4",
         "react-dom": "19.2.4",
         "tailwind-merge": "^3.5.0",
         "zod": "^4.3.6"
     },
     "devDependencies": {
+        "@opennextjs/cloudflare": "^1.20.2",
         "@tailwindcss/postcss": "^4",
         "@trivago/prettier-plugin-sort-imports": "^6.0.2",
         "@types/node": "^20",
         "@types/react": "^19",
         "@types/react-dom": "^19",
         "dotenv": "^17.4.2",
-        "env-cmd": "^11.0.0",
+        "drizzle-kit": "^0.31.10",
         "eslint": "^9",
         "eslint-config-next": "16.2.4",
         "prettier": "^3.8.3",
         "prettier-plugin-tailwindcss": "^0.7.3",
         "tailwindcss": "^4",
         "tsx": "^4.21.0",
-        "typescript": "^5"
+        "typescript": "^5",
+        "wrangler": "^4.114.0"
     },
-    "packageManager": "pnpm@10.33.4"
+    "packageManager": "pnpm@10.33.4",
+    "pnpm": {
+        "onlyBuiltDependencies": [
+            "workerd",
+            "esbuild",
+            "sharp",
+            "unrs-resolver"
+        ]
+    }
 }

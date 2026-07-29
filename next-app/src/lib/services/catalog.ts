@@ -1,7 +1,8 @@
+import { count, eq, isNull } from "drizzle-orm";
+
 import { CATEGORIES, type Category, UNMATCHABLE, WIDEN_BELOW } from "@/lib/categories";
-import { connectMongo } from "@/lib/db/mongoose";
-import { ExchangeMember } from "@/lib/models/ExchangeMember";
-import { ExchangeSite } from "@/lib/models/ExchangeSite";
+import { db } from "@/lib/db";
+import { exchangeMembers, exchangeSites } from "@/lib/db/schema";
 
 /**
  * @file Read-only catalog: what categories exist and how deep each pool is.
@@ -30,31 +31,36 @@ export type CategoryDepth = {
 /**
  * Counts active sites and median DR per category.
  *
- * One aggregation for the whole catalog. Categories with no sites are still
- * returned, with zeroes, so the caller can render the full taxonomy without a
- * second source of truth.
+ * One query for the whole catalog, grouped in memory rather than in SQL. A
+ * `GROUP BY` with `percentile_cont` would be the obvious translation of the old
+ * aggregation, but it interpolates between the two middle values on an even
+ * count where the previous implementation picked the upper one, so identical
+ * data would start reporting a different median. The grouping is over active
+ * sites only and returns two small columns, so doing it here costs nothing and
+ * keeps the number stable across the storage change.
+ *
+ * Categories with no sites are still returned, with zeroes, so the caller can
+ * render the full taxonomy without a second source of truth.
  */
 export async function getCategoryDepths(): Promise<CategoryDepth[]> {
-    await connectMongo();
+    const rows = await db()
+        .select({ category: exchangeSites.category, domainRating: exchangeSites.domainRating })
+        .from(exchangeSites)
+        .where(eq(exchangeSites.status, "active"));
 
-    const rows = await ExchangeSite.aggregate<{ _id: string; n: number; ratings: number[] }>([
-        { $match: { status: "active" } },
-        {
-            $group: {
-                _id: "$category",
-                n: { $sum: 1 },
-                // Nulls are filtered below rather than in the group, so an
-                // unrated site still counts toward `n`.
-                ratings: { $push: "$domainRating" },
-            },
-        },
-    ]).exec();
-
-    const byCategory = new Map(rows.map((r) => [r._id, r]));
+    // Nulls are kept in the count and filtered out of the ratings, so an
+    // unrated site still counts toward the pool depth.
+    const byCategory = new Map<Category, { n: number; ratings: number[] }>();
+    for (const row of rows) {
+        const bucket = byCategory.get(row.category) ?? { n: 0, ratings: [] };
+        bucket.n += 1;
+        if (row.domainRating !== null) bucket.ratings.push(row.domainRating);
+        byCategory.set(row.category, bucket);
+    }
 
     return CATEGORIES.filter((c) => !UNMATCHABLE.includes(c)).map((category) => {
         const row = byCategory.get(category);
-        const rated = (row?.ratings ?? []).filter((v): v is number => typeof v === "number").sort((a, b) => a - b);
+        const rated = [...(row?.ratings ?? [])].sort((a, b) => a - b);
         return {
             category,
             activeSites: row?.n ?? 0,
@@ -70,15 +76,15 @@ export async function getCategoryDepths(): Promise<CategoryDepth[]> {
  * The one number the landing page is allowed to print, and it is read live on
  * every revalidation rather than stored anywhere, so it cannot drift away from
  * the truth the way a hardcoded figure does. Unsubscribed members are excluded
- * because they are out of matching entirely (see `ExchangeMember`), so counting
- * them would inflate the figure with people who are not participating.
+ * because they are out of matching entirely (see `exchange_members`), so
+ * counting them would inflate the figure with people who are not participating.
  *
  * The caller decides how to present a small number, and is expected to print
  * nothing rather than a zero. See the header of the landing page.
  */
 export async function getFounderCount(): Promise<number> {
-    await connectMongo();
-    return ExchangeMember.countDocuments({ unsubscribedAt: null }).exec();
+    const [row] = await db().select({ n: count() }).from(exchangeMembers).where(isNull(exchangeMembers.unsubscribedAt));
+    return row?.n ?? 0;
 }
 
 /**

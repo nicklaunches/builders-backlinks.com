@@ -1,4 +1,4 @@
-import type { Placement } from "@/lib/models/ExchangeLink";
+import type { Placement } from "@/lib/exchange";
 
 /**
  * @file Tolerant HTML scanning helpers used by link verification.

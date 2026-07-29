@@ -1,8 +1,6 @@
-import type { Category } from "@/lib/categories";
 import type { MaskedPartner, RevealedPartner } from "@/lib/contracts";
-import { type MatchState, isRevealed } from "@/lib/models/ExchangeMatch";
-import type { ExchangeSiteDoc } from "@/lib/models/ExchangeSite";
-import type { PlacementOffer } from "@/lib/models/ExchangeSite";
+import type { ExchangeSite } from "@/lib/db/schema";
+import { type MatchState, isRevealed } from "@/lib/exchange";
 
 /**
  * @file The identity boundary.
@@ -18,17 +16,36 @@ import type { PlacementOffer } from "@/lib/models/ExchangeSite";
  * most for the MCP server: it is a machine-readable API that agents will call
  * in loops, so a leak there is a scrape of the entire member base, not a single
  * slip on one screen.
+ *
+ * The predicate the boundary turns on, `isRevealed`, is imported from
+ * `lib/exchange` rather than defined here. It is a pure rule about a match
+ * state, and keeping it there means this file imports nothing from the service
+ * layer: no service can end up in an import cycle with the one module that
+ * decides what may be revealed.
  */
 
-/** The site fields masking needs. Accepts a lean doc or a hydrated document. */
+/**
+ * The site fields masking needs.
+ *
+ * A `Pick` of the row rather than the row itself, for the same reason
+ * `MaskedPartner` has no domain field: this type states exactly what masking is
+ * allowed to read. `domain` and `url` are in the set only because
+ * `toRevealedPartner` needs them, and that function is the only thing here that
+ * touches them.
+ */
 type SiteLike = Pick<
-    ExchangeSiteDoc,
-    "category" | "description" | "domainRating" | "keywords" | "placementOffered" | "linksGiven" | "linksGot"
-> & {
-    _id: { toString(): string };
-    domain: string;
-    url: string;
-};
+    ExchangeSite,
+    | "id"
+    | "category"
+    | "description"
+    | "domain"
+    | "domainRating"
+    | "keywords"
+    | "linksGiven"
+    | "linksGot"
+    | "placementOffered"
+    | "url"
+>;
 
 /**
  * Builds the pre-accept view of a partner.
@@ -36,26 +53,26 @@ type SiteLike = Pick<
  * `partnerId` is the site id. It is opaque to the caller and only useful as an
  * argument to `propose_trade`, so handing it out does not reveal anything.
  *
- * @param site - The candidate site document.
+ * @param site - The candidate site row.
  * @returns A partner view with no identifying fields.
  */
 export function toMaskedPartner(site: SiteLike): MaskedPartner {
     return {
-        partnerId: site._id.toString(),
-        category: site.category as Category,
+        partnerId: site.id,
+        category: site.category,
         description: site.description,
-        domainRating: site.domainRating ?? null,
-        wantedAnchors: site.keywords ?? [],
-        placementOffered: (site.placementOffered ?? "unsure") as PlacementOffer,
-        linksGiven: site.linksGiven ?? 0,
-        linksGot: site.linksGot ?? 0,
+        domainRating: site.domainRating,
+        wantedAnchors: site.keywords,
+        placementOffered: site.placementOffered,
+        linksGiven: site.linksGiven,
+        linksGot: site.linksGot,
     };
 }
 
 /**
  * Builds the post-accept view of a partner, including how to reach them.
  *
- * @param site - The partner's site document.
+ * @param site - The partner's site row.
  * @param ownerEmail - The partner's email, resolved from their member record.
  * @param state - The current match state. Anything before `agreed` throws.
  * @throws When called for a match that has not reached mutual accept. This is a
