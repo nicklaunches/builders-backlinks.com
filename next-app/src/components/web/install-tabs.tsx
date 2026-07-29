@@ -35,7 +35,7 @@
 
 import { ArrowRight, ChevronDown } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useId, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 
 import { cn } from "@/components/web/cn";
 import { CopyButton } from "@/components/web/copy-button";
@@ -399,6 +399,17 @@ export function InstallTabs() {
     const [cycling, setCycling] = useState(true);
     const demoOpen = useSyncExternalStore(subscribeToDemoPreference, readDemoPreference, demoPreferenceOnServer);
     const demoId = useId();
+    const demoRef = useRef<HTMLDivElement>(null);
+    const [demoOnScreen, setDemoOnScreen] = useState(true);
+
+    useEffect(() => {
+        const node = demoRef.current;
+        if (!node || typeof IntersectionObserver === "undefined") return;
+
+        const observer = new IntersectionObserver((entries) => setDemoOnScreen(entries[0].isIntersecting));
+        observer.observe(node);
+        return () => observer.disconnect();
+    }, []);
 
     // One pending timeout at a time, re-armed on every step. The reduced-motion
     // check is what makes this safe rather than polite: globals.css clamps
@@ -406,7 +417,7 @@ export function InstallTabs() {
     // progress bar would snap to full on every tick while the panel kept
     // changing underneath a reader who asked for exactly the opposite.
     useEffect(() => {
-        if (!cycling || !demoOpen) return;
+        if (!cycling || !demoOpen || !demoOnScreen) return;
         if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
         const timer = window.setTimeout(() => {
@@ -417,7 +428,7 @@ export function InstallTabs() {
         }, VIEW_DURATION_MS[view]);
 
         return () => window.clearTimeout(timer);
-    }, [view, cycling, demoOpen]);
+    }, [view, cycling, demoOpen, demoOnScreen]);
 
     /**
      * Any deliberate choice of step ends the cycle for this visit.
@@ -536,7 +547,7 @@ export function InstallTabs() {
             {/* The collapsible half: view picker plus transcripts. Everything
                 outside it survives collapse, so the install command and the key
                 button are never the thing that gets hidden. */}
-            <div id={demoId} hidden={!demoOpen}>
+            <div id={demoId} ref={demoRef} hidden={!demoOpen}>
                 {/* View picker. */}
                 <div className="border-term-line bg-term-chrome border-b px-2">
                     <TabList
@@ -585,8 +596,15 @@ export function InstallTabs() {
                     screen. aria-hidden because the strip already announces the
                     current step through aria-selected, and a second channel for
                     the same fact is noise in a screen reader.
+
+                    Unmounted while the transcript is off screen for the same
+                    reason the timeout is not armed there, and it has to be
+                    unmounted rather than merely invisible: scrolling back
+                    re-arms a full-length timeout, and a bar that had kept
+                    animating in the meantime would come back part-drained and
+                    lie about how long the step has left.
                 */}
-                {cycling && demoOpen ? (
+                {cycling && demoOpen && demoOnScreen ? (
                     <span
                         key={view}
                         aria-hidden="true"
