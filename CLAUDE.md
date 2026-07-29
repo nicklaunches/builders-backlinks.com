@@ -214,10 +214,12 @@ Two things to know before touching `/app`:
 - `src/components/web/install-tabs.tsx` still carries `TODO(verify)` markers: the
   Codex and Gemini CLI config forms have never been confirmed against the real
   clients. Only the Claude Code and Cursor forms have.
-- **Any site listed before 2026-07-29 has a null `domain_rating`.** The VerifiedDR
-  parser was reading the wrong container, so every lookup returned null. Fixed
-  and covered by `verifieddr.test.ts`, but existing rows are not backfilled by
-  anything: nothing re-runs the analyzer for a site that already exists.
+- **Most sites will have no Domain Rating, and that is correct.** VerifiedDR only
+  indexes domains approved on their own platform and 404s for everything else,
+  so a null DR usually means "not covered" rather than "integration broken".
+  Separately, any site listed before 2026-07-29 has a null DR because the parser
+  was reading the wrong container; nothing backfills those rows, since nothing
+  re-runs the analyzer for a site that already exists.
 - CI runs `pnpm db:migrate`, which skips the `assert-prod-db.ts` guard that
   `db:migrate:deploy` has. That is intentional: CI's `DATABASE_URL` comes from a
   repository secret. Do not "fix" it.

@@ -29,6 +29,13 @@
  * change on their side shows up in one line rather than as months of quiet
  * nulls.
  *
+ * COVERAGE IS THE REAL LIMIT, not the parsing. VerifiedDR indexes only domains
+ * approved on their own platform, and answers 404 for anything else, so most
+ * submissions legitimately carry no DR and no TrueDR. That is the vendor's
+ * scope rather than a fault here, and it is why `SiteAnalysis` treats both
+ * scores as optional and why matching bands sites with no score rather than
+ * excluding them. Do not read a null DR as a broken integration.
+ *
  * Auth is a bearer token (`vdr_...`) in `VERIFIEDDR_API_KEY`. Limits are 60
  * requests per minute on a sliding window, and a monthly quota that depends on
  * the plan (1,000 on Pro, 10,000 on Ultra). A 429 is the per-minute limit and is
@@ -261,6 +268,20 @@ export async function getAuthorityScores(
             console.warn(
                 `[analyze/verifieddr] per-minute rate limit hit (HTTP 429) on lookup for ${domain}, ` +
                     `Retry-After: ${retryAfter}s. This submission gets no scores.`,
+            );
+            return { ...NO_SCORES };
+        }
+
+        // NOT AN ERROR, and the common case. VerifiedDR only serves domains that
+        // have been approved on their own platform, so a 404 means "we do not
+        // cover this site" rather than "the lookup broke". Most submissions will
+        // land here, which is why it is `info` and why the copy says so: logging
+        // it as a failure would have someone hunting a bug in this file for
+        // something working exactly as the vendor intends.
+        if (res.status === 404) {
+            console.info(
+                `[analyze/verifieddr] no VerifiedDR coverage for ${domain}, so it is listed without a DR. ` +
+                    `Expected: their index only holds sites approved on verifieddr.com.`,
             );
             return { ...NO_SCORES };
         }
