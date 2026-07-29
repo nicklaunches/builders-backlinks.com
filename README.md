@@ -38,7 +38,7 @@ Eleven tools, fully documented at [`/docs/mcp`](https://builders-backlinks.com/d
 
 ## Local development
 
-Requires Node 20+, pnpm, and a local PostgreSQL. The app lives in `next-app/`; there is no root package.
+Requires Node 22+, pnpm, and a local PostgreSQL. The app lives in `next-app/`; there is no root package.
 
 ```bash
 cd next-app

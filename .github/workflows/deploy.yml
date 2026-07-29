@@ -41,9 +41,13 @@ jobs:
         with:
           package_json_file: next-app/package.json
 
+      # Node 22, not 20. `pnpm test` runs `node --test "src/**/*.test.ts"`, and
+      # glob patterns in the test runner only landed in Node 22. On 20 the
+      # pattern is treated as a literal path and the run fails having executed
+      # nothing, which reads like "no tests exist" rather than "wrong runtime".
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
           cache-dependency-path: next-app/pnpm-lock.yaml
 
