@@ -12,6 +12,10 @@ import { LinkRemovedEmail } from "../src/emails/link-removed";
 import { LinkVerifiedEmail } from "../src/emails/link-verified";
 import { MatchAgreedEmail } from "../src/emails/match-agreed";
 import { MatchProposedEmail } from "../src/emails/match-proposed";
+import { SiteApprovedEmail } from "../src/emails/site-approved";
+import { SiteRejectedEmail } from "../src/emails/site-rejected";
+import { SubmissionReceivedEmail } from "../src/emails/submission-received";
+import { WelcomeEmail } from "../src/emails/welcome";
 
 // Set before anything imports a module that reads these at call time. The
 // unsubscribe helper signs with AUTH_SECRET and merely warns when it is
@@ -195,6 +199,50 @@ const fixtures: Fixture[] = [
             candidates: [maskedPartner, secondMaskedPartner, thirdMaskedPartner],
             widenedCount: 1,
             standingNote: "You give about as much as you get. Matching favours members like you.",
+        }),
+    },
+
+    // The account and listing lifecycle. All four concern the recipient's OWN
+    // site, so there is no partner identity in them to leak and `masked` is
+    // false. They are still worth previewing: the rejection copy in particular
+    // is the hardest thing in this directory to get the tone of, and reading it
+    // rendered is the only way to judge that.
+    {
+        name: "welcome",
+        subject: "Welcome to the exchange",
+        masked: false,
+        element: createElement(WelcomeEmail),
+    },
+    {
+        name: "submission-received",
+        subject: "We have your-site.com, it is in review",
+        masked: false,
+        element: createElement(SubmissionReceivedEmail, {
+            domain: "your-site.com",
+            category: "Developer Tools",
+            description:
+                "A hosted feature-flag service for small teams, with SDKs for Node, Go and Python and a free tier that does not expire.",
+            keywords: ["feature flags", "progressive delivery", "release toggles"],
+            domainRating: 34,
+            placementOffered: "blog_post",
+        }),
+    },
+    {
+        name: "site-approved",
+        subject: "your-site.com is live in the exchange",
+        masked: false,
+        element: createElement(SiteApprovedEmail, {
+            domain: "your-site.com",
+            category: "Developer Tools",
+        }),
+    },
+    {
+        name: "site-rejected",
+        subject: "About your submission of your-site.com",
+        masked: false,
+        element: createElement(SiteRejectedEmail, {
+            domain: "your-site.com",
+            reason: "The domain resolves to a single page of links out to other sites, with no content of its own. The exchange only lists sites where a link sits next to something worth reading.",
         }),
     },
 ];

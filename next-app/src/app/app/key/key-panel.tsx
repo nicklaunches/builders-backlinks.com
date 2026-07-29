@@ -6,6 +6,7 @@ import { useActionState, useState } from "react";
 import { type IssueKeyState, issueKeyAction } from "@/app/app/key/actions";
 import { cn } from "@/components/web/cn";
 import { CopyButton } from "@/components/web/copy-button";
+import { SnippetBody } from "@/components/web/snippet-body";
 
 /**
  * @file The key page's interactive half.
@@ -238,17 +239,12 @@ function Snippet({
                 ) : null}
             </div>
 
-            <div className="flex items-start gap-3 p-4">
-                <div className="min-w-0 flex-1 overflow-x-auto">
-                    <pre className="min-w-max font-mono text-[12.5px] leading-[1.75]">
-                        <code>
-                            {value.split("\n").map((line, index) => (
-                                <span key={index} className="text-term-bright block whitespace-pre">
-                                    {line === "" ? " " : line}
-                                </span>
-                            ))}
-                        </code>
-                    </pre>
+            {/* items-center and scrollbar-none, matching the install block on the
+                landing page. Both panels render the same thing, so they share
+                SnippetBody rather than keeping two copies that drift. */}
+            <div className="flex items-center gap-3 p-4">
+                <div className="min-w-0 flex-1 scrollbar-none overflow-x-auto">
+                    <SnippetBody snippet={value} />
                 </div>
                 <CopyButton value={value} label={label} />
             </div>

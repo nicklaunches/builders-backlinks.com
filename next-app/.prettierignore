@@ -1,0 +1,16 @@
+# Generated files. Prettier reformats these, then `wrangler types` and
+# `drizzle-kit generate` rewrite them in their own style on the next run, so
+# without this every `pnpm format` produces thousands of lines of churn that
+# reverts itself. worker-configuration.d.ts alone is 540 KB.
+worker-configuration.d.ts
+drizzle/
+
+# Owned by pnpm, which rewrites it on every install. Prettier reflows 11k lines
+# of it and pnpm undoes that, so it is pure churn in both directions.
+pnpm-lock.yaml
+
+# Build output.
+.next/
+.open-next/
+.wrangler/
+.render/

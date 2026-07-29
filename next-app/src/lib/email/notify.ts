@@ -5,6 +5,10 @@ import { LinkRemovedEmail } from "@/emails/link-removed";
 import { LinkVerifiedEmail } from "@/emails/link-verified";
 import { MatchAgreedEmail } from "@/emails/match-agreed";
 import { MatchProposedEmail } from "@/emails/match-proposed";
+import { SiteApprovedEmail } from "@/emails/site-approved";
+import { SiteRejectedEmail } from "@/emails/site-rejected";
+import { SubmissionReceivedEmail } from "@/emails/submission-received";
+import { WelcomeEmail } from "@/emails/welcome";
 import type { Category } from "@/lib/categories";
 import type { MaskedPartner } from "@/lib/contracts";
 import { db } from "@/lib/db";
@@ -269,4 +273,107 @@ export async function notifyDigest(input: {
             category: "digest",
         }),
     );
+}
+
+// ---------------------------------------------------------------------------
+// Account and listing lifecycle
+//
+// The five above are all about a match or a link, which means they only ever
+// arrive once somebody ELSE has acted. The four below are the member's own
+// thread: signed up, submitted, approved, rejected. Without them a member can
+// go from signing in to being matched having received nothing at all, and a
+// submission sits in `pending_review` in total silence.
+//
+// All four are `transactional`. None is a digest, so none is opt-out-able: they
+// are the record of what happened to that person's own account.
+// ---------------------------------------------------------------------------
+
+/**
+ * First email a member ever gets, fired the once from `getSessionMember`.
+ *
+ * That call site is the reason there is no "welcomed_at" column. It inserts
+ * with `onConflictDoNothing().returning()`, so exactly one request in any race
+ * gets a row back, and that request is the one that sends this.
+ */
+export async function notifyWelcome(input: { to: string }): Promise<void> {
+    await safely("welcome", () =>
+        sendEmail({
+            to: input.to,
+            subject: "Welcome to the exchange",
+            react: WelcomeEmail(),
+        }),
+    );
+}
+
+/**
+ * Acknowledges a submission and echoes the listing back for correction.
+ *
+ * Sent from `commitSite`. Fire and forget like everything else here: a member
+ * whose site was written but whose confirmation email failed still has a site.
+ */
+export async function notifySubmissionReceived(input: { site: ExchangeSite }): Promise<void> {
+    const { site } = input;
+
+    await safely("submission-received", async () => {
+        const to = await emailForSite(site);
+        if (!to) return;
+
+        await sendEmail({
+            to,
+            subject: `We have ${site.domain}, it is in review`,
+            react: SubmissionReceivedEmail({
+                domain: site.domain,
+                category: site.category,
+                description: site.description,
+                keywords: site.keywords ?? [],
+                domainRating: site.domainRating,
+                placementOffered: site.placementOffered,
+            }),
+        });
+    });
+}
+
+/**
+ * A listing passed review and is now matchable.
+ *
+ * Says nothing about whether a partner was found. Approving runs `autoPair`,
+ * which sends its own `match-proposed` when it succeeds, and promising a match
+ * that never arrives is worse than promising nothing.
+ */
+export async function notifySiteApproved(input: { site: ExchangeSite }): Promise<void> {
+    const { site } = input;
+
+    await safely("site-approved", async () => {
+        const to = await emailForSite(site);
+        if (!to) return;
+
+        await sendEmail({
+            to,
+            subject: `${site.domain} is live in the exchange`,
+            react: SiteApprovedEmail({ domain: site.domain, category: site.category }),
+        });
+    });
+}
+
+/**
+ * A listing was refused, carrying the reviewer's note as the reason.
+ *
+ * `/terms` section 4 promises the member is told why, so the note is the point
+ * of this email rather than a footnote. A rejection recorded with no note still
+ * sends: silence would break the same promise, and the template says plainly
+ * that no reason was recorded rather than inventing one.
+ */
+export async function notifySiteRejected(input: { site: ExchangeSite; reason: string | null }): Promise<void> {
+    const { site, reason } = input;
+
+    await safely("site-rejected", async () => {
+        const to = await emailForSite(site);
+        if (!to) return;
+
+        await sendEmail({
+            to,
+            subject: `About your submission of ${site.domain}`,
+            react: SiteRejectedEmail({ domain: site.domain, reason }),
+        });
+    });
 }

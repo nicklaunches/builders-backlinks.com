@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
 import { type ExchangeMember, exchangeMembers } from "@/lib/db/schema";
+import { notifyWelcome } from "@/lib/email/notify";
 
 /**
  * @file THE single session-lookup seam for all server-side code.
@@ -68,7 +69,15 @@ export async function getSessionMember(): Promise<ExchangeMember | null> {
         .values({ userId: user.id, email: user.email.toLowerCase(), verifiedAt: new Date() })
         .onConflictDoNothing({ target: exchangeMembers.userId })
         .returning();
-    if (created) return created;
+    if (created) {
+        // The one place a member comes into existence, and therefore the only
+        // honest place to welcome them. `onConflictDoNothing().returning()`
+        // hands a row back to exactly one request even when several arrive at
+        // once, so this cannot double-send and needs no "welcomed_at" column to
+        // guard it. Fire and forget, like every other notify call.
+        void notifyWelcome({ to: created.email });
+        return created;
+    }
 
     return (await db().query.exchangeMembers.findFirst({ where: eq(exchangeMembers.userId, user.id) })) ?? null;
 }

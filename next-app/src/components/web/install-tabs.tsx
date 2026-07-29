@@ -39,6 +39,7 @@ import { useEffect, useId, useState, useSyncExternalStore } from "react";
 
 import { cn } from "@/components/web/cn";
 import { CopyButton } from "@/components/web/copy-button";
+import { SnippetBody } from "@/components/web/snippet-body";
 import { type TabItem, TabList, panelId, tabId } from "@/components/web/tab-list";
 
 const MCP_URL = "https://builders-backlinks.com/api/mcp";
@@ -367,25 +368,6 @@ function writeDemoPreference(open: boolean): void {
 // ---------------------------------------------------------------------------
 // Rendering
 // ---------------------------------------------------------------------------
-
-function SnippetBody({ snippet }: { snippet: string }) {
-    return (
-        <pre className="min-w-max font-mono text-[12.5px] leading-[1.75] sm:text-[13px]">
-            <code>
-                {snippet.split("\n").map((line, index) => {
-                    const isComment = line.trimStart().startsWith("#");
-                    return (
-                        <span
-                            key={index}
-                            className={cn("block whitespace-pre", isComment ? "text-term-dim" : "text-term-bright")}>
-                            {line === "" ? " " : line}
-                        </span>
-                    );
-                })}
-            </code>
-        </pre>
-    );
-}
 
 function TranscriptBody({ lines }: { lines: readonly Line[] }) {
     return (
