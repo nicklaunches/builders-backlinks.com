@@ -9,7 +9,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 
-
 import "./globals.css";
 
 const sans = Inter({
@@ -48,6 +47,14 @@ export const metadata: Metadata = {
         "SaaS SEO",
     ],
     alternates: { canonical: "/" },
+    // No `images` key in either block, deliberately. `src/app/opengraph-image.png`
+    // and `src/app/icon.png` are Next file conventions: the framework emits
+    // og:image, twitter:image and the icon links from those files, at the right
+    // absolute URLs via metadataBase above, and file-based metadata wins over
+    // anything declared here. Listing the paths again would be a second source
+    // of truth that silently goes stale when the filenames change.
+    //
+    // Regenerate both with `pnpm assets:generate`.
     openGraph: {
         type: "website",
         url: SITE_URL,

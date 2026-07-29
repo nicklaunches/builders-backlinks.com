@@ -1,15 +1,21 @@
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, lt, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
-import { exchangeLinks, exchangeSites } from "@/lib/db/schema";
+import { exchangeLinks, exchangeMatches, exchangeSites } from "@/lib/db/schema";
 import { isAuthorizedCron } from "@/lib/email/cron-auth";
 import { notifyLinkRemoved } from "@/lib/email/notify";
 import { nextCheckAt } from "@/lib/exchange";
 import { verifyLink } from "@/lib/verify";
 
 /**
- * @file The recheck loop: day 7, day 30, then monthly.
+ * @file The daily maintenance run: expire stale matches, then recheck links.
+ *
+ * Two jobs, both time-based, both cheap, so they share one trigger rather than
+ * spending a second cron slot. The expiry sweep runs first and is unrelated to
+ * link verification; see the comment on it for why it exists.
+ *
+ * The recheck loop proper: day 7, day 30, then monthly.
  *
  * This is the half of the promise nobody else in the category makes. Verifying
  * a link the day it goes in is easy and most competitors do some version of it.
@@ -39,6 +45,37 @@ export async function GET(request: Request) {
     }
 
     const now = new Date();
+
+    // ---------------------------------------------------------------------
+    // Expire stale matches first.
+    //
+    // `expiresAt` was written on every match from the day matching shipped and
+    // then never compared against anything, so no match had ever actually
+    // expired and the state was decoration. That is worse than cosmetic: the
+    // weekly digest SKIPS any member holding an open match
+    // (`OPEN_STATES` in the digest route), so a single proposal nobody ever
+    // answered silently ended that member's digest permanently. They stopped
+    // hearing from us and there was no way for them to find out why.
+    //
+    // Expiring returns both sites to the pool, since matching only excludes
+    // partners with a live match, and lets the digest reach the member again.
+    // `declined` and `placed` are terminal and deliberately excluded: a placed
+    // match has real links behind it and must never be reopened by a clock.
+    // ---------------------------------------------------------------------
+    const expired = await db()
+        .update(exchangeMatches)
+        .set({ state: "expired", updatedAt: now })
+        .where(
+            and(
+                inArray(exchangeMatches.state, ["proposed", "a_accepted", "b_accepted", "agreed"]),
+                lt(exchangeMatches.expiresAt, now),
+            ),
+        )
+        .returning({ id: exchangeMatches.id });
+
+    if (expired.length > 0) {
+        console.log(`recheck: expired ${expired.length} match(es) past their deadline`);
+    }
 
     // Oldest checked first, so a backlog drains fairly rather than starving the
     // links that have waited longest. NULLS FIRST is explicit: a link that has
@@ -136,5 +173,5 @@ export async function GET(request: Request) {
         }
     }
 
-    return NextResponse.json({ due: due.length, checked, removed, inconclusive });
+    return NextResponse.json({ expired: expired.length, due: due.length, checked, removed, inconclusive });
 }

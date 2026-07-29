@@ -262,6 +262,18 @@ export type MatchView = {
     revealed: boolean;
     /** What the viewer should do next, in plain words. Agents act on this. */
     nextStep: string;
+    /**
+     * True when the OTHER side has accepted and the viewer has not.
+     *
+     * Derivable from `state` only if you also know which side of the pair the
+     * viewer is on, which `MatchView` deliberately does not expose (leaking
+     * `siteAId` would tell a member which half of the ordered pair they are,
+     * and that ordering is an implementation detail of the uniqueness
+     * constraint). So it is computed here, where `mineIsA` is already known.
+     * The browser dashboard needs it to say whose turn it is; getting that
+     * backwards tells someone to wait when they are the one blocking.
+     */
+    waitingOnMe: boolean;
     expiresAt: Date;
 };
 
@@ -313,6 +325,7 @@ async function buildMatchView(match: ExchangeMatch, viewerSiteIds: Set<string>):
         partner,
         revealed,
         nextStep,
+        waitingOnMe: state === theirAcceptState,
         expiresAt: match.expiresAt,
     };
 }

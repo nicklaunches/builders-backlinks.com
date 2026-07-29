@@ -14,6 +14,7 @@
         "test": "node --import tsx --test \"src/**/*.test.ts\"",
         "test:mcp": "node --import tsx scripts/mcp-smoke.ts",
         "emails:render": "node --import tsx scripts/render-emails.ts",
+        "assets:generate": "node --import tsx scripts/assets/generate.ts",
         "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
         "deploy": "pnpm db:migrate:deploy && opennextjs-cloudflare build && opennextjs-cloudflare deploy",
         "cf-typegen": "wrangler types",
@@ -44,6 +45,7 @@
     },
     "devDependencies": {
         "@opennextjs/cloudflare": "^1.20.2",
+        "@resvg/resvg-js": "^2.6.2",
         "@tailwindcss/postcss": "^4",
         "@trivago/prettier-plugin-sort-imports": "^6.0.2",
         "@types/node": "^20",

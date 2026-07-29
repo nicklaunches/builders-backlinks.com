@@ -23,3 +23,8 @@ next-env.d.ts
 # it. CI type-checks a clean checkout before it ever builds, which means the
 # file has to be committed. Regenerate with `pnpm cf-typegen` after changing a
 # binding in wrangler.jsonc.
+
+# Typeface fetched by scripts/assets/generate.ts on first run. Not vendored:
+# JetBrains Mono is OFL, and a font binary in the repo is a licence obligation
+# nobody remembers. Delete this directory to force a re-fetch.
+scripts/assets/.fonts/
