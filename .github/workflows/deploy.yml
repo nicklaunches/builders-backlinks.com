@@ -30,7 +30,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # package_json_file is required because the app is nested in next-app/ and
+      # there is no root package.json. `defaults.run.working-directory` above
+      # only applies to `run` steps, not to action inputs, so without this the
+      # action looks for ./package.json, finds nothing, and fails with "No pnpm
+      # version is specified". Pointing at the real manifest keeps the version
+      # single-sourced from its `packageManager` field rather than pinning it
+      # again here, where the two would drift.
       - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: next-app/package.json
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
