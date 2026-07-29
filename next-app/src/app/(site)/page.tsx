@@ -37,12 +37,18 @@ import { SubmitFallback } from "@/components/web/submit-fallback";
 import { getFounderCount } from "@/lib/services/catalog";
 
 /**
- * The founders count is the only dynamic thing on this page, and it moves at
- * the speed of signups. An hour of staleness is invisible to a reader and turns
- * the front page back into a static document that costs no database round trip
- * per visit.
+ * No `revalidate` any more, and no static render.
+ *
+ * `SiteHeader` reads the session so that a signed-in member is greeted as one,
+ * and a page that reads a cookie cannot be shared across visitors: one cached
+ * html body is by definition anonymous. An ISR directive here would be dead
+ * config, so it is gone rather than left to mislead.
+ *
+ * That costs the founder count a query per visit instead of one per hour. It is
+ * a `count(*)` on one table behind Hyperdrive, whose default query cache
+ * absorbs repeats, and `readFounderCount` already swallows failures and renders
+ * a complete row without the number.
  */
-export const revalidate = 3600;
 
 const VALUE_PROPS = [
     {

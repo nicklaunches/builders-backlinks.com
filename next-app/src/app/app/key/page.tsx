@@ -40,7 +40,7 @@ export default async function ApiKeyPage() {
 
     return (
         <>
-            <SiteHeader signedIn={Boolean(member)} />
+            <SiteHeader />
 
             <main id="main">
                 <div className="mx-auto max-w-3xl px-5 py-12 sm:px-6 sm:py-16">
