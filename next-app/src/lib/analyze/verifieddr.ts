@@ -9,20 +9,25 @@
  * number someone can buy their way up and the band is the main quality lever.
  * DR is kept for display because it is what members recognise.
  *
- * TODO(verify): THE RESPONSE SCHEMA HERE IS UNCONFIRMED. VerifiedDR publishes
- * the endpoint, the auth scheme, and the rate limits, but not the JSON body it
- * returns, and this parser was written without a key to test against. The field
- * names below are plausible guesses, not verified facts. Whoever gets an API key
- * first: make ONE call to `GET /lookup/{domain}`, read the real field names, and
- * pin `DR_KEYS` / `TRUE_DR_KEYS` / `CONTAINER_PREFIXES` to them, then delete this
- * TODO. Until that happens, treat missing scores as a schema problem before
- * assuming the domain simply has none.
+ * SCHEMA CONFIRMED 2026-07-29 against a live key, on tier `partner`. The scores
+ * sit two levels down, under `lookup.authority`:
  *
- * Why the guessing is made loud rather than quiet: this module returns null on
- * every failure by design, so a wrong field name produces no error, no stack
- * trace, and no scores forever, while everything looks healthy. So when parsing
- * fails we log the response's actual key NAMES (never values, never the key) at
- * warn level. One real call then reveals the shape from the logs immediately.
+ *     { "lookup": { "domain": "...", "authority": { "dr": 68, "trueDr": 50,
+ *       "trustScore": 50, "confidence": "medium", "trafficValidated": true },
+ *       "evidence": { "traffic": ..., "referringDomains": ..., ... } } }
+ *
+ * The original parser guessed the key NAMES right (`dr`, `trueDr`) and the
+ * CONTAINER wrong: it tried the top level, `data` and `result`, so every lookup
+ * silently returned nulls and every submission was stored with no DR. That is
+ * the exact failure this module was built to make visible, and it still took a
+ * real call to see, so the self-revealing logging below stays.
+ *
+ * That logging is why: this module returns null on every failure by design, so a
+ * wrong field name produces no error, no stack trace, and no scores forever,
+ * while everything looks healthy. When parsing fails we log the response's
+ * actual key NAMES (never values, never the key) at warn level, so a schema
+ * change on their side shows up in one line rather than as months of quiet
+ * nulls.
  *
  * Auth is a bearer token (`vdr_...`) in `VERIFIEDDR_API_KEY`. Limits are 60
  * requests per minute on a sliding window, and a monthly quota that depends on
@@ -59,12 +64,21 @@ const DR_KEYS = ["dr", "domain_rating", "domainRating", "ahrefs_dr"] as const;
 const TRUE_DR_KEYS = ["true_dr", "trueDr", "truedr", "trueDR", "true_domain_rating"] as const;
 
 /**
- * Where the metrics might sit: at the top level, or one level down under a
- * conventional envelope key. Deliberately shallow. Searching arbitrarily deep
- * would find a plausible-looking number somewhere in almost any payload, and a
- * confidently wrong score is worse than a null one.
+ * Where the metrics sit. `lookup.authority` is the CONFIRMED path and leads.
+ *
+ * The rest are kept as fallbacks rather than deleted, because they cost one
+ * failed object lookup each and would otherwise have to be re-derived if
+ * VerifiedDR ever flattens the envelope. Still deliberately shallow: searching
+ * arbitrarily deep would find a plausible-looking number somewhere in almost
+ * any payload, and a confidently wrong score is worse than a null one.
  */
-const CONTAINER_PREFIXES: readonly (readonly string[])[] = [[], ["data"], ["result"]];
+const CONTAINER_PREFIXES: readonly (readonly string[])[] = [
+    ["lookup", "authority"],
+    ["authority"],
+    [],
+    ["data"],
+    ["result"],
+];
 
 /** A dotted path into the response, e.g. `["data", "dr"]`. */
 type Path = readonly string[];
@@ -159,6 +173,23 @@ function describeShape(payload: unknown): string {
         if (nested !== undefined) parts.push(`${prefix.join(".")} keys ${keyNames(nested)}`);
     }
     return parts.join("; ");
+}
+
+/**
+ * Pulls DR and TrueDR out of a parsed response body.
+ *
+ * Exported so the shape can be tested against a real captured payload without a
+ * network call or a quota unit, which is what would have caught the wrong
+ * container in the first place.
+ *
+ * @param payload - Parsed response body.
+ * @returns Both scores, either or both possibly null.
+ */
+export function parseAuthorityScores(payload: unknown): { domainRating: number | null; trueDr: number | null } {
+    return {
+        domainRating: pickScore(payload, candidatePaths(DR_KEYS)),
+        trueDr: pickScore(payload, candidatePaths(TRUE_DR_KEYS)),
+    };
 }
 
 /** Warn about the missing key once per process, not once per submission. */
@@ -257,8 +288,7 @@ export async function getAuthorityScores(
             return { ...NO_SCORES };
         }
 
-        const domainRating = pickScore(payload, candidatePaths(DR_KEYS));
-        const trueDr = pickScore(payload, candidatePaths(TRUE_DR_KEYS));
+        const { domainRating, trueDr } = parseAuthorityScores(payload);
 
         // Neither metric found means the guessed field names are wrong far more
         // often than it means the domain has no scores, so say so explicitly and

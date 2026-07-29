@@ -211,11 +211,13 @@ Two things to know before touching `/app`:
   except asking an admin to reject it.
 - `exchangeMembers.digestCadence` (`weekly | biweekly | paused`) is read by the
   digest cron and written by nothing. Only `unsubscribedAt` is user-controllable.
-- `SiteHeader` has no signed-in state and always renders a "Sign in" link.
-- The `TODO(verify)` markers are live, not stale. `src/lib/analyze/verifieddr.ts`
-  has an unconfirmed response schema and logs the actual field names at runtime
-  when it cannot find what it expects. `src/components/web/install-tabs.tsx` has
-  Codex and Gemini CLI config forms unverified against the real clients.
+- `src/components/web/install-tabs.tsx` still carries `TODO(verify)` markers: the
+  Codex and Gemini CLI config forms have never been confirmed against the real
+  clients. Only the Claude Code and Cursor forms have.
+- **Any site listed before 2026-07-29 has a null `domain_rating`.** The VerifiedDR
+  parser was reading the wrong container, so every lookup returned null. Fixed
+  and covered by `verifieddr.test.ts`, but existing rows are not backfilled by
+  anything: nothing re-runs the analyzer for a site that already exists.
 - CI runs `pnpm db:migrate`, which skips the `assert-prod-db.ts` guard that
   `db:migrate:deploy` has. That is intentional: CI's `DATABASE_URL` comes from a
   repository secret. Do not "fix" it.
