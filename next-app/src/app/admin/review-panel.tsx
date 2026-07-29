@@ -69,7 +69,7 @@ export function ReviewPanel({ rows, status }: { rows: readonly ReviewRow[]; stat
                 items={FILTERS}
                 value={status}
                 onChange={onFilter}
-                variant="underline"
+                variant="page"
             />
 
             {visible.length === 0 ? (

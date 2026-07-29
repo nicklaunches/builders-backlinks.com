@@ -25,7 +25,14 @@ type TabListProps<T extends string> = {
     items: readonly TabItem<T>[];
     value: T;
     onChange: (next: T) => void;
-    variant?: "solid" | "underline";
+    /**
+     * `solid` and `underline` are TERMINAL styles: they use the pinned `--term-*`
+     * palette and are legible only inside the dark terminal panels on the landing
+     * page. `page` is the same underline shape in page tokens, for the ordinary
+     * light/dark page ground. Using `underline` on a normal page renders the
+     * selected tab in `--term-bright` (#f4f6f8), which is white on white.
+     */
+    variant?: "solid" | "underline" | "page";
     className?: string;
 };
 
@@ -123,6 +130,10 @@ export function TabList<T extends string>({
                                 (selected
                                     ? "border-accent text-term-bright"
                                     : "text-term-dim hover:text-term-fg border-transparent"),
+                            variant === "page" &&
+                                "rounded-none border-b-2 px-3 py-2 text-[12px] tracking-wide lowercase sm:text-[12.5px]",
+                            variant === "page" &&
+                                (selected ? "border-accent text-fg" : "text-muted hover:text-fg border-transparent"),
                         )}>
                         {item.label}
                     </button>

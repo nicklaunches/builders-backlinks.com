@@ -48,7 +48,7 @@ export default async function DashboardPage() {
 
     if (!member) {
         return (
-            <Shell>
+            <Shell signedIn={false}>
                 <SignInPrompt />
             </Shell>
         );
@@ -89,7 +89,7 @@ export default async function DashboardPage() {
     const closed = rows.filter((r) => ["declined", "expired"].includes(r.state));
 
     return (
-        <Shell>
+        <Shell signedIn>
             {/* Standing first: it is the one number that says whether this is working. */}
             <section className="border-line bg-surface rounded-sm border p-6 sm:p-8">
                 <h2 className="text-muted font-mono text-[11px] tracking-[0.14em] uppercase">Standing</h2>
@@ -195,10 +195,12 @@ export default async function DashboardPage() {
 }
 
 /** Page chrome, matching the hand-rolled block /submit and /app/key both use. */
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({ signedIn, children }: { signedIn: boolean; children: React.ReactNode }) {
     return (
         <>
-            <SiteHeader />
+            {/* Passed in rather than hardcoded: this shell also wraps the
+                signed-out prompt, and a stranger must not see "Sign out". */}
+            <SiteHeader signedIn={signedIn} />
             <main id="main">
                 <div className="mx-auto max-w-3xl px-5 py-12 sm:px-6 sm:py-16">
                     <p className="text-muted mb-4 font-mono text-[11.5px] tracking-[0.14em] uppercase">Your exchange</p>

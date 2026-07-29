@@ -264,7 +264,7 @@ function AgreedTools({ row }: { row: MatchRow }) {
                         items={FORMATS}
                         value={format}
                         onChange={setFormat}
-                        variant="underline"
+                        variant="page"
                     />
                     <p className="text-muted mt-3 text-[13px] leading-relaxed">
                         Switching format needs a fresh fetch: press the button again after changing it.

@@ -50,7 +50,7 @@ export default async function SubmitPage({ searchParams }: SubmitPageProps) {
 
     return (
         <>
-            <SiteHeader />
+            <SiteHeader signedIn={Boolean(member)} />
 
             <main id="main">
                 <div className="mx-auto max-w-3xl px-5 py-12 sm:px-6 sm:py-16">
