@@ -122,6 +122,35 @@ scopes to the region-qualified identity ARN, so changing region means reissuing
 the DKIM CNAMEs and rewriting that ARN as well as `AWS_REGION` in
 `wrangler.jsonc`.
 
+## "They said they never got the email"
+
+Every send is attributed to the `builders-backlinks` SES configuration set and
+tagged `email_type` with the template name, so this is answerable rather than a
+guess. Account-wide numbers are useless here: the same AWS account sends a few
+thousand a day for other projects.
+
+```bash
+# Did that template deliver at all today? Swap in match-proposed, digest, welcome, ...
+aws cloudwatch get-metric-statistics --region us-west-2 --namespace AWS/SES \
+  --metric-name Delivery --dimensions Name=email_type,Value=match-proposed \
+  --start-time "$(date -u -v-1d +%Y-%m-%dT%H:%M:%SZ)" --end-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --period 86400 --statistics Sum
+
+# Is this specific person blocked? A prior hard bounce or complaint suppresses
+# an address ACCOUNT-WIDE, so another project's bounce silences ours too.
+aws sesv2 get-suppressed-destination --region us-west-2 --email-address them@example.com
+```
+
+`Delivery` means the receiving server accepted it. If Delivery fired and they
+still cannot find it, it is filtering on their side, not a bug here: a young
+sending domain lands in spam even with DKIM and DMARC correct, which ours are.
+
+Failures (bounce, complaint, reject, delivery delay, render failure) also
+publish to the `builders-backlinks-ses-alerts` SNS topic and are emailed, so
+they arrive rather than waiting to be noticed. Verified with a real drill
+against `bounce@simulator.amazonses.com`, which SES exempts from both reputation
+and the suppression list, so it is safe to repeat.
+
 ## Data invariants
 
 Encoded in `src/lib/db/schema.ts` as constraints, not just conventions:
