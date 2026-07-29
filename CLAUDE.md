@@ -32,6 +32,7 @@ next-app/src/
 | `pnpm test` | Node's built-in runner over `src/**/*.test.ts` |
 | `pnpm test:mcp` | Drives the server with the real MCP SDK client. Needs a running server and Postgres. |
 | `pnpm emails:render` | Renders every template to `.render/` for eyeballing |
+| `pnpm assets:generate` | Redraws the favicon, OG image and logo from `scripts/assets/`. Hand-run; commit the output |
 | `pnpm preview` | Build for Workers and serve it locally |
 | `pnpm run deploy` | Migrate, build, deploy from your machine |
 | `pnpm cf-typegen` | Regenerate `worker-configuration.d.ts` after a binding change |
@@ -178,18 +179,39 @@ driver that Hyperdrive rejected, the workerd hang, the module-level `let` bug, t
 accent-colour contrast math. They are the reason this codebase is cheap to return
 to. Write them for new files and extend them when you change the reasoning.
 
+## Two interfaces, one service layer
+
+Every capability exists twice: as an MCP tool in `src/lib/mcp/tools.ts`, and as a
+browser surface. `/app` is the dashboard (matches, accept/decline, link brief,
+mark placed, ledger, standing), `/submit` lists a site, `/app/key` issues the
+bearer token, `/admin` is the review queue. Both paths call the same
+`src/lib/services/*` functions, which is the entire reason they cannot drift.
+
+Two things to know before touching `/app`:
+
+- **The masking boundary is not lint-enforced there.** The ESLint layering rule
+  covers `src/lib/mcp/**` and `src/app/api/mcp/**` only. `src/app/app/**` sits
+  outside it, so the protection is that `listMatches` hands back a
+  `MaskedPartner` until both sides accept and that type has no `domain` field.
+  Never add a raw `db()` call to a dashboard page.
+- **`MatchView.nextStep` is written for agents** and says things like "call
+  `get_link_brief`". `match-card.tsx` maps state to UI wording instead. Do not
+  "fix" the service copy: it is correct for its caller.
+
 ## Known gaps
 
-- **Nothing ever sets `exchange_sites.status = 'active'`.** Every submission is
-  written `pending_review`, and matching, digests and the public catalog all filter
-  on `active`. Deployed as-is, people can sign up and submit and nothing will ever
-  match. Needs either an admin page or manual SQL:
-  `update exchange_sites set status = 'active', updated_at = now() where status = 'pending_review';`
-- `ADMIN_EMAILS` is declared in `.env.example` and read by no code. It is the
-  intended gate for the admin page that does not exist yet.
-- `wrangler.jsonc` still holds `REPLACE_WITH_HYPERDRIVE_ID`. Deploys fail until a
-  real Hyperdrive config id replaces it.
 - `MCP_SMOKE_BASE` is used by `scripts/mcp-smoke.ts` but is not in `.env.example`.
+- **Nobody can propose a trade with a chosen partner.** `search_partners` returns
+  `MaskedPartner.partnerId` and `mask.ts` says it exists to be passed to
+  `propose_trade`, which does not exist in any interface. Matching is entirely
+  server-initiated: `autoPair` on submit, on approval, and the weekly digest.
+- **A member cannot edit or pause their own listing.** `setSiteStatus` is
+  admin-gated and there is no function to change a description, category or
+  keywords after submission. A member who wants to fix a bad analysis has no path
+  except asking an admin to reject it.
+- `exchangeMembers.digestCadence` (`weekly | biweekly | paused`) is read by the
+  digest cron and written by nothing. Only `unsubscribedAt` is user-controllable.
+- `SiteHeader` has no signed-in state and always renders a "Sign in" link.
 - The `TODO(verify)` markers are live, not stale. `src/lib/analyze/verifieddr.ts`
   has an unconfirmed response schema and logs the actual field names at runtime
   when it cannot find what it expects. `src/components/web/install-tabs.tsx` has
