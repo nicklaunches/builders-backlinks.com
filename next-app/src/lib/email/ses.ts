@@ -67,7 +67,32 @@ export type SesEmail = {
      * quoted-printable encoding, and header folding for the sake of one header.
      */
     headers?: SesHeader[];
+    /**
+     * Which template this is, e.g. `match-proposed`. Becomes the `email_type`
+     * dimension on the SES event metrics, so delivery and bounce rates can be
+     * read per template rather than as one undifferentiated number.
+     *
+     * Deliberately a coarse label and never a member address: these values
+     * become CloudWatch dimension values, which are effectively public within
+     * the account and cardinality-limited. A per-recipient dimension would both
+     * leak addresses and blow up the metric count.
+     */
+    emailType?: string;
 };
+
+/**
+ * The SES configuration set every send is attributed to.
+ *
+ * Without one, SES emits only account-wide metrics, so a member saying "I never
+ * got my match email" is unanswerable on an account that also sends for other
+ * projects. That was the actual situation before this existed.
+ *
+ * The name is hardcoded rather than an env var because it is not a secret, it
+ * must match the IAM policy on `builders-backlinks-ses` (which is scoped to
+ * this exact configuration-set ARN), and a typo in an env var would fail every
+ * send with AccessDenied at runtime instead of at review.
+ */
+const CONFIGURATION_SET = "builders-backlinks";
 
 /**
  * Sends one email through SES.
@@ -76,11 +101,16 @@ export type SesEmail = {
  * `sendEmail` owns all of that, and keeping this function boring is what makes
  * it safe to call from a script or a test.
  */
-export async function sendSesEmail({ to, from, subject, text, html, headers }: SesEmail): Promise<void> {
+export async function sendSesEmail({ to, from, subject, text, html, headers, emailType }: SesEmail): Promise<void> {
     await getSesClient().send(
         new SendEmailCommand({
             FromEmailAddress: from,
             Destination: { ToAddresses: [to] },
+            ConfigurationSetName: CONFIGURATION_SET,
+            // Tag values are constrained to letters, digits, dashes and
+            // underscores; a stray character rejects the whole send, so the
+            // label is sanitised here rather than trusted from the caller.
+            EmailTags: [{ Name: "email_type", Value: (emailType ?? "unknown").replace(/[^A-Za-z0-9_-]/g, "-") }],
             Content: {
                 Simple: {
                     Subject: { Data: subject, Charset: "UTF-8" },

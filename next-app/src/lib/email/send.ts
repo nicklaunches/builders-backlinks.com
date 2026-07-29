@@ -1,7 +1,6 @@
 import { render } from "@react-email/render";
-import type { ReactElement } from "react";
-
 import { eq } from "drizzle-orm";
+import type { ReactElement } from "react";
 
 import { buildUnsubscribeUrl, runWithEmailContext } from "@/emails/_context";
 import { db } from "@/lib/db";
@@ -62,6 +61,8 @@ export type SendEmailInput = {
     from?: string;
     /** Defaults to `transactional`, the bucket that is never dropped. */
     category?: SendCategory;
+    /** Template name, e.g. `match-proposed`. Becomes the `email_type` metric dimension. */
+    emailType?: string;
 };
 
 /**
@@ -130,6 +131,7 @@ export async function sendEmail({
     react,
     from,
     category = "transactional",
+    emailType,
 }: SendEmailInput): Promise<boolean> {
     const sender = from ?? process.env.EMAIL_FROM;
     if (!sender) {
@@ -157,7 +159,7 @@ export async function sendEmail({
         const [html, text] = await runWithEmailContext({ unsubscribeUrl, siteOrigin: origin }, () =>
             Promise.all([render(react), render(react, { plainText: true })]),
         );
-        await sendSesEmail({ to, from: sender, subject, text, html, headers });
+        await sendSesEmail({ to, from: sender, subject, text, html, headers, emailType });
         return true;
     } catch (error) {
         console.error("sendEmail failed:", subject, "->", to, error);

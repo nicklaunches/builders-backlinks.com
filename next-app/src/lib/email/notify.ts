@@ -85,6 +85,7 @@ export async function notifyMatchProposed(input: {
                     to: emailA,
                     subject: "You have a new match in the exchange",
                     react: MatchProposedEmail({ matchId, partner: toMaskedPartner(siteB), expiresAt, widened }),
+                    emailType: "match-proposed",
                 }),
             );
         }
@@ -94,6 +95,7 @@ export async function notifyMatchProposed(input: {
                     to: emailB,
                     subject: "You have a new match in the exchange",
                     react: MatchProposedEmail({ matchId, partner: toMaskedPartner(siteA), expiresAt, widened }),
+                    emailType: "match-proposed",
                 }),
             );
         }
@@ -134,6 +136,7 @@ export async function notifyMatchAgreed(input: {
                         partner: toRevealedPartner(siteB, emailB, "agreed"),
                         brief: briefForA,
                     }),
+                    emailType: "match-agreed",
                 }),
                 sendEmail({
                     to: emailB,
@@ -143,6 +146,7 @@ export async function notifyMatchAgreed(input: {
                         partner: toRevealedPartner(siteA, emailA, "agreed"),
                         brief: briefForB,
                     }),
+                    emailType: "match-agreed",
                 }),
             );
         }
@@ -178,6 +182,7 @@ export async function notifyLinkVerified(input: {
             to,
             subject,
             react: LinkVerifiedEmail({ ...input, checkedAt: new Date() }),
+            emailType: "link-verified",
         });
     });
 }
@@ -225,6 +230,7 @@ export async function notifyLinkRemoved(input: {
                     to: hostEmail,
                     subject: "A link on your site stopped resolving",
                     react: LinkRemovedEmail({ ...shared, role: "host" }),
+                    emailType: "link-removed",
                 }),
             );
         }
@@ -234,6 +240,7 @@ export async function notifyLinkRemoved(input: {
                     to: beneficiaryEmail,
                     subject: "A link pointing at you stopped resolving",
                     react: LinkRemovedEmail({ ...shared, role: "beneficiary" }),
+                    emailType: "link-removed",
                 }),
             );
         }
@@ -270,6 +277,7 @@ export async function notifyDigest(input: {
                 widenedCount: input.widenedCount,
                 standingNote: input.standingNote,
             }),
+            emailType: "digest",
             category: "digest",
         }),
     );
@@ -301,6 +309,7 @@ export async function notifyWelcome(input: { to: string }): Promise<void> {
             to: input.to,
             subject: "Welcome to the exchange",
             react: WelcomeEmail(),
+            emailType: "welcome",
         }),
     );
 }
@@ -329,6 +338,7 @@ export async function notifySubmissionReceived(input: { site: ExchangeSite }): P
                 domainRating: site.domainRating,
                 placementOffered: site.placementOffered,
             }),
+            emailType: "submission-received",
         });
     });
 }
@@ -351,6 +361,7 @@ export async function notifySiteApproved(input: { site: ExchangeSite }): Promise
             to,
             subject: `${site.domain} is live in the exchange`,
             react: SiteApprovedEmail({ domain: site.domain, category: site.category }),
+            emailType: "site-approved",
         });
     });
 }
@@ -374,6 +385,7 @@ export async function notifySiteRejected(input: { site: ExchangeSite; reason: st
             to,
             subject: `About your submission of ${site.domain}`,
             react: SiteRejectedEmail({ domain: site.domain, reason }),
+            emailType: "site-rejected",
         });
     });
 }
