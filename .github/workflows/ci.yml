@@ -1,0 +1,69 @@
+# The gate on the way IN. `deploy.yml` already runs typecheck, lint and test
+# before it ships, but only on push to main, which means a pull request could be
+# reviewed and merged with nothing having run against it at all. Finding a type
+# error at that point is finding it after the decision, and after the branch is
+# gone.
+#
+# Deliberately NOT a copy of the deploy job. There are no secrets here and no
+# database: `pull_request` from a fork gets a read-only token, and a workflow
+# that needs DATABASE_URL to pass is a workflow that fails for every outside
+# contributor. Migrations, the Workers build and the deploy stay in deploy.yml
+# where the credentials live.
+#
+# `pnpm test:mcp` is the meaningful test in this repo and it is still not here,
+# because it wants a running server and a Postgres. That gap is real and worth
+# closing with a service container later; the cheap gates are worth having now.
+name: CI
+
+on:
+  pull_request:
+  # So a branch can be checked before it is opened as a PR.
+  workflow_dispatch:
+
+# A new push to a PR makes the previous run's answer irrelevant, so cancel it.
+# The opposite of deploy.yml, which queues rather than cancels because a
+# half-applied migration is worse than a slow deploy. Nothing here touches state.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: next-app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # package_json_file is required because the app is nested in next-app/ and
+      # there is no root package.json. `defaults.run.working-directory` only
+      # applies to `run` steps, not to action inputs, so without this the action
+      # looks for ./package.json and fails with "No pnpm version is specified".
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: next-app/package.json
+
+      # Node 22, not 20, for the same reason deploy.yml pins it: `pnpm test`
+      # runs `node --test "src/**/*.test.ts"`, and glob patterns in the test
+      # runner only landed in 22. On 20 the pattern is treated as a literal path
+      # and the run passes having executed nothing, which is the worst possible
+      # way for a test job to be green.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: next-app/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+
+      # Formatting is checked, never applied. A workflow that pushes a format
+      # commit back onto a contributor's branch rewrites work they are still
+      # holding locally. `pnpm format` is the fix, and it is one command.
+      - name: Check formatting
+        run: pnpm exec prettier --check .
