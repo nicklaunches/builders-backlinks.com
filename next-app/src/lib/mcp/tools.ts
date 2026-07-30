@@ -280,9 +280,11 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
             const pair = await autoPair(site);
             const tail = pair.matched
                 ? `\n\nYou already have a match: ${pair.partner.category}, DR ${pair.partner.domainRating ?? "unrated"}. Say "show my matches" to see it.`
-                : pair.reason === "first_in_category"
-                  ? `\n\nYou are the first site in ${pair.category}. That is a good position: the next member to join it is matched with you immediately.`
-                  : "\n\nNo partner available right now. You will be matched as soon as a suitable one joins.";
+                : pair.reason === "pending_review"
+                  ? "\n\nMatching starts the moment a human approves the listing. If a partner is waiting in your category, you will hear by email right then."
+                  : pair.reason === "first_in_category"
+                    ? `\n\nYou are the first site in ${pair.category}. That is a good position: the next member to join it is matched with you immediately.`
+                    : "\n\nNo partner available right now. You will be matched as soon as a suitable one joins.";
 
             return text(`${site.domain} is listed and pending review.${tail}`);
         }),

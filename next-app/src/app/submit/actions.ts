@@ -268,6 +268,13 @@ async function describeAutoPair(site: Parameters<typeof autoPair>[0]): Promise<{
                 outcome: `You already have a match: ${pair.partner.category}, DR ${dr}. It is waiting for you to accept or decline.`,
             };
         }
+        if (pair.reason === "pending_review") {
+            return {
+                matched: false,
+                outcome:
+                    "Matching starts the moment a human approves the listing. If a partner is waiting in your category, you will hear by email right then.",
+            };
+        }
         if (pair.reason === "first_in_category") {
             return {
                 matched: false,

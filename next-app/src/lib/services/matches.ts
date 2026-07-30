@@ -101,7 +101,7 @@ export async function searchPartners(input: {
 
 export type AutoPairResult =
     | { matched: true; match: ExchangeMatch; partner: MaskedPartner }
-    | { matched: false; reason: "first_in_category" | "no_eligible_partner"; category: Category };
+    | { matched: false; reason: "first_in_category" | "no_eligible_partner" | "pending_review"; category: Category };
 
 /**
  * Finds and proposes the best available partner for a site, right now.
@@ -113,6 +113,17 @@ export type AutoPairResult =
  */
 export async function autoPair(site: ExchangeSite): Promise<AutoPairResult> {
     const category = site.category;
+
+    // Only an active site may be proposed to anyone. Every filter below checks
+    // the status of the CANDIDATES, so without this guard the subject slips
+    // through: the submit flow calls autoPair the moment a listing is written,
+    // while it is still `pending_review`, and a match with an unreviewed site
+    // would go out (with both match-proposed emails) before a human had looked
+    // at it. /terms says that never happens, so it must not. Approval re-runs
+    // autoPair (see `setSiteStatus`), which is where a fresh site really pairs.
+    if (site.status !== "active") {
+        return { matched: false, reason: "pending_review", category };
+    }
 
     const [active] = await db()
         .select({ n: count() })
