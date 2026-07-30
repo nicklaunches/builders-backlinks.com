@@ -400,44 +400,70 @@ export async function respondToMatch(input: {
     const mineIsB = idSet.has(match.siteBId);
     if (!mineIsA && !mineIsB) throw new MatchError("not_yours", "That match does not involve any of your sites.");
 
-    const previousState = match.state;
-    if (previousState === "declined" || previousState === "expired") {
-        throw new MatchError("bad_state", `This match is already ${previousState}.`);
-    }
+    const myAccept = mineIsA ? "a_accepted" : "b_accepted";
+    const theirAccept = mineIsA ? "b_accepted" : "a_accepted";
 
-    // Built as a patch rather than mutated in place: one UPDATE, and the fields
-    // that do not change are not written at all.
-    const patch: { state?: MatchState; declineReason?: string | null; agreedAt?: Date } = {};
+    // The transition is computed from a state that can be stale by the time the
+    // UPDATE runs. Both sides get the match-proposed email in the same instant,
+    // and two agents acting on it will accept within the same second; with an
+    // unguarded UPDATE the second write overwrites the first, the match ends on
+    // a single accept with the other one lost, and both members are told
+    // "waiting on them" until it expires. So every write carries
+    // `state = <the state it was computed from>`, and a miss means someone else
+    // moved the match first: re-read and recompute, which in the concurrent
+    // accept case turns this side's write into the one that lands on `agreed`.
+    let current = match;
+    let updated = match;
+    for (let attempt = 0; ; attempt++) {
+        const from = current.state;
+        if (from === "declined" || from === "expired") {
+            throw new MatchError("bad_state", `This match is already ${from}.`);
+        }
 
-    if (!accept) {
-        patch.state = "declined";
-        patch.declineReason = input.reason ?? null;
-    } else if (previousState === "agreed" || previousState === "placed") {
-        // Already through. Accepting again is a no-op rather than an error:
-        // agents retry, and a retry should be harmless.
-    } else {
-        const myAccept = mineIsA ? "a_accepted" : "b_accepted";
-        const theirAccept = mineIsA ? "b_accepted" : "a_accepted";
-        if (previousState === theirAccept) {
+        // Built as a patch rather than mutated in place: one UPDATE, and the
+        // fields that do not change are not written at all.
+        const patch: { state?: MatchState; declineReason?: string | null; agreedAt?: Date } = {};
+
+        if (!accept) {
+            patch.state = "declined";
+            patch.declineReason = input.reason ?? null;
+        } else if (from === "agreed" || from === "placed") {
+            // Already through. Accepting again is a no-op rather than an error:
+            // agents retry, and a retry should be harmless.
+        } else if (from === theirAccept) {
             patch.state = "agreed";
             patch.agreedAt = new Date();
         } else {
             patch.state = myAccept;
         }
-    }
 
-    let updated = match;
-    if (Object.keys(patch).length > 0) {
+        if (Object.keys(patch).length === 0) {
+            updated = current;
+            break;
+        }
+
         const [row] = await db()
             .update(exchangeMatches)
             .set({ ...patch, updatedAt: new Date() })
-            .where(eq(exchangeMatches.id, match.id))
+            .where(and(eq(exchangeMatches.id, match.id), eq(exchangeMatches.state, from)))
             .returning();
-        if (!row) throw new MatchError("not_found", "No match with that id.");
-        updated = row;
+        if (row) {
+            updated = row;
+            break;
+        }
+
+        // Three misses in a row is not contention any more, something is
+        // rewriting this match faster than we can read it. Stop rather than spin.
+        if (attempt >= 2) {
+            throw new MatchError("bad_state", "This match changed while we were saving. List your matches and retry.");
+        }
+
+        const [reread] = await db().select().from(exchangeMatches).where(eq(exchangeMatches.id, match.id)).limit(1);
+        if (!reread) throw new MatchError("not_found", "No match with that id.");
+        current = reread;
     }
 
-    const justAgreed = updated.state === "agreed" && previousState !== "agreed";
+    const justAgreed = updated.state === "agreed" && match.state !== "agreed";
 
     // The reveal moment. Both sides are told at once, each getting the other's
     // identity and a brief pointing at the other's URL. Building the two briefs
