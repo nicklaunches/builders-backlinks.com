@@ -26,12 +26,12 @@
     },
     "dependencies": {
         "@auth/drizzle-adapter": "^1.11.3",
-        "@aws-sdk/client-sesv2": "^3.1041.0",
         "@modelcontextprotocol/sdk": "1.29.0",
         "@modelcontextprotocol/server": "2.0.0-beta.5",
         "@react-email/components": "^1.0.12",
         "@react-email/render": "^2.0.8",
         "agents": "^0.20.0",
+        "aws4fetch": "^1.0.20",
         "clsx": "^2.1.1",
         "drizzle-orm": "^0.45.2",
         "lucide-react": "^1.11.0",

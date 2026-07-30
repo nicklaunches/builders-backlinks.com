@@ -1,4 +1,4 @@
-import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
+import { AwsClient } from "aws4fetch";
 
 /**
  * @file The only place this app talks to AWS SES.
@@ -9,41 +9,40 @@ import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
  * `AWS_SES_*` aliases used there. This app has no other AWS integration, so a
  * SES-specific namespace would be ceremony around a single consumer.
  *
- * The client is lazy and cached because SESv2Client resolves credentials on
- * construction. Building it at module load would make importing this file
- * (which every email template path does, transitively) fail in any environment
- * without AWS configured, including `pnpm emails:render`.
+ * ## Why this is SigV4 over `fetch` and not `@aws-sdk/client-sesv2`
+ *
+ * The SDK cannot send from workerd. Every `send()` throws
+ * `[unenv] fs.readFile is not implemented yet!`, from
+ * `loadSharedConfigFiles` trying to read `~/.aws/config`. Passing explicit
+ * `region` and `credentials` does not avoid it: the client's node runtime
+ * config registers file-backed lazy providers for `defaultsMode`, `retryMode`,
+ * `useDualstackEndpoint` and others, and the first `send()` resolves all of
+ * them. There is no combination of constructor options that reliably turns
+ * that off, and pinning today's list would break again the next time the SDK
+ * adds a provider — silently, because a failed send is caught and logged.
+ *
+ * That is not a hypothetical. It is what shipped: the app sent nothing in
+ * production for its entire life, and the error was invisible because the
+ * notification promise was cancelled before it could throw. See rule 1 in
+ * `notify.ts` for that half of the story.
+ *
+ * `aws4fetch` signs a plain `fetch` with SubtleCrypto and touches no Node API,
+ * so it works on workerd by construction rather than by configuration. It also
+ * removes the largest dependency in the bundle. The cost is that this file now
+ * owns the request shape: SES v2 `SendEmail` takes the same JSON body the SDK
+ * command did, so the payload below is the SDK's input verbatim.
+ *
+ * The client is built per call. It holds no I/O object, only strings and a
+ * derived-key cache, so a module-level singleton would be safe here in a way
+ * the database handle is not — but it would also be the same shape this repo
+ * has been bitten by twice, for a saving of nothing on a few sends a day.
+ * Building it per call also means credentials are read at call time, which is
+ * what makes `pnpm emails:render` and the unit tests importable without AWS
+ * configured at all.
  *
  * Nothing above this module speaks AWS casing: `SesHeader` is lowercase and is
- * mapped to the SDK's `MessageHeader` at the call site.
+ * mapped to the wire format at the call site.
  */
-
-let _client: SESv2Client | null = null;
-
-/**
- * Lazily creates and caches an SESv2 client.
- *
- * Explicit credentials are used when both `AWS_ACCESS_KEY_ID` and
- * `AWS_SECRET_ACCESS_KEY` are present; otherwise the SDK falls back to its
- * default provider chain (instance role, SSO profile, and so on).
- *
- * @returns A process-local SESv2 client singleton.
- * @throws When no region is configured.
- */
-export function getSesClient(): SESv2Client {
-    if (_client) return _client;
-    const region = process.env.AWS_REGION;
-    if (!region) {
-        throw new Error("AWS_REGION is not set");
-    }
-    const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
-    const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
-    _client = new SESv2Client({
-        region,
-        ...(accessKeyId && secretAccessKey ? { credentials: { accessKeyId, secretAccessKey } } : {}),
-    });
-    return _client;
-}
 
 /**
  * A single custom header to attach to an outgoing message.
@@ -95,15 +94,44 @@ export type SesEmail = {
 const CONFIGURATION_SET = "builders-backlinks";
 
 /**
+ * Builds a SigV4-signing `fetch` for SES in the configured region.
+ *
+ * @throws When the region or either credential is missing. Unlike the SDK,
+ *         there is no ambient provider chain to fall back to, so an incomplete
+ *         configuration has to be an error rather than a slow discovery.
+ */
+function getSesClient(): { client: AwsClient; region: string } {
+    const region = process.env.AWS_REGION;
+    if (!region) {
+        throw new Error("AWS_REGION is not set");
+    }
+    const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+    if (!accessKeyId || !secretAccessKey) {
+        throw new Error("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must both be set");
+    }
+    return { client: new AwsClient({ accessKeyId, secretAccessKey, region, service: "ses" }), region };
+}
+
+/**
  * Sends one email through SES.
  *
  * Deliberately dumb: no rendering, no preference logic, no error swallowing.
  * `sendEmail` owns all of that, and keeping this function boring is what makes
  * it safe to call from a script or a test.
+ *
+ * @throws When SES answers with a non-2xx. The body is included in the message:
+ *         SES puts the useful part (`MessageRejected`, `AccessDeniedException`
+ *         and which ARN it wanted) there, and a bare status code would send the
+ *         next person reading a log straight back to the AWS console.
  */
 export async function sendSesEmail({ to, from, subject, text, html, headers, emailType }: SesEmail): Promise<void> {
-    await getSesClient().send(
-        new SendEmailCommand({
+    const { client, region } = getSesClient();
+
+    const response = await client.fetch(`https://email.${region}.amazonaws.com/v2/email/outbound-emails`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
             FromEmailAddress: from,
             Destination: { ToAddresses: [to] },
             ConfigurationSetName: CONFIGURATION_SET,
@@ -126,5 +154,10 @@ export async function sendSesEmail({ to, from, subject, text, html, headers, ema
                 },
             },
         }),
-    );
+    });
+
+    if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new Error(`SES returned ${response.status} ${response.statusText}: ${body.slice(0, 500)}`);
+    }
 }
