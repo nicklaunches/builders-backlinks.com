@@ -226,10 +226,11 @@ export async function listSitesForReview(status?: SiteStatus): Promise<SiteForRe
  * since the first migration and had no reader or writer until now.
  *
  * Approving MATCHES IMMEDIATELY. `autoPair` already runs on submit, but at that
- * point the site is `pending_review` and invisible to the matcher, so this is
- * the first moment it can actually pair with anyone. Without the call here an
- * approved site would sit idle until the Tuesday cron, which is a week of
- * silence at exactly the moment the member has just been told they are live.
+ * point the site is `pending_review` and autoPair declines to pair it (that is
+ * the review promise in /terms), so this is the first moment it can actually
+ * pair with anyone. Without the call here an approved site would sit idle until
+ * the Tuesday cron, which is a week of silence at exactly the moment the member
+ * has just been told they are live.
  *
  * Pairing is awaited rather than fired and forgotten, because its own
  * `match-proposed` email should land after the approval email rather than
