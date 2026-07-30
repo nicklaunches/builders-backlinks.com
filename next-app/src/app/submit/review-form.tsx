@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, ArrowRight, CheckCircle2, EyeOff, Loader2, PartyPopper } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, EyeOff, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useActionState, useId, useState } from "react";
 
@@ -321,7 +321,7 @@ export function ReviewForm({ draft, onStartOver }: ReviewFormProps) {
             </div>
 
             <p aria-live="polite" className="sr-only">
-                {pending ? "Listing your site and looking for a partner." : ""}
+                {pending ? "Listing your site." : ""}
             </p>
         </form>
     );
@@ -329,13 +329,15 @@ export function ReviewForm({ draft, onStartOver }: ReviewFormProps) {
 
 const SIGNED_OUT = "Your session expired before we could save this. Sign in again and resubmit, nothing was written.";
 
+// One icon, not two. This used to celebrate with a PartyPopper when the submit
+// call came back already matched, which cannot happen any more: nothing is
+// matched until review clears the listing. The celebration belongs on whatever
+// surface tells a member they have a match, not on the one that says "received".
 function SubmittedPanel({ state }: { state: Extract<CommitState, { status: "done" }> }) {
-    const Icon = state.matched ? PartyPopper : CheckCircle2;
-
     return (
         <section className="border-accent/35 bg-accent-soft rounded-sm border p-6 sm:p-8" aria-live="polite">
             <span className="border-line bg-surface text-accent mb-4 inline-flex size-10 items-center justify-center rounded-sm border">
-                <Icon aria-hidden="true" className="size-5" />
+                <CheckCircle2 aria-hidden="true" className="size-5" />
             </span>
 
             <h2 className="text-[1.35rem] font-semibold tracking-[-0.02em]">{state.headline}</h2>

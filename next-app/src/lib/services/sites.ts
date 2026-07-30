@@ -225,12 +225,13 @@ export async function listSitesForReview(status?: SiteStatus): Promise<SiteForRe
  * The reviewer's note is written to `review_note`, a column that has existed
  * since the first migration and had no reader or writer until now.
  *
- * Approving MATCHES IMMEDIATELY. `autoPair` already runs on submit, but at that
- * point the site is `pending_review` and autoPair declines to pair it (that is
- * the review promise in /terms), so this is the first moment it can actually
- * pair with anyone. Without the call here an approved site would sit idle until
- * the Tuesday cron, which is a week of silence at exactly the moment the member
- * has just been told they are live.
+ * Approving MATCHES IMMEDIATELY, and this is the ONLY place `autoPair` is
+ * called from. A site is `pending_review` from the moment it is submitted until
+ * a human clears it, and `autoPair` refuses to pair anything that is not
+ * `active` (that is the review promise in /terms), so approval is the first
+ * moment the site can pair with anyone at all. Without the call here an approved
+ * site would sit idle until the Tuesday cron, which is a week of silence at
+ * exactly the moment the member has just been told they are live.
  *
  * Pairing is awaited rather than fired and forgotten, because its own
  * `match-proposed` email should land after the approval email rather than
@@ -266,8 +267,18 @@ export async function setSiteStatus(siteId: string, status: SiteStatus, reviewNo
         void notifySiteApproved({ site: updated });
         // Best effort. A pairing failure must not make the approval look like
         // it did not happen, because the row is already committed.
+        //
+        // The outcome is logged rather than dropped. This is the only caller of
+        // `autoPair`, so an unlogged return value would mean nothing anywhere
+        // observes whether approving a site actually matched it, and "I approved
+        // them and they never heard anything" would have no trail to follow.
         try {
-            await autoPair(updated);
+            const pair = await autoPair(updated);
+            console.log(
+                pair.matched
+                    ? `setSiteStatus: approved ${updated.domain} and matched it (${pair.match.id})`
+                    : `setSiteStatus: approved ${updated.domain}, no match yet (${pair.reason} in ${pair.category})`,
+            );
         } catch (err) {
             console.error("setSiteStatus: autoPair failed after approving", updated.domain, err);
         }

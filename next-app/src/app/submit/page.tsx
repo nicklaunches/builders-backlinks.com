@@ -11,8 +11,8 @@ import { getSessionMember } from "@/lib/session";
  *
  * The whole architecture rests on both interfaces calling the same services, so
  * this page contains no listing logic at all: it resolves the session, and the
- * server actions in `./actions.ts` call `draftSite`, `commitSite`, and
- * `autoPair` in the same order the tool does.
+ * server actions in `./actions.ts` call `draftSite` and `commitSite` in the same
+ * order the tool does. Neither pairs on submit; matching runs at approval.
  *
  * A URL typed into the landing page's fallback form is carried through the
  * sign-in round trip in `callbackUrl`, so someone who is signed out never has

@@ -20,17 +20,24 @@ import { toMaskedPartner, toRevealedPartner } from "@/lib/services/mask";
 /**
  * @file Finding partners and moving a match toward agreement.
  *
- * One matching path, two callers. `autoPair` runs synchronously the moment a
- * site is listed, and the weekly digest cron calls the same function for
- * members with nothing open. Keeping them on one code path is not tidiness: if
- * the instant path were a separate implementation it would quietly rot, and the
- * instant path is the one that makes an exchange survivable while it is small.
+ * `autoPair` runs at exactly one moment: approval. It used to also run on
+ * submit, which read as instant matching but was the review gate leaking — a
+ * `pending_review` site was being proposed to real members before anyone had
+ * looked at it. The guard inside `autoPair` closed that, and the two submit
+ * surfaces stopped calling it, since the call could no longer do anything.
+ *
+ * The cost of that is real and worth naming: time to first match is now bounded
+ * by how fast the /admin queue gets worked, and this file used to argue that the
+ * instant path is what makes an exchange survivable while it is small. It is
+ * still the right trade, because /terms promises review first, but the queue is
+ * now on the critical path and should be watched like one.
  *
  * When there is no partner yet, that is reported honestly rather than papered
- * over. A member told "you are first in this category, the next person to join
- * matches with you" is being told something true and mildly flattering. An
- * empty digest with no explanation is the single most common way a matching
- * product loses someone on day one.
+ * over. The weekly digest cron (`api/cron/digest`) covers the members `autoPair`
+ * could not place — it does its own candidate query rather than calling in here,
+ * because it shows several masked candidates instead of proposing one match.
+ * An empty digest with no explanation is the single most common way a matching
+ * product loses someone on day one, so it sends nothing rather than nothing-news.
  *
  * ON SORTING BY `lastMatchedAt`: every query that orders by it asks for NULLS
  * FIRST explicitly. A site that has never been matched is the stalest thing in
@@ -101,14 +108,17 @@ export async function searchPartners(input: {
 
 export type AutoPairResult =
     | { matched: true; match: ExchangeMatch; partner: MaskedPartner }
-    | { matched: false; reason: "first_in_category" | "no_eligible_partner" | "pending_review"; category: Category };
+    | { matched: false; reason: "first_in_category" | "no_eligible_partner" | "not_active"; category: Category };
 
 /**
  * Finds and proposes the best available partner for a site, right now.
  *
- * Called synchronously from the submit flow and from the weekly cron.
+ * Called from `setSiteStatus` the moment a site is approved. NOT from the submit
+ * flow: a freshly listed site is `pending_review` and the guard below turns the
+ * call into a no-op, so both submit surfaces stopped making it rather than
+ * carrying copy for a branch that could not be reached.
  *
- * @param site - The site needing a partner.
+ * @param site - The site needing a partner. Ignored unless it is `active`.
  * @returns The created match and a masked view of the partner, or a reason why not.
  */
 export async function autoPair(site: ExchangeSite): Promise<AutoPairResult> {
@@ -116,13 +126,15 @@ export async function autoPair(site: ExchangeSite): Promise<AutoPairResult> {
 
     // Only an active site may be proposed to anyone. Every filter below checks
     // the status of the CANDIDATES, so without this guard the subject slips
-    // through: the submit flow calls autoPair the moment a listing is written,
-    // while it is still `pending_review`, and a match with an unreviewed site
-    // would go out (with both match-proposed emails) before a human had looked
-    // at it. /terms says that never happens, so it must not. Approval re-runs
-    // autoPair (see `setSiteStatus`), which is where a fresh site really pairs.
+    // through and an unreviewed listing gets proposed to a real member, with
+    // both match-proposed emails, before a human has looked at it. /terms
+    // promises that never happens.
+    //
+    // `not_active` rather than `pending_review`: `paused`, `rejected` and
+    // `banned` take this branch too, and naming it after only the first one
+    // would be wrong three ways out of four.
     if (site.status !== "active") {
-        return { matched: false, reason: "pending_review", category };
+        return { matched: false, reason: "not_active", category };
     }
 
     const [active] = await db()
