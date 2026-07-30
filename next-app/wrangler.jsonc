@@ -48,11 +48,18 @@
     // are all per-region, and an identity verified in one region is invisible
     // from another. Moving the region means reissuing the DKIM CNAMEs and
     // repointing the IAM policy ARN, so it is not a value to change casually.
+    //
+    // EMAIL_FROM carries a display name because mail clients show one when it
+    // is there and fall back to the local part when it is not: as a bare
+    // address this arrived in Gmail from "hello", which names nothing. The
+    // RFC 5322 mailbox form is deliberate and `bareAddress` in lib/email/send.ts
+    // exists to strip it back to an address for the `mailto:` unsubscribe URI,
+    // which cannot carry a display name.
     "vars": {
         "AUTH_URL": "https://builders-backlinks.com",
         "AUTH_TRUST_HOST": "true",
         "AWS_REGION": "us-west-2",
-        "EMAIL_FROM": "hello@builders-backlinks.com",
+        "EMAIL_FROM": "Builders Backlinks <hello@builders-backlinks.com>",
     },
     // Neon Postgres, pooled at the edge. A Hyperdrive binding is NOT an
     // environment variable: the connection string arrives on the Cloudflare
