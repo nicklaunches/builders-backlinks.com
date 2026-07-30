@@ -4,7 +4,6 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import type { Category } from "@/lib/categories";
 import { AnalyzeError } from "@/lib/contracts";
-import { autoPair } from "@/lib/services/matches";
 import { SiteError, commitSite, draftSite } from "@/lib/services/sites";
 import { getSessionMember } from "@/lib/session";
 
@@ -14,25 +13,23 @@ import { getSessionMember } from "@/lib/session";
  * These two actions are deliberately the same shape as the one tool: call
  * `draftSiteAction` first and nothing is written, call `commitSiteAction` only
  * after a human has read the drafted words. Both call the exact same service
- * functions (`draftSite`, `commitSite`, `autoPair`) in the exact same order as
+ * functions (`draftSite`, `commitSite`) in the exact same order as
  * `src/lib/mcp/tools.ts`, and the error text is copied from `explain()` there.
  * If the two ever say different things about the same failure, one of the two
  * interfaces has started to drift and the agent one is supposed to be
  * first-class.
  *
- * Two places the web path is deliberately NOT identical, both in failure
- * handling rather than behaviour:
+ * Neither surface pairs on submit. `autoPair` refuses anything that is not
+ * `active` and a listing is `pending_review` until review clears it, so both
+ * used to carry copy for four outcomes when only one was reachable. The call is
+ * gone from both; matching happens at approval, in `setSiteStatus`.
  *
- *   1. Domain Rating is signed between the two steps (see `signDraft`). The MCP
- *      tool re-derives it from a draft it holds in memory; a browser has to
- *      round-trip it through a form field, and DR is a public number partners
- *      judge on, so a hand-edited hidden input must not be able to inflate it.
- *      A bad signature drops the score to null rather than failing the submit.
- *   2. A failure inside `autoPair` after the listing is written is reported as
- *      "listed, matching will run shortly" rather than as an error. The tool
- *      lets it throw, which on the web would leave the member staring at an
- *      error for a site that is in fact listed, and resubmitting into a
- *      `domain_taken`.
+ * One place the web path is deliberately NOT identical: Domain Rating is signed
+ * between the two steps (see `signDraft`). The MCP tool re-derives it from a
+ * draft it holds in memory; a browser has to round-trip it through a form field,
+ * and DR is a public number partners judge on, so a hand-edited hidden input
+ * must not be able to inflate it. A bad signature drops the score to null rather
+ * than failing the submit.
  */
 
 // ---------------------------------------------------------------------------
@@ -172,10 +169,21 @@ export type CommitState =
           domain: string;
           /** "yourapp.com is listed and pending review." */
           headline: string;
-          /** The auto-pair outcome, in plain words. Never empty. */
+          /** What happens next, in plain words. Never empty. */
           outcome: string;
-          matched: boolean;
       };
+
+/**
+ * What happens next, in the same words the `submit_site` tool uses.
+ *
+ * A constant rather than a computed sentence: nothing is matched at submit any
+ * more, so there is no per-submission outcome left to describe. Kept in the
+ * state object anyway, because the panel that renders it does not need to know
+ * that, and the day matching says something per-submission again this is where
+ * it goes.
+ */
+const PENDING_REVIEW_OUTCOME =
+    "A human reads the listing, usually the same day. Matching runs the moment it is approved, and if a partner is waiting in your category you will hear by email right then.";
 
 /**
  * Splits the anchors textarea into keywords.
@@ -192,7 +200,12 @@ function parseKeywords(raw: string): string[] {
 }
 
 /**
- * Writes the confirmed listing and immediately looks for a partner.
+ * Writes the confirmed listing.
+ *
+ * It used to look for a partner here too. It no longer does: `autoPair` pairs
+ * nothing that is not `active`, and a listing is `pending_review` until a human
+ * clears it, so the call could only ever have come back empty. Matching happens
+ * at approval, in `setSiteStatus`.
  *
  * @param _previous - Previous action state, unused.
  * @param formData - The confirmation form, including the signed draft fields.
@@ -221,14 +234,11 @@ export async function commitSiteAction(_previous: CommitState, formData: FormDat
             domainRating,
         });
 
-        const pairing = await describeAutoPair(site);
-
         return {
             status: "done",
             domain: site.domain,
             headline: `${site.domain} is listed and pending review.`,
-            outcome: pairing.outcome,
-            matched: pairing.matched,
+            outcome: PENDING_REVIEW_OUTCOME,
         };
     } catch (err) {
         if (err instanceof SiteError) {
@@ -247,50 +257,6 @@ export async function commitSiteAction(_previous: CommitState, formData: FormDat
             status: "error",
             message: "Something went wrong on our side. Try again in a moment.",
             field: null,
-        };
-    }
-}
-
-/**
- * Runs instant matching and turns the result into the same three sentences the
- * `submit_site` tool returns.
- *
- * Never throws: the listing is already written by the time this runs, and an
- * error here must not be reported as a failed submission.
- */
-async function describeAutoPair(site: Parameters<typeof autoPair>[0]): Promise<{ outcome: string; matched: boolean }> {
-    try {
-        const pair = await autoPair(site);
-        if (pair.matched) {
-            const dr = pair.partner.domainRating ?? "unrated";
-            return {
-                matched: true,
-                outcome: `You already have a match: ${pair.partner.category}, DR ${dr}. It is waiting for you to accept or decline.`,
-            };
-        }
-        if (pair.reason === "pending_review") {
-            return {
-                matched: false,
-                outcome:
-                    "Matching starts the moment a human approves the listing. If a partner is waiting in your category, you will hear by email right then.",
-            };
-        }
-        if (pair.reason === "first_in_category") {
-            return {
-                matched: false,
-                outcome: `You are the first site in ${pair.category}. That is a good position: the next member to join it is matched with you immediately.`,
-            };
-        }
-        return {
-            matched: false,
-            outcome: "No partner available right now. You will be matched as soon as a suitable one joins.",
-        };
-    } catch (err) {
-        console.error("submit: autoPair failed after commit", err);
-        return {
-            matched: false,
-            outcome:
-                "Your listing is saved. Matching could not run just now, so it will run on the next sweep instead.",
         };
     }
 }

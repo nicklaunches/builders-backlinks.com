@@ -8,7 +8,7 @@ import { PLACEMENT_OFFERS } from "@/lib/exchange";
 import { RateLimited, enforceToolLimit } from "@/lib/mcp/limits";
 import { getCategoryDepths, getRules } from "@/lib/services/catalog";
 import { LinkError, checkLinks, getLinkBrief, getStanding, markLinkPlaced } from "@/lib/services/links";
-import { MatchError, autoPair, listMatches, respondToMatch, searchPartners } from "@/lib/services/matches";
+import { MatchError, listMatches, respondToMatch, searchPartners } from "@/lib/services/matches";
 import { SiteError, commitSite, draftSite, listMySites } from "@/lib/services/sites";
 
 /**
@@ -277,16 +277,14 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
                 domainRating: draft.domainRating,
             });
 
-            const pair = await autoPair(site);
-            const tail = pair.matched
-                ? `\n\nYou already have a match: ${pair.partner.category}, DR ${pair.partner.domainRating ?? "unrated"}. Say "show my matches" to see it.`
-                : pair.reason === "pending_review"
-                  ? "\n\nMatching starts the moment a human approves the listing. If a partner is waiting in your category, you will hear by email right then."
-                  : pair.reason === "first_in_category"
-                    ? `\n\nYou are the first site in ${pair.category}. That is a good position: the next member to join it is matched with you immediately.`
-                    : "\n\nNo partner available right now. You will be matched as soon as a suitable one joins.";
-
-            return text(`${site.domain} is listed and pending review.${tail}`);
+            // No pairing call here. `autoPair` refuses anything that is not
+            // `active` and a fresh listing is `pending_review`, so calling it
+            // would do nothing but return a reason. Matching happens at
+            // approval, in `setSiteStatus`.
+            return text(
+                `${site.domain} is listed and pending review.` +
+                    "\n\nA human reads the listing, usually the same day. Matching runs the moment it is approved, and if a partner is waiting in your category the member hears by email right then.",
+            );
         }),
     );
 
