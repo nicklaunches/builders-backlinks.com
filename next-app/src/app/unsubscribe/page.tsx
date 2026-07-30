@@ -1,8 +1,7 @@
+import { eq } from "drizzle-orm";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-
-import { eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { exchangeMembers } from "@/lib/db/schema";

@@ -356,10 +356,10 @@ export default function PrivacyPage() {
                                 where visits came from, and which browsers and countries, in aggregate.
                             </p>
                             <p>
-                                We chose it over Google Analytics deliberately. Google Analytics would have set
-                                cookies, sent your visit to an advertising company, and made three other statements on
-                                this page untrue. The trade is that we get materially less: no funnels, no per-visitor
-                                journeys, no custom events. That was worth it.
+                                We chose it over Google Analytics deliberately. Google Analytics would have set cookies,
+                                sent your visit to an advertising company, and made three other statements on this page
+                                untrue. The trade is that we get materially less: no funnels, no per-visitor journeys,
+                                no custom events. That was worth it.
                             </p>
                             <p>
                                 There is still no advertising pixel, no session recorder and no cross-site tracker on
