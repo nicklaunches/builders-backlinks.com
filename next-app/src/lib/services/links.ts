@@ -198,9 +198,31 @@ export async function markLinkPlaced(input: {
         detectSitewide: true,
     });
 
+    // What is already recorded for this direction decides how the write below
+    // is read: a first report creates the link, a re-report corrects it. The
+    // upsert alone cannot tell the two apart, and the difference matters three
+    // times over: the give/get counters, `firstSeenAt`, and what an
+    // inconclusive crawl is allowed to overwrite.
+    const [existing] = await db()
+        .select()
+        .from(exchangeLinks)
+        .where(
+            and(
+                eq(exchangeLinks.matchId, match.id),
+                eq(exchangeLinks.fromSiteId, mine.id),
+                eq(exchangeLinks.toSiteId, partner.id),
+            ),
+        )
+        .limit(1);
+    const wasLive = existing?.status === "live";
+
     const inconclusive = result.error !== null;
     const now = new Date();
-    const status: LinkStatus = result.found ? "live" : inconclusive ? "promised" : "missing";
+    // An inconclusive crawl carries no information, so it must not rewrite a
+    // status that earlier evidence established: a live link stays live through
+    // a flaky re-report, exactly as the recheck cron treats a flaky recheck.
+    // Only a first report defaults to "promised".
+    const status: LinkStatus = result.found ? "live" : inconclusive ? (existing?.status ?? "promised") : "missing";
 
     // Upsert on the unique `(match, from, to)` index: one link per direction per
     // match, and re-reporting the same placement is a correction rather than a
@@ -236,16 +258,22 @@ export async function markLinkPlaced(input: {
                 lastMessage: result.message,
                 checkCount: sql`${exchangeLinks.checkCount} + 1`,
                 updatedAt: now,
-                // Stamped only on a hit, exactly as before: a miss must not
-                // erase the date the recheck schedule counts from.
-                ...(result.found ? { firstSeenAt: now } : {}),
+                // Stamped once, on the FIRST hit. A miss must not erase it, and
+                // a re-report must not move it: it anchors the day 7 / day 30
+                // recheck schedule, and re-stamping restarts that clock.
+                ...(result.found && !existing?.firstSeenAt ? { firstSeenAt: now } : {}),
             },
         })
         .returning();
 
     if (!link) throw new LinkError("not_found", "The placement could not be recorded.");
 
-    if (result.found) {
+    if (result.found && !wasLive) {
+        // Counters move only when the link BECOMES live. Agents retry
+        // `mark_link_placed` as a matter of course, and the upsert above
+        // already treats a re-report as a correction; the counters have to
+        // read it the same way, or every retry inflates the giver's standing,
+        // and standing is what matching trusts.
         await db()
             .update(exchangeSites)
             .set({ linksGiven: sql`${exchangeSites.linksGiven} + 1`, updatedAt: now })
@@ -254,7 +282,9 @@ export async function markLinkPlaced(input: {
             .update(exchangeSites)
             .set({ linksGot: sql`${exchangeSites.linksGot} + 1`, updatedAt: now })
             .where(eq(exchangeSites.id, partner.id));
+    }
 
+    if (result.found) {
         // Both directions live promotes the match. Counted rather than assumed:
         // one side placing does not make a trade complete.
         const [live] = await db()
@@ -286,7 +316,10 @@ export async function markLinkPlaced(input: {
         message: result.message,
     };
     void notifyLinkVerified({ ...report, site: mine });
-    if (result.found) {
+    // The receiver hears about it once, when the link first goes live. The
+    // giver gets a receipt for every report because each one is their own
+    // action; re-mailing the partner on every retry would read as spam.
+    if (result.found && !wasLive) {
         void notifyLinkVerified({ ...report, site: partner, direction: "received" });
     }
 
