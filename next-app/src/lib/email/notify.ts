@@ -1,3 +1,4 @@
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { eq } from "drizzle-orm";
 
 import { DigestEmail } from "@/emails/digest";
@@ -31,6 +32,19 @@ import { toMaskedPartner, toRevealedPartner } from "@/lib/services/mask";
  *    never break a submission, a tool call, or a cron run. Email is the least
  *    important thing happening in any of those code paths.
  *
+ *    Fire and forget is a Node idiom and on workerd it is a trap. A `void`ed
+ *    promise is not a background task there, it is work the runtime is entitled
+ *    to cancel the moment the response is returned, and cancellation is not an
+ *    error: nothing throws, so `safely` below logs nothing. This shipped that
+ *    way and sent NOTHING in production for its entire life. Twenty members had
+ *    signed up and SES had recorded zero `welcome` sends; the only two sends in
+ *    sixty days came from a laptop. `pnpm dev` cannot reproduce it, because on
+ *    Node the process simply stays alive and the promise completes.
+ *
+ *    So `safely` now hands every send to `ctx.waitUntil` as well as awaiting it.
+ *    Callers keep their `void` and keep not caring, and the invocation stays
+ *    open until SES has actually answered.
+ *
  * 2. **Masked views are built here, from `services/mask.ts`, never by hand.**
  *    `notifyMatchProposed` passes a `MaskedPartner`, which structurally has no
  *    domain to leak. `notifyMatchAgreed` passes a `RevealedPartner`, which
@@ -49,13 +63,42 @@ async function emailForSite(site: ExchangeSite): Promise<string | null> {
     return member?.email ?? null;
 }
 
-/** Wraps a send so a failure is logged and swallowed. See rule 1. */
-async function safely(label: string, run: () => Promise<unknown>): Promise<void> {
+/**
+ * Registers a send with the Worker so the runtime cannot cancel it.
+ *
+ * Mirrors `workerContext()` in `lib/db/index.ts`: `getCloudflareContext()`
+ * throws rather than returning null outside a request, and scripts, the unit
+ * tests and `pnpm emails:render` all take that path legitimately. There is no
+ * lifetime to extend in a Node process, so swallowing is right here.
+ */
+function keepAlive(task: Promise<unknown>): void {
     try {
-        await run();
-    } catch (err) {
-        console.error(`notify: ${label} failed`, err);
+        getCloudflareContext().ctx.waitUntil(task);
+    } catch {
+        // Not in a Worker request. Awaiting the task is the whole lifetime.
     }
+}
+
+/**
+ * Wraps a send so a failure is logged and swallowed. See rule 1.
+ *
+ * The task is started, registered, and only then awaited, and that order is the
+ * point. `waitUntil` is what keeps a `void`ed caller's send alive past the
+ * response; the `await` is what keeps an awaiting caller's pacing intact. The
+ * digest cron relies on the second: it sends up to fifty in a loop, and SES
+ * caps this account at fourteen a second, so turning that loop into fifty
+ * concurrent sends would trade a silent failure for a throttled one.
+ */
+async function safely(label: string, run: () => Promise<unknown>): Promise<void> {
+    const task = (async () => {
+        try {
+            await run();
+        } catch (err) {
+            console.error(`notify: ${label} failed`, err);
+        }
+    })();
+    keepAlive(task);
+    await task;
 }
 
 /**
