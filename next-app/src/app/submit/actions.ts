@@ -1,7 +1,6 @@
 "use server";
 
-import { createHmac, timingSafeEqual } from "node:crypto";
-
+import { signDraft, verifyDraft } from "@/app/submit/draft-signature";
 import type { Category } from "@/lib/categories";
 import { AnalyzeError } from "@/lib/contracts";
 import { SiteError, commitSite, draftSite } from "@/lib/services/sites";
@@ -24,44 +23,14 @@ import { getSessionMember } from "@/lib/session";
  * used to carry copy for four outcomes when only one was reachable. The call is
  * gone from both; matching happens at approval, in `setSiteStatus`.
  *
- * One place the web path is deliberately NOT identical: Domain Rating is signed
- * between the two steps (see `signDraft`). The MCP tool re-derives it from a
- * draft it holds in memory; a browser has to round-trip it through a form field,
- * and DR is a public number partners judge on, so a hand-edited hidden input
- * must not be able to inflate it. A bad signature drops the score to null rather
- * than failing the submit.
+ * One place the web path is deliberately NOT identical: the URL and the Domain
+ * Rating are signed between the two steps (see `draft-signature.ts`). The MCP
+ * tool re-runs `draftSite` on confirm and reads both off the fresh draft; a
+ * browser has to round-trip them through form fields, and a server action is a
+ * POST endpoint that can be called without ever loading the page those fields
+ * came from. An unproven URL there would mean the web path lists a domain this
+ * server never fetched, while the tool analyzes every single one.
  */
-
-// ---------------------------------------------------------------------------
-// Draft signing
-// ---------------------------------------------------------------------------
-
-function draftSecret(): string {
-    const secret = process.env.AUTH_SECRET;
-    if (!secret) throw new Error("AUTH_SECRET must be set: it signs the Domain Rating carried between submit steps.");
-    return secret;
-}
-
-function signDraft(url: string, domainRating: number | null): string {
-    return createHmac("sha256", draftSecret())
-        .update(`${url}\n${domainRating ?? ""}`)
-        .digest("hex");
-}
-
-/**
- * Returns the Domain Rating only when it is provably the one this server
- * produced during the draft step. Anything else is treated as unknown.
- */
-function verifiedDomainRating(url: string, raw: string, signature: string): number | null {
-    const parsed = raw === "" ? null : Number.parseInt(raw, 10);
-    const domainRating = parsed == null || Number.isNaN(parsed) ? null : parsed;
-
-    const expected = Buffer.from(signDraft(url, domainRating), "utf8");
-    const given = Buffer.from(signature, "utf8");
-    if (expected.length !== given.length || !timingSafeEqual(expected, given)) return null;
-
-    return domainRating;
-}
 
 // ---------------------------------------------------------------------------
 // Step one: draft
@@ -186,6 +155,17 @@ const PENDING_REVIEW_OUTCOME =
     "A human reads the listing, usually the same day. Matching runs the moment it is approved, and if a partner is waiting in your category you will hear by email right then.";
 
 /**
+ * Shown when the confirmation form does not carry a signature this server made.
+ *
+ * A member who used the page never sees it: `draftSiteAction` always signs what
+ * it hands to the confirmation screen. It is reachable by posting to the action
+ * directly, which is exactly the case worth refusing, so the wording says what
+ * to do rather than accusing anybody of anything.
+ */
+const UNPROVEN_DRAFT =
+    "That confirmation did not come with a draft this server made, so nothing was written. Start again from the URL and we will re-analyze the site.";
+
+/**
  * Splits the anchors textarea into keywords.
  *
  * One per line is what the field asks for, but people paste comma-separated
@@ -216,7 +196,16 @@ export async function commitSiteAction(_previous: CommitState, formData: FormDat
 
     const url = String(formData.get("url") ?? "").trim();
     const signature = String(formData.get("signature") ?? "");
-    const domainRating = verifiedDomainRating(url, String(formData.get("domainRating") ?? ""), signature);
+
+    // The URL is the one field on this form the member does not get to write.
+    // `draftSite` fetched it, read it, and judged it substantial enough to list,
+    // and `commitSite` turns it into the globally unique domain that is then
+    // that member's forever. Nothing here re-analyzes, so an unsigned URL would
+    // list any domain at all on one POST, with no fetch and no LLM call.
+    const draft = verifyDraft(url, String(formData.get("domainRating") ?? ""), signature);
+    if (!draft) {
+        return { status: "error", message: UNPROVEN_DRAFT, field: null };
+    }
 
     const category = String(formData.get("category") ?? "");
     const description = String(formData.get("description") ?? "");
@@ -226,12 +215,12 @@ export async function commitSiteAction(_previous: CommitState, formData: FormDat
     try {
         const site = await commitSite({
             member,
-            url,
+            url: draft.url,
             category,
             description,
             keywords,
             placementOffered,
-            domainRating,
+            domainRating: draft.domainRating,
         });
 
         return {
