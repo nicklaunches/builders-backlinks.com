@@ -39,6 +39,30 @@ export class SiteError extends Error {
 /** How many sites one member may list. Guards against a single operator farming the pool. */
 const MAX_SITES_PER_MEMBER = 5;
 
+/**
+ * Reduces a submitted anchor to the phrase it claims to be.
+ *
+ * An anchor is not free text the way a description is. It is shown to partners
+ * and then pasted into their pages, by an agent, as the label of a real link, so
+ * the characters that end a markdown label or open a tag have no legitimate use
+ * in one and are dropped here rather than escaped at every read site.
+ * `buildSnippet` in `services/links.ts` escapes as well, but only the snippet it
+ * emits: an agent handed `anchorOptions` writes its own markup around them, and
+ * this is the half that keeps the payload out of the database entirely.
+ *
+ * Both interfaces pass through here, which is the point. `submit_site` takes a
+ * `keywords` override and the form takes a textarea, and neither should be the
+ * one that forgot.
+ */
+function anchorPhrase(raw: string): string {
+    return raw
+        .replace(/[<>[\]()\\`"']/g, " ")
+        .replace(/[\u0000-\u001f\u007f]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
+}
+
 export type SiteDraft = SiteAnalysis & {
     /** True when this domain is already listed, so the caller can stop early. */
     alreadyListed: boolean;
@@ -107,10 +131,7 @@ export async function commitSite(input: CommitSiteInput): Promise<ExchangeSite> 
             "A description is required. It is what partners see before they know who you are.",
         );
     }
-    const cleanKeywords = keywords
-        .map((k) => k.trim().toLowerCase())
-        .filter(Boolean)
-        .slice(0, 25);
+    const cleanKeywords = keywords.map(anchorPhrase).filter(Boolean).slice(0, 25);
     if (cleanKeywords.length === 0) {
         throw new SiteError("invalid", "Add at least one anchor phrase you would like partners to link you as.");
     }
