@@ -336,7 +336,7 @@ export const rateLimits = pgTable(
          * Seconds, not milliseconds, because this is `int4`: epoch ms is about
          * 831 times larger than int4 can hold and would overflow on every
          * write. Lossless for any window of a second or more, which every
-         * budget in `lib/mcp/limits.ts` is. Widen to `bigint` before adding a
+         * budget in `lib/limits.ts` is. Widen to `bigint` before adding a
          * sub-second window.
          */
         windowStart: integer("window_start").notNull(),

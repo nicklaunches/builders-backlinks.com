@@ -7,7 +7,7 @@ import {
 import { createMcpHandler, getMcpAuthContext } from "agents/mcp/server";
 
 import { bearerFromHeader, resolveMemberFromBearer } from "@/lib/auth/api-key";
-import { callerKey } from "@/lib/mcp/limits";
+import { callerKey } from "@/lib/limits";
 import { type ToolContext, registerTools } from "@/lib/mcp/tools";
 
 /**

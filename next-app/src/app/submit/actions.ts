@@ -4,6 +4,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import type { Category } from "@/lib/categories";
 import { AnalyzeError } from "@/lib/contracts";
+import { RateLimited, enforceToolLimit, memberCaller, rateLimitedMessage } from "@/lib/limits";
 import { SiteError, commitSite, draftSite } from "@/lib/services/sites";
 import { getSessionMember } from "@/lib/session";
 
@@ -105,6 +106,11 @@ export async function draftSiteAction(_previous: DraftState, formData: FormData)
     if (!member) return { status: "signed_out", url };
 
     try {
+        // Same bucket the `submit_site` tool spends, because this costs the same
+        // money: a page fetch, an LLM call, and one of a monthly quota of
+        // VerifiedDR lookups. Charged before the work, not after.
+        await enforceToolLimit("submit_site", memberCaller(member.id));
+
         const draft = await draftSite(url);
 
         if (draft.alreadyListed) {
@@ -135,6 +141,7 @@ export async function draftSiteAction(_previous: DraftState, formData: FormData)
 
 /** Mirrors `explain()` in `src/lib/mcp/tools.ts`, word for word where it applies. */
 function explainAnalyzeFailure(err: unknown): string {
+    if (err instanceof RateLimited) return rateLimitedMessage(err);
     if (err instanceof AnalyzeError) {
         const hint =
             err.code === "too_thin"
@@ -224,6 +231,11 @@ export async function commitSiteAction(_previous: CommitState, formData: FormDat
     const placementOffered = String(formData.get("placementOffered") ?? "");
 
     try {
+        // Both halves of a submit are charged, exactly as they are on the tool
+        // path, where the draft call and the confirm call each pass through
+        // `guard`. One submitted listing costs two either way.
+        await enforceToolLimit("submit_site", memberCaller(member.id));
+
         const site = await commitSite({
             member,
             url,
@@ -241,6 +253,9 @@ export async function commitSiteAction(_previous: CommitState, formData: FormDat
             outcome: PENDING_REVIEW_OUTCOME,
         };
     } catch (err) {
+        if (err instanceof RateLimited) {
+            return { status: "error", message: rateLimitedMessage(err), field: null };
+        }
         if (err instanceof SiteError) {
             const field =
                 err.code === "invalid_category" || err.code === "unmatchable_category"
