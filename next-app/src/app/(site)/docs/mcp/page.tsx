@@ -781,7 +781,7 @@ export default function McpDocsPage() {
                                         <Code>check_links</Code> at most 100 links, most recently updated first.
                                     </li>
                                     <li>
-                                        One member can list up to 5 sites, and one domain belongs to one member, ever.
+                                        One member can list up to 10 sites, and one domain belongs to one member, ever.
                                     </li>
                                     <li>
                                         A proposed match expires 14 days after it is created and returns to the pool.

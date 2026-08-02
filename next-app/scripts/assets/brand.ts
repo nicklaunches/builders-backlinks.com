@@ -36,6 +36,10 @@ export const sizes = {
     icon: 512,
     appleIcon: 180,
     og: { width: 1200, height: 630 },
+    /** 16:9 rather than the OG card's 1.91:1, because this one is attached to a
+     *  post rather than unfurled from a link, and X gives an attached image the
+     *  taller crop. Oversized at 1600 so it stays sharp on a retina timeline. */
+    flow: { width: 1600, height: 900 },
 } as const;
 
 export const copy = {
@@ -44,4 +48,19 @@ export const copy = {
     wordmarkRight: "backlinks",
     tagline: "Trade backlinks from inside your coding agent",
     footnote: "An MCP server. Your agent writes the link, in your own words.",
+    /**
+     * The four steps, in order, for the how-it-works diagram.
+     *
+     * Here rather than inside the SVG builder for the same reason the tagline
+     * is: this is the product's pitch, it will be reworded far more often than
+     * the geometry around it will change, and someone editing the words should
+     * not have to read a layout function to find them. The builder measures
+     * whatever it is given, so a longer caption reflows instead of breaking.
+     */
+    flow: [
+        { label: "connect", caption: "MCP server" },
+        { label: "submit", caption: "your site" },
+        { label: "match", caption: "one real builder" },
+        { label: "place", caption: "agent writes it in your repo" },
+    ],
 } as const;

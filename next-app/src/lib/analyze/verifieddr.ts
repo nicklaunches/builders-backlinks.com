@@ -29,12 +29,22 @@
  * change on their side shows up in one line rather than as months of quiet
  * nulls.
  *
- * COVERAGE IS THE REAL LIMIT, not the parsing. VerifiedDR indexes only domains
- * approved on their own platform, and answers 404 for anything else, so most
- * submissions legitimately carry no DR and no TrueDR. That is the vendor's
- * scope rather than a fault here, and it is why `SiteAnalysis` treats both
- * scores as optional and why matching bands sites with no score rather than
- * excluding them. Do not read a null DR as a broken integration.
+ * THE ENDPOINT WAS THE REAL LIMIT, not coverage. This module used to call
+ * `/lookup/{domain}` for everything. That route serves only domains approved on
+ * verifieddr.com and 404s for anything else, so nearly every site was stored
+ * with no DR, and the 404 was documented right here as "the vendor does not
+ * cover this site, do not read it as a broken integration". That was wrong.
+ * `/dr/{domain}` relays Ahrefs DR for ANY domain, approved or not. Confirmed
+ * 2026-08-01 against a live key: `lookup/aihub.group` answered 404 while
+ * `dr/aihub.group` answered 18, matching what Ahrefs shows for the same domain.
+ *
+ * So `/dr/{domain}` is the primary call and a site with no DR is now worth
+ * investigating rather than shrugging at. TrueDR still comes from `/lookup` and
+ * still exists only for approved sites, which is what the `listed` flag in the
+ * `/dr` response is for: it decides whether the second call is worth a quota
+ * unit. `SiteAnalysis` keeps both scores optional and matching still bands sites
+ * with no score rather than excluding them, because a null TrueDR remains the
+ * normal case for most members.
  *
  * Auth is a bearer token (`vdr_...`) in `VERIFIEDDR_API_KEY`. Limits are 60
  * requests per minute on a sliding window, and a monthly quota that depends on
@@ -71,7 +81,13 @@ const DR_KEYS = ["dr", "domain_rating", "domainRating", "ahrefs_dr"] as const;
 const TRUE_DR_KEYS = ["true_dr", "trueDr", "truedr", "trueDR", "true_domain_rating"] as const;
 
 /**
- * Where the metrics sit. `lookup.authority` is the CONFIRMED path and leads.
+ * Where the metrics sit. Two CONFIRMED paths lead, one per endpoint: `dr` for
+ * `/dr/{domain}` and `lookup.authority` for `/lookup/{domain}`.
+ *
+ * The `dr` prefix is load-bearing rather than defensive. `/dr` answers
+ * `{"dr":{"dr":18,...}}`, so the bare `dr` key resolves to an OBJECT, `toScore`
+ * rejects it, and without this prefix the whole response parses to null even
+ * though the key name was right all along.
  *
  * The rest are kept as fallbacks rather than deleted, because they cost one
  * failed object lookup each and would otherwise have to be re-derived if
@@ -80,6 +96,7 @@ const TRUE_DR_KEYS = ["true_dr", "trueDr", "truedr", "trueDR", "true_domain_rati
  * any payload, and a confidently wrong score is worse than a null one.
  */
 const CONTAINER_PREFIXES: readonly (readonly string[])[] = [
+    ["dr"],
     ["lookup", "authority"],
     ["authority"],
     [],
@@ -206,7 +223,119 @@ let warnedMissingKey = false;
 const NO_SCORES = { domainRating: null, trueDr: null } as const;
 
 /**
+ * Reads the `listed` flag out of a `/dr` response.
+ *
+ * It says whether the domain is approved on verifieddr.com, which is the only
+ * case where a TrueDR exists to go and fetch. Anything other than an explicit
+ * `true` counts as not listed: being wrong in that direction costs a quota unit
+ * on a lookup that was going to 404 anyway.
+ *
+ * @param payload - Parsed `/dr` response body.
+ * @returns True only when the response says the domain is listed.
+ */
+function isListedOnVerifiedDr(payload: unknown): boolean {
+    return readPath(payload, ["dr", "listed"]) === true;
+}
+
+/**
+ * Performs one authority request and applies the shared failure handling.
+ *
+ * Never throws. Every failure resolves to null with its own log line, which is
+ * what lets {@link getAuthorityScores} keep its own never-rejects contract while
+ * making up to two calls.
+ *
+ * @param path - Path under the API base, already encoded.
+ * @param domain - Domain being looked up, for logging.
+ * @param apiKey - Bearer token.
+ * @returns The parsed body, or null when the call produced no usable one.
+ */
+async function requestAuthority(path: string, domain: string, apiKey: string): Promise<unknown | null> {
+    try {
+        const res = await fetch(`${VERIFIEDDR_BASE_URL}/${path}`, {
+            method: "GET",
+            headers: {
+                Authorization: `Bearer ${apiKey}`,
+                Accept: "application/json",
+            },
+            signal: AbortSignal.timeout(VERIFIEDDR_TIMEOUT_MS),
+        });
+
+        const tier = res.headers.get("X-API-Tier") ?? "unknown";
+        const quotaLimit = res.headers.get("X-API-Quota-Limit") ?? "unknown";
+        const quotaRemaining = res.headers.get("X-API-Quota-Remaining") ?? "unknown";
+
+        // The month is gone. Logged loudest because a silent 402 is indistinguishable
+        // from a site that genuinely has no score, and someone could lose a month of
+        // scores across every submission without a single thing looking broken.
+        if (res.status === 402) {
+            console.error(
+                `[analyze/verifieddr] MONTHLY QUOTA EXHAUSTED (HTTP 402) on ${path}. ` +
+                    `EVERY submission from now on will be saved with NO DR and NO TrueDR until the quota ` +
+                    `resets or the plan is upgraded, and nothing else will look wrong. ` +
+                    `tier=${tier} quotaLimit=${quotaLimit} quotaRemaining=${quotaRemaining}`,
+            );
+            return null;
+        }
+
+        // Per-minute sliding window (60/min). Transient: the next submission is
+        // very likely fine, so this stays a warn and is not retried inline.
+        if (res.status === 429) {
+            const retryAfter = res.headers.get("Retry-After") ?? "unset";
+            console.warn(
+                `[analyze/verifieddr] per-minute rate limit hit (HTTP 429) on ${path}, ` +
+                    `Retry-After: ${retryAfter}s. This submission gets no scores.`,
+            );
+            return null;
+        }
+
+        // This used to be logged as routine, back when every call went to
+        // `/lookup/{domain}` and a 404 really did mean "not one of ours". Filing
+        // it under expected is precisely what hid the wrong-endpoint bug for
+        // weeks, so it is a warn now. On `/dr` it should never happen at all.
+        if (res.status === 404) {
+            console.warn(
+                `[analyze/verifieddr] HTTP 404 on ${path} for ${domain}. On /dr this is unexpected, since ` +
+                    `that route relays Ahrefs DR for any domain; on /lookup it means the domain is not ` +
+                    `approved on verifieddr.com.`,
+            );
+            return null;
+        }
+
+        if (!res.ok) {
+            const body = await res.text().catch(() => "");
+            console.warn(`[analyze/verifieddr] ${path} failed: HTTP ${res.status} ${body.slice(0, 200)}`);
+            return null;
+        }
+
+        const remaining = Number(quotaRemaining);
+        if (Number.isFinite(remaining) && remaining <= LOW_QUOTA_WARN_THRESHOLD) {
+            console.warn(
+                `[analyze/verifieddr] monthly quota nearly exhausted: ${remaining} of ${quotaLimit} left ` +
+                    `on tier ${tier}. Scores stop silently when it reaches zero.`,
+            );
+        }
+
+        try {
+            return await res.json();
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            console.warn(`[analyze/verifieddr] ${path} returned unparseable JSON: ${message}`);
+            return null;
+        }
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[analyze/verifieddr] ${path} threw: ${message}`);
+        return null;
+    }
+}
+
+/**
  * Fetches DR and TrueDR for a domain from VerifiedDR.
+ *
+ * DR comes from `/dr/{domain}`, which answers for any domain at all. TrueDR
+ * needs `/lookup/{domain}` and exists only for sites approved on verifieddr.com,
+ * so that second call is made only when the first says `listed`: one quota unit
+ * in the common case, two for an approved site.
  *
  * Never throws and never rejects. Every failure path (missing API key, 429, 402,
  * any other non-2xx, an unparseable or unrecognised body, a timeout, a thrown
@@ -234,112 +363,45 @@ export async function getAuthorityScores(
         return { ...NO_SCORES };
     }
 
-    try {
-        const res = await fetch(`${VERIFIEDDR_BASE_URL}/lookup/${encodeURIComponent(domain)}`, {
-            method: "GET",
-            headers: {
-                Authorization: `Bearer ${apiKey}`,
-                Accept: "application/json",
-            },
-            signal: AbortSignal.timeout(VERIFIEDDR_TIMEOUT_MS),
-        });
+    const encoded = encodeURIComponent(domain);
 
-        const tier = res.headers.get("X-API-Tier") ?? "unknown";
-        const quotaLimit = res.headers.get("X-API-Quota-Limit") ?? "unknown";
-        const quotaRemaining = res.headers.get("X-API-Quota-Remaining") ?? "unknown";
+    const payload = await requestAuthority(`dr/${encoded}`, domain, apiKey);
+    if (payload === null) return { ...NO_SCORES };
 
-        // The month is gone. Logged loudest because a silent 402 is indistinguishable
-        // from a site that genuinely has no score, and someone could lose a month of
-        // scores across every submission without a single thing looking broken.
-        if (res.status === 402) {
-            console.error(
-                `[analyze/verifieddr] MONTHLY QUOTA EXHAUSTED (HTTP 402) on lookup for ${domain}. ` +
-                    `EVERY submission from now on will be saved with NO DR and NO TrueDR until the quota ` +
-                    `resets or the plan is upgraded, and nothing else will look wrong. ` +
-                    `tier=${tier} quotaLimit=${quotaLimit} quotaRemaining=${quotaRemaining}`,
-            );
-            return { ...NO_SCORES };
-        }
+    const { domainRating } = parseAuthorityScores(payload);
 
-        // Per-minute sliding window (60/min). Transient: the next submission is
-        // very likely fine, so this stays a warn and is not retried inline.
-        if (res.status === 429) {
-            const retryAfter = res.headers.get("Retry-After") ?? "unset";
-            console.warn(
-                `[analyze/verifieddr] per-minute rate limit hit (HTTP 429) on lookup for ${domain}, ` +
-                    `Retry-After: ${retryAfter}s. This submission gets no scores.`,
-            );
-            return { ...NO_SCORES };
-        }
-
-        // NOT AN ERROR, and the common case. VerifiedDR only serves domains that
-        // have been approved on their own platform, so a 404 means "we do not
-        // cover this site" rather than "the lookup broke". Most submissions will
-        // land here, which is why it is `info` and why the copy says so: logging
-        // it as a failure would have someone hunting a bug in this file for
-        // something working exactly as the vendor intends.
-        if (res.status === 404) {
-            console.info(
-                `[analyze/verifieddr] no VerifiedDR coverage for ${domain}, so it is listed without a DR. ` +
-                    `Expected: their index only holds sites approved on verifieddr.com.`,
-            );
-            return { ...NO_SCORES };
-        }
-
-        if (!res.ok) {
-            const body = await res.text().catch(() => "");
-            console.warn(`[analyze/verifieddr] lookup for ${domain} failed: HTTP ${res.status} ${body.slice(0, 200)}`);
-            return { ...NO_SCORES };
-        }
-
-        const remaining = Number(quotaRemaining);
-        if (Number.isFinite(remaining) && remaining <= LOW_QUOTA_WARN_THRESHOLD) {
-            console.warn(
-                `[analyze/verifieddr] monthly quota nearly exhausted: ${remaining} of ${quotaLimit} left ` +
-                    `on tier ${tier}. Scores stop silently when it reaches zero.`,
-            );
-        }
-
-        let payload: unknown;
-        try {
-            payload = await res.json();
-        } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            console.warn(`[analyze/verifieddr] lookup for ${domain} returned unparseable JSON: ${message}`);
-            return { ...NO_SCORES };
-        }
-
-        const { domainRating, trueDr } = parseAuthorityScores(payload);
-
-        // Neither metric found means the guessed field names are wrong far more
-        // often than it means the domain has no scores, so say so explicitly and
-        // print the shape. Key names only: no values, and never the API key.
-        if (domainRating === null && trueDr === null) {
-            console.warn(
-                `[analyze/verifieddr] SCHEMA NEEDS CONFIRMING: found neither DR nor TrueDR for ${domain}. ` +
-                    `Response shape: ${describeShape(payload)}. ` +
-                    `Update DR_KEYS / TRUE_DR_KEYS / CONTAINER_PREFIXES in src/lib/analyze/verifieddr.ts ` +
-                    `to the real field names above, then remove the TODO(verify) in this file.`,
-            );
-            return { ...NO_SCORES };
-        }
-
-        // One of the two missing is worth a quieter note: it is plausible on a
-        // real response (TrueDR may need more data than DR does), but it is also
-        // exactly what a half-wrong candidate list looks like.
-        if (domainRating === null || trueDr === null) {
-            const missing = domainRating === null ? "DR" : "TrueDR";
-            console.warn(
-                `[analyze/verifieddr] ${missing} missing for ${domain} while the other metric parsed. ` +
-                    `Either the domain has no ${missing}, or its field name is not in this file's candidate ` +
-                    `list. Response shape: ${describeShape(payload)}`,
-            );
-        }
-
-        return { domainRating, trueDr };
-    } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        console.warn(`[analyze/verifieddr] lookup for ${domain} threw: ${message}`);
+    // `/dr` answers for every domain, so no DR here means the field names moved,
+    // not that this site has no score. Print the shape rather than returning a
+    // quiet null: silent nulls are the exact failure this module exists to make
+    // visible, and they already cost this integration weeks once.
+    if (domainRating === null) {
+        console.warn(
+            `[analyze/verifieddr] SCHEMA NEEDS CONFIRMING: no DR found for ${domain} on /dr, which answers ` +
+                `for any domain. Response shape: ${describeShape(payload)}. Update DR_KEYS or ` +
+                `CONTAINER_PREFIXES in src/lib/analyze/verifieddr.ts to the real field names above.`,
+        );
         return { ...NO_SCORES };
     }
+
+    // Not approved on their platform means there is no TrueDR to go and get.
+    if (!isListedOnVerifiedDr(payload)) {
+        return { domainRating, trueDr: null };
+    }
+
+    const lookup = await requestAuthority(`lookup/${encoded}`, domain, apiKey);
+    if (lookup === null) return { domainRating, trueDr: null };
+
+    const { trueDr } = parseAuthorityScores(lookup);
+
+    // Plausible on a real response, since TrueDR needs more data than DR does,
+    // but also exactly what a half-wrong candidate list looks like.
+    if (trueDr === null) {
+        console.warn(
+            `[analyze/verifieddr] ${domain} is listed on verifieddr.com but its lookup carried no TrueDR. ` +
+                `Either it has none yet, or the field name is not in TRUE_DR_KEYS. ` +
+                `Response shape: ${describeShape(lookup)}`,
+        );
+    }
+
+    return { domainRating, trueDr };
 }

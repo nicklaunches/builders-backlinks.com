@@ -3,7 +3,7 @@ import { mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { sizes } from "./brand";
-import { iconSvg, logoSvg, ogSvg } from "./svg";
+import { flowSvg, iconSvg, logoSvg, ogSvg } from "./svg";
 
 /**
  * @file Generates every brand asset from code. No source images, no design file.
@@ -117,6 +117,12 @@ async function main() {
     const og = rasterise(ogSvg(), fontFiles, sizes.og.width);
     await writeFile(path.join(APP_DIR, "opengraph-image.png"), og);
     report("src/app/opengraph-image.png", og.length, `${sizes.og.width}×${sizes.og.height}`);
+
+    // The how-it-works diagram. Not a Next.js file convention: this one is
+    // attached to a post by hand, so it lives in public/ and is linked to.
+    const flow = rasterise(flowSvg(), fontFiles, sizes.flow.width);
+    await writeFile(path.join(PUBLIC_DIR, "how-it-works.png"), flow);
+    report("public/how-it-works.png", flow.length, `${sizes.flow.width}×${sizes.flow.height}`);
 
     // Vector wordmark, for the README and anywhere needing to scale.
     const logo = logoSvg();

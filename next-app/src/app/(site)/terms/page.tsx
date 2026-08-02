@@ -4,7 +4,7 @@
  * Written to describe THIS service, not a service in general. Every clause here
  * corresponds to something the code actually does: review before active
  * (`status: "pending_review"` in `services/sites.ts`), one domain per member
- * (the unique `domain` index on `ExchangeSite`), five sites per member
+ * (the unique `domain` index on `ExchangeSite`), ten sites per member
  * (`MAX_SITES_PER_MEMBER`), classify-never-reject (`services/links.ts` and
  * `lib/verify`), grace on the first two exchanges (`getStanding`), and a soft
  * disable on unsubscribe (`unsubscribedAt`). If one of those changes, this page
@@ -136,8 +136,8 @@ export default function TermsPage() {
                                     sort it out.
                                 </li>
                                 <li>
-                                    <strong>Up to five sites per member.</strong> Enough for someone who ships a lot,
-                                    not enough to farm the pool.
+                                    <strong>Up to ten sites per member.</strong> Enough for someone who ships a lot, not
+                                    enough to farm the pool.
                                 </li>
                                 <li>
                                     <strong>The listing text is drafted for you, and approved by you.</strong> We fetch

@@ -16,6 +16,14 @@ import { parseAuthorityScores } from "@/lib/analyze/verifieddr";
  *
  * The fixture below is a real response, trimmed. If VerifiedDR moves the fields
  * again this fails in CI in a second, rather than after a month of empty DRs.
+ *
+ * It then happened a second time, differently. The container was right by then,
+ * but the module was calling `/lookup/{domain}`, which only serves domains
+ * approved on verifieddr.com, so almost every site 404'd and was stored with no
+ * DR anyway. `/dr/{domain}` answers for any domain and is now the primary call,
+ * which is why `DR_RESPONSE` is here: its `{"dr":{"dr":18}}` shape needs the
+ * `["dr"]` container prefix, and without it the right key name still parses to
+ * null.
  */
 
 /** Real `GET /api/v1/lookup/nicklaunches.com`, 2026-07-29, tier `partner`. */
@@ -39,8 +47,28 @@ const REAL_RESPONSE = {
     },
 };
 
+/** Real `GET /api/v1/dr/aihub.group`, 2026-08-01. Ahrefs showed the same 18. */
+const DR_RESPONSE = {
+    dr: {
+        domain: "aihub.group",
+        dr: 18,
+        source: "ahrefs",
+        listed: false,
+        slug: null,
+    },
+};
+
 describe("parseAuthorityScores", () => {
+    it("reads dr from the real /dr envelope", () => {
+        // The bare `dr` key resolves to an OBJECT here, so this only works
+        // because CONTAINER_PREFIXES carries a ["dr"] entry. Drop it and the
+        // whole response silently parses to null with the key name still right.
+        assert.deepEqual(parseAuthorityScores(DR_RESPONSE), { domainRating: 18, trueDr: null });
+    });
+
     it("reads dr and trueDr from the real lookup.authority envelope", () => {
+        // /lookup is still called for sites approved on verifieddr.com, because
+        // it is the only source of TrueDR.
         assert.deepEqual(parseAuthorityScores(REAL_RESPONSE), { domainRating: 68, trueDr: 50 });
     });
 

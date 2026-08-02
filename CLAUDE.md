@@ -243,12 +243,17 @@ Two things to know before touching `/app`:
 - `src/components/web/install-tabs.tsx` still carries `TODO(verify)` markers: the
   Codex and Gemini CLI config forms have never been confirmed against the real
   clients. Only the Claude Code and Cursor forms have.
-- **Most sites will have no Domain Rating, and that is correct.** VerifiedDR only
-  indexes domains approved on their own platform and 404s for everything else,
-  so a null DR usually means "not covered" rather than "integration broken".
-  Separately, any site listed before 2026-07-29 has a null DR because the parser
-  was reading the wrong container; nothing backfills those rows, since nothing
-  re-runs the analyzer for a site that already exists.
+- **A site with no Domain Rating is now worth investigating.** This entry used to
+  say the opposite, and was wrong twice over: the analyzer called
+  `/lookup/{domain}`, which serves only domains approved on verifieddr.com, so
+  nearly every site 404'd and stored a null DR that looked like vendor coverage.
+  `/dr/{domain}` relays Ahrefs DR for any domain and is the primary call as of
+  2026-08-01; TrueDR still needs `/lookup` and is still legitimately null for
+  most members. The seven rows the bug left behind were backfilled by hand on
+  2026-08-01 and the throwaway script was deleted, so there is still **no path
+  that re-scores an existing site**: nothing re-runs the analyzer after
+  submission, and `dr_checked_at` is written once and read by nothing. If a
+  scoring bug lands again, the repair is another one-off script.
 - CI runs `pnpm db:migrate`, which skips the `assert-prod-db.ts` guard that
   `db:migrate:deploy` has. That is intentional: CI's `DATABASE_URL` comes from a
   repository secret. Do not "fix" it.

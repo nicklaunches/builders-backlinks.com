@@ -37,7 +37,7 @@ export class SiteError extends Error {
 }
 
 /** How many sites one member may list. Guards against a single operator farming the pool. */
-const MAX_SITES_PER_MEMBER = 5;
+const MAX_SITES_PER_MEMBER = 10;
 
 export type SiteDraft = SiteAnalysis & {
     /** True when this domain is already listed, so the caller can stop early. */

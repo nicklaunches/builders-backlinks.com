@@ -105,12 +105,78 @@ export function canonicalizeUrlForCache(input: string): string {
 }
 
 /**
+ * Checks whether a string is a dotted-quad IPv4 literal.
+ *
+ * Exported for tests. This is deliberately separate from {@link isPrivateIPv4}:
+ * that function used to answer both "is this an IP" and "is this IP private"
+ * with one boolean, returning true for anything it could not parse. Fail-closed
+ * is right for a private-range check and wrong for a validity check, and
+ * conflating them is what made every Vercel-hosted domain unlistable. See
+ * {@link assertPublicHost}.
+ *
+ * @param value - Candidate address.
+ * @returns True when the string is a valid IPv4 literal.
+ */
+export function isIPv4Literal(value: string): boolean {
+    const parts = value.split(".");
+    if (parts.length !== 4) return false;
+    return parts.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255);
+}
+
+/**
+ * Checks whether a string is an IPv6 literal, with or without a zone id.
+ *
+ * Exported for tests. Strict enough to reject a hostname (no colons, characters
+ * outside the hex alphabet) without reimplementing a full parser: the only job
+ * here is telling a real address apart from a resolver artifact.
+ *
+ * @param value - Candidate address.
+ * @returns True when the string is a valid IPv6 literal.
+ */
+export function isIPv6Literal(value: string): boolean {
+    // `fe80::1%eth0`: the zone id is not part of the address.
+    const address = value.split("%", 1)[0] ?? "";
+    if (!address.includes(":")) return false;
+    if (!/^[0-9a-f:.]+$/i.test(address)) return false;
+    if (address.includes(":::")) return false;
+    // At most one "::" run, by definition: two would be ambiguous.
+    const elisions = address.match(/::/g)?.length ?? 0;
+    if (elisions > 1) return false;
+
+    // An embedded IPv4 tail (`::ffff:127.0.0.1`) occupies the last two groups.
+    const lastColon = address.lastIndexOf(":");
+    const tail = address.slice(lastColon + 1);
+    const hasV4Tail = tail.includes(".");
+    if (hasV4Tail && !isIPv4Literal(tail)) return false;
+
+    const groups = (hasV4Tail ? address.slice(0, lastColon) : address).split(":").filter(Boolean);
+    if (groups.some((group) => !/^[0-9a-f]{1,4}$/i.test(group))) return false;
+
+    const maxGroups = hasV4Tail ? 6 : 8;
+    if (groups.length > maxGroups) return false;
+    // Without an elision every group has to be written out.
+    return elisions === 1 || groups.length === maxGroups;
+}
+
+/**
+ * Checks whether a string is an IP literal of either family.
+ *
+ * @param value - Candidate address.
+ * @returns True when the string is a valid IPv4 or IPv6 literal.
+ */
+export function isIpLiteral(value: string): boolean {
+    return value.includes(":") ? isIPv6Literal(value) : isIPv4Literal(value);
+}
+
+/**
  * Checks whether an IPv4 address is private, local, or otherwise non-public.
+ *
+ * Assumes a valid literal; check with {@link isIPv4Literal} first.
  *
  * @param ip - IPv4 address string.
  * @returns True when the address should not be fetched.
  */
-function isPrivateIPv4(ip: string): boolean {
+export function isPrivateIPv4(ip: string): boolean {
     const parts = ip.split(".").map(Number);
     if (parts.length !== 4 || parts.some((p) => Number.isNaN(p))) return true;
     const [a, b] = parts;
@@ -128,11 +194,13 @@ function isPrivateIPv4(ip: string): boolean {
 /**
  * Checks whether an IPv6 address is private, local, or mapped to private IPv4.
  *
+ * Assumes a valid literal; check with {@link isIPv6Literal} first.
+ *
  * @param ip - IPv6 address string.
  * @returns True when the address should not be fetched.
  */
-function isPrivateIPv6(ip: string): boolean {
-    const lower = ip.toLowerCase();
+export function isPrivateIPv6(ip: string): boolean {
+    const lower = ip.toLowerCase().split("%", 1)[0] ?? "";
     if (lower === "::1" || lower === "::") return true;
     if (lower.startsWith("fc") || lower.startsWith("fd")) return true; // unique local
     if (lower.startsWith("fe80")) return true; // link-local
@@ -150,6 +218,22 @@ function isPrivateIPv6(ip: string): boolean {
  * This is the main SSRF guard and is called before the initial fetch and again
  * after redirects when the final host changes.
  *
+ * NOT EVERY ENTRY IS AN IP. In workerd, `node:dns`'s `lookup` can hand back a
+ * CNAME target hostname in `address` rather than the address it resolves to.
+ * Local Node never does this, so `pnpm dev` cannot reproduce it. The old loop
+ * passed that hostname to `isPrivateIPv4`, which split it on dots, got three
+ * parts instead of four, and failed closed, so in production every domain whose
+ * DNS goes through a CNAME was rejected as a private address. Vercel-hosted
+ * sites, which is a large share of the people this exchange is for, could not be
+ * submitted at all: `growstartup.uk.com` was refused as "private address
+ * 4fb3bcdf0a1db88b.vercel-dns-016.com", a string that is plainly not an address.
+ *
+ * The invariant enforced here is unchanged: every IP this host resolves to must
+ * be public. Non-literals are skipped rather than trusted, at least one real
+ * public IP is required, and a CNAME whose own address is private is still
+ * caught, because that address is in the same result set. What we finally
+ * connect to is re-resolved by `fetch` regardless.
+ *
  * @param hostname - Hostname from the target URL.
  * @throws `FetchError` when DNS fails or resolves to a blocked address.
  */
@@ -165,11 +249,25 @@ async function assertPublicHost(hostname: string): Promise<void> {
     } catch {
         throw new FetchError("dns_failed", `We couldn’t find a website at "${hostname}". Check the URL is correct.`);
     }
-    for (const { address, family } of resolved) {
-        const blocked = family === 6 ? isPrivateIPv6(address) : isPrivateIPv4(address);
+
+    let publicAddresses = 0;
+    for (const { address } of resolved) {
+        // Decided on the address itself, not the reported `family`: the same
+        // polyfill that leaks a hostname here is not a reason to trust its
+        // labelling either.
+        if (!isIpLiteral(address)) continue;
+        const blocked = address.includes(":") ? isPrivateIPv6(address) : isPrivateIPv4(address);
         if (blocked) {
             throw new FetchError("blocked_host", `Resolved to private address ${address}`);
         }
+        publicAddresses++;
+    }
+
+    // Nothing usable came back. `dns_failed` rather than `blocked_host` because
+    // that is what actually happened: we could not resolve the host, as opposed
+    // to resolving it somewhere we refuse to go.
+    if (publicAddresses === 0) {
+        throw new FetchError("dns_failed", `We couldn’t find a website at "${hostname}". Check the URL is correct.`);
     }
 }
 

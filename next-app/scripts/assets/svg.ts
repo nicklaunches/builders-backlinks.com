@@ -24,6 +24,31 @@ export function monoWidth(text: string, fontSize: number): number {
 }
 
 /**
+ * Greedy word wrap, measured with `monoWidth` rather than guessed at a character
+ * count. Only the diagram needs it: one of its captions is wider than the box it
+ * sits under, and the break belongs here, with the layout, rather than being
+ * baked into `brand.ts` as a newline someone would have to preserve while
+ * rewording.
+ */
+function wrapMono(text: string, fontSize: number, maxWidth: number): string[] {
+    const lines: string[] = [];
+    let line = "";
+
+    for (const word of text.split(" ")) {
+        const candidate = line ? `${line} ${word}` : word;
+        if (line && monoWidth(candidate, fontSize) > maxWidth) {
+            lines.push(line);
+            line = word;
+        } else {
+            line = candidate;
+        }
+    }
+    if (line) lines.push(line);
+
+    return lines;
+}
+
+/**
  * The mark: the wordmark's slash, alone.
  *
  * The brand's only graphical element is the orange `/` between the two words,
@@ -130,6 +155,133 @@ export function ogSvg(): string {
     <text x="${pad}" y="${taglineY}" font-size="${taglineSize}" font-weight="500" fill="${brand.fg}">${copy.tagline}</text>
 
     <text x="${pad}" y="${footY}" font-size="${footSize}" font-weight="400" fill="${brand.muted}">${copy.footnote}</text>
+  </g>
+</svg>`;
+}
+
+/**
+ * The how-it-works diagram, for attaching to a post.
+ *
+ * Same dark ground, same hairline frame, same corner bug as the share card,
+ * because it is the same object seen in the same place: a rectangle in a feed.
+ *
+ * THE ONE NUMBER THAT MATTERS IS 4. X renders an attached image at roughly
+ * 400px wide in-feed, so everything here is read at a quarter of its authored
+ * size. The 64px step labels survive that as 16px; the captions are deliberately
+ * secondary and are allowed to fall below it, since a reader who has stopped to
+ * squint at them has already stopped scrolling.
+ *
+ * The row is measured, not tuned. Each box is sized to its own label, and the
+ * leftover width is divided evenly into the three gaps, so the steps always span
+ * the frame exactly and the arrows always land in the space between two boxes
+ * however the copy in `brand.ts` is reworded.
+ */
+export function flowSvg(): string {
+    const { width, height } = sizes.flow;
+    const pad = 64;
+
+    const markSize = 56;
+    const headSize = 40;
+    const labelSize = 64;
+    const captionSize = 30;
+    const wordSize = 34;
+
+    const boxPadX = 40;
+    // 16:9 leaves a single row of boxes floating in a lot of air. The box is
+    // made tall enough, and sat high enough, that the space above the row and
+    // the space below the captions come out roughly equal.
+    const boxHeight = 190;
+    const boxTop = 315;
+    const boxRadius = 14;
+
+    // Captions are centred under their box and may overhang it, so the cap is on
+    // the caption itself: two adjacent captions at this width cannot meet, and
+    // the last one cannot reach the frame.
+    const captionMax = 300;
+    const captionLead = 38;
+
+    const arrowInset = 16;
+    const arrowHead = 18;
+
+    // Size every box to its own label, then split what is left into the gaps.
+    const boxes = copy.flow.map((step) => ({
+        step,
+        boxWidth: monoWidth(step.label, labelSize) + boxPadX * 2,
+    }));
+    const rowWidth = boxes.reduce((sum, b) => sum + b.boxWidth, 0);
+    const gap = (width - pad * 2 - rowWidth) / (boxes.length - 1);
+
+    let cursor = pad;
+    const placed = boxes.map((box) => {
+        const x = cursor;
+        cursor += box.boxWidth + gap;
+        return { ...box, x };
+    });
+
+    const labelY = boxTop + boxHeight / 2 + labelSize * 0.35;
+    const captionY = boxTop + boxHeight + 56;
+    const arrowY = boxTop + boxHeight / 2;
+
+    const headY = pad + 42;
+    const wordY = height - pad;
+    const leftW = monoWidth(copy.wordmarkLeft, wordSize);
+    const slashW = monoWidth(copy.wordmarkSlash, wordSize);
+
+    const bugX = width - pad - markSize;
+    const bugY = pad;
+
+    const cells = placed
+        .map(({ step, boxWidth, x }) => {
+            const labelX = x + (boxWidth - monoWidth(step.label, labelSize)) / 2;
+            const centre = x + boxWidth / 2;
+            const caption = wrapMono(step.caption, captionSize, captionMax)
+                .map(
+                    (line, i) =>
+                        `<text x="${centre - monoWidth(line, captionSize) / 2}" y="${captionY + i * captionLead}" font-size="${captionSize}" font-weight="400" fill="${brand.muted}">${line}</text>`,
+                )
+                .join("\n      ");
+
+            return `<rect x="${x}" y="${boxTop}" width="${boxWidth}" height="${boxHeight}" rx="${boxRadius}" fill="${brand.surface}" stroke="${brand.line}" stroke-width="2"/>
+      <text x="${labelX}" y="${labelY}" font-size="${labelSize}" font-weight="700" fill="${brand.fg}">${step.label}</text>
+      ${caption}`;
+        })
+        .join("\n      ");
+
+    const arrows = placed
+        .slice(0, -1)
+        .map(({ boxWidth, x }) => {
+            const from = x + boxWidth + arrowInset;
+            const to = x + boxWidth + gap - arrowInset;
+            return `<line x1="${from}" y1="${arrowY}" x2="${to - arrowHead}" y2="${arrowY}" stroke="${brand.accent}" stroke-width="5" stroke-linecap="round"/>
+    <polygon points="${to},${arrowY} ${to - arrowHead},${arrowY - 9} ${to - arrowHead},${arrowY + 9}" fill="${brand.accent}"/>`;
+        })
+        .join("\n    ");
+
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <rect width="${width}" height="${height}" fill="${brand.bg}"/>
+
+  <!-- Hairline frame, echoing the bordered cards the site is built from. -->
+  <rect x="24" y="24" width="${width - 48}" height="${height - 48}" rx="10" fill="none" stroke="${brand.line}" stroke-width="2"/>
+
+  <!-- The mark, as a bug in the top-right. Same geometry as the favicon. -->
+  <line x1="${bugX + markSize * 0.2}" y1="${bugY + markSize * 0.82}" x2="${bugX + markSize * 0.8}" y2="${bugY + markSize * 0.18}" stroke="${brand.accent}" stroke-width="${Math.round(markSize * 0.14)}" stroke-linecap="square"/>
+
+  <g font-family="JetBrains Mono, ui-monospace, monospace">
+    <text x="${pad}" y="${headY}" font-size="${headSize}" font-weight="500" fill="${brand.fg}">${copy.tagline}</text>
+
+    <!-- Arrows first, so a box always paints over one rather than under it. -->
+    ${arrows}
+
+    <g>
+      ${cells}
+    </g>
+
+    <!-- Wordmark. Three runs, positioned by exact monospace advance. -->
+    <g font-size="${wordSize}" font-weight="700">
+      <text x="${pad}" y="${wordY}" fill="${brand.fg}">${copy.wordmarkLeft}</text>
+      <text x="${pad + leftW}" y="${wordY}" fill="${brand.accent}">${copy.wordmarkSlash}</text>
+      <text x="${pad + leftW + slashW}" y="${wordY}" fill="${brand.fg}">${copy.wordmarkRight}</text>
+    </g>
   </g>
 </svg>`;
 }
