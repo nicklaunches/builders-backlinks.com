@@ -80,6 +80,31 @@ function escapeMarkdownText(value: string): string {
 }
 
 /**
+ * As {@link escapeMarkdownText}, plus the braces MDX reads as a JSX expression.
+ *
+ * Plain markdown treats `{` as an ordinary character and MDX does not, which is
+ * the whole difference between the two formats here. It is a separate function
+ * rather than a wider character class on the markdown one because `\{` is not
+ * universally supported outside CommonMark, and a stray backslash in front of a
+ * brace an ordinary anchor happens to contain would be a visible regression for
+ * the format that never needed the escape.
+ */
+function escapeMdxText(value: string): string {
+    return value.replace(/[\\[\]{}]/g, (character) => `\\${character}`);
+}
+
+/**
+ * As {@link escapeHtml}, plus the braces JSX reads as an expression delimiter.
+ *
+ * Numeric entities rather than backslashes: JSX decodes them in a text child
+ * exactly as HTML does, and `\{` in JSX source is a literal backslash followed
+ * by an expression, which is the opposite of the intent.
+ */
+function escapeJsxText(value: string): string {
+    return escapeHtml(value).replace(/[{}]/g, (character) => (character === "{" ? "&#123;" : "&#125;"));
+}
+
+/**
  * Builds the one line a member pastes into their own site.
  *
  * BOTH HALVES ARE UNTRUSTED HERE. The anchor is the partner's keyword, typed by
@@ -94,13 +119,26 @@ function escapeMarkdownText(value: string): string {
  * an absolute http(s) URL, but that is an argument for it costing nothing to
  * escape rather than an argument for trusting it: markdown uses the
  * angle-bracket destination form so a parenthesis cannot end the link.
+ *
+ * The four formats no longer share two branches, because `mdx` and `jsx` each
+ * read a character their plain counterpart does not: `{` opens an expression in
+ * both, and neither `anchorPhrase` nor the markdown and HTML escapes touch it.
+ * An anchor of `{globalthis.x=1}` is inert in a .md or .html file and is code
+ * in the .mdx or .tsx one. It buys little on its own, since `anchorPhrase`
+ * drops the parentheses, backticks and quotes needed to call anything or build
+ * a string, but an expression that merely fails to compile still breaks the
+ * build of the member who pasted it, and this is a snippet we tell people to
+ * commit unread.
  */
 function buildSnippet(format: SnippetFormat, url: string, anchor: string): string {
+    const destination = url.replace(/[<>]/g, encodeURIComponent);
     switch (format) {
         case "markdown":
+            return `[${escapeMarkdownText(anchor)}](<${destination}>)`;
         case "mdx":
-            return `[${escapeMarkdownText(anchor)}](<${url.replace(/[<>]/g, encodeURIComponent)}>)`;
+            return `[${escapeMdxText(anchor)}](<${destination}>)`;
         case "jsx":
+            return `<a href="${escapeHtml(url)}">${escapeJsxText(anchor)}</a>`;
         case "html":
         default:
             return `<a href="${escapeHtml(url)}">${escapeHtml(anchor)}</a>`;

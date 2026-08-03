@@ -76,4 +76,41 @@ describe("briefFor snippets", () => {
         const brief = briefFor(partner({ keywords: [] }), { matchId: "m", format: "markdown" });
         assert.equal(brief.snippet, "[partner.example](<https://partner.example/>)");
     });
+
+    /**
+     * The formats where a brace is not a brace.
+     *
+     * These rows can exist: `anchorPhrase` drops braces now, but it did not
+     * when the earliest listings were written, and the read path has to hold on
+     * its own anyway. The payload is deliberately one that survives
+     * `anchorPhrase` today, so this is the escape being tested and not the
+     * sanitizer standing in for it.
+     */
+    it("does not let an anchor open a JSX expression in the mdx and jsx forms", () => {
+        const anchor = "docs {globalthis.x=1} guides";
+
+        assert.equal(
+            briefFor(partner({ keywords: [anchor] }), { matchId: "m", format: "mdx" }).snippet,
+            "[docs \\{globalthis.x=1\\} guides](<https://partner.example/>)",
+        );
+        assert.equal(
+            briefFor(partner({ keywords: [anchor] }), { matchId: "m", format: "jsx" }).snippet,
+            '<a href="https://partner.example/">docs &#123;globalthis.x=1&#125; guides</a>',
+        );
+    });
+
+    it("leaves braces alone in the formats that do not read them", () => {
+        // Escaping here would be a visible regression: a brace is an ordinary
+        // character in CommonMark and in HTML text.
+        const anchor = "the {beta} plan";
+
+        assert.equal(
+            briefFor(partner({ keywords: [anchor] }), { matchId: "m", format: "markdown" }).snippet,
+            "[the {beta} plan](<https://partner.example/>)",
+        );
+        assert.equal(
+            briefFor(partner({ keywords: [anchor] }), { matchId: "m", format: "html" }).snippet,
+            '<a href="https://partner.example/">the {beta} plan</a>',
+        );
+    });
 });

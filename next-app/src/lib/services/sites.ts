@@ -53,10 +53,25 @@ const MAX_SITES_PER_MEMBER = 10;
  * Both interfaces pass through here, which is the point. `submit_site` takes a
  * `keywords` override and the form takes a textarea, and neither should be the
  * one that forgot.
+ *
+ * Braces are in the set for the same reason the angle brackets are, and were
+ * missed at first because they are inert in the two formats anyone thinks to
+ * check. `{` opens a JSX expression in the `mdx` and `jsx` snippets, and in the
+ * `anchorOptions` an agent writes its own markup around.
+ *
+ * Exported only so `sites.test.ts` can reach it, the same way `briefFor` is.
+ * It is pure, and it is the half of this pair that has no other way to be
+ * checked: the escaping in `buildSnippet` is visible in a snippet, whereas what
+ * this drops is visible only in the database.
+ *
+ * A throwaway script re-ran it over every existing row on 2026-08-03, before
+ * the braces were added, and found nothing to repair across all 26 sites. So
+ * there is still no path that rewrites a stored anchor, and if one is ever
+ * needed the repair is another one-off script.
  */
-function anchorPhrase(raw: string): string {
+export function anchorPhrase(raw: string): string {
     return raw
-        .replace(/[<>[\]()\\`"']/g, " ")
+        .replace(/[<>[\](){}\\`"']/g, " ")
         .replace(/[\u0000-\u001f\u007f]/g, " ")
         .replace(/\s+/g, " ")
         .trim()
