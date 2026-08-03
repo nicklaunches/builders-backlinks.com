@@ -7,6 +7,7 @@ import { exchangeMatches, exchangeMembers, exchangeSites } from "@/lib/db/schema
 import { isAuthorizedCron } from "@/lib/email/cron-auth";
 import { notifyDigest } from "@/lib/email/notify";
 import { toMaskedPartner } from "@/lib/services/mask";
+import { NO_LINKS, liveLinkCounts } from "@/lib/services/standing";
 
 /**
  * @file The weekly digest: the other half of the matching mechanic.
@@ -150,10 +151,13 @@ export async function GET(request: Request) {
 
         const widenedCount = candidates.filter((c) => c.category !== category).length;
 
+        // One count query for the whole digest, not one per candidate.
+        const counts = await liveLinkCounts(candidates.map((c) => c.id));
+
         await notifyDigest({
             to: member.email,
             category,
-            candidates: candidates.map(toMaskedPartner),
+            candidates: candidates.map((c) => toMaskedPartner(c, counts.get(c.id) ?? NO_LINKS)),
             widenedCount,
         });
 

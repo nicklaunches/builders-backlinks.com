@@ -1,7 +1,7 @@
 import { and, count, desc, eq, gte, inArray, lte, ne, or, sql } from "drizzle-orm";
 
 import { type Category, candidateCategories, isCategory } from "@/lib/categories";
-import type { MaskedPartner, MatchableSite, RevealedPartner, ScoreContext } from "@/lib/contracts";
+import type { LiveLinkCounts, MaskedPartner, MatchableSite, RevealedPartner, ScoreContext } from "@/lib/contracts";
 import { db } from "@/lib/db";
 import {
     type ExchangeMatch,
@@ -16,6 +16,7 @@ import { type MatchState, isRevealed, orderPair } from "@/lib/exchange";
 import { findBestPartner } from "@/lib/matching";
 import { briefFor } from "@/lib/services/links";
 import { toMaskedPartner, toRevealedPartner } from "@/lib/services/mask";
+import { NO_LINKS, liveLinkCounts, liveLinkCountsFor } from "@/lib/services/standing";
 
 /**
  * @file Finding partners and moving a match toward agreement.
@@ -53,7 +54,12 @@ const MATCH_TTL_DAYS = 14;
 /** Maximum partners any search returns. Deliberately low: this is not a directory to enumerate. */
 const MAX_SEARCH_RESULTS = 20;
 
-function toMatchable(site: ExchangeSite): MatchableSite {
+/**
+ * @param counts - Live link counts for this site, from `services/standing.ts`.
+ *   The matcher's reciprocity term reads them, so passing the site row's own
+ *   stale columns here would score a member on a number nothing maintains.
+ */
+function toMatchable(site: ExchangeSite, counts: LiveLinkCounts): MatchableSite {
     return {
         id: site.id,
         ownerId: site.ownerId,
@@ -62,8 +68,8 @@ function toMatchable(site: ExchangeSite): MatchableSite {
         domainRating: site.domainRating,
         trueDr: site.trueDr,
         placementOffered: site.placementOffered,
-        linksGiven: site.linksGiven,
-        linksGot: site.linksGot,
+        linksGiven: counts.linksGiven,
+        linksGot: counts.linksGot,
         lastMatchedAt: site.lastMatchedAt,
     };
 }
@@ -103,7 +109,9 @@ export async function searchPartners(input: {
         .orderBy(sql`${exchangeSites.lastMatchedAt} asc nulls first`, desc(exchangeSites.createdAt))
         .limit(limit);
 
-    return sites.map(toMaskedPartner);
+    // One count query for the whole page, never one per row.
+    const counts = await liveLinkCounts(sites.map((s) => s.id));
+    return sites.map((site) => toMaskedPartner(site, counts.get(site.id) ?? NO_LINKS));
 }
 
 export type AutoPairResult =
@@ -183,7 +191,12 @@ export async function autoPair(site: ExchangeSite): Promise<AutoPairResult> {
         if (m.state === "declined") previouslyDeclined.add(other);
     }
 
-    const subject = toMatchable(site);
+    // The subject and the whole pool in one query, so scoring sees the same
+    // derived standing every other surface shows.
+    const counts = await liveLinkCounts([site.id, ...candidates.map((c) => c.id)]);
+    const countsFor = (id: string) => counts.get(id) ?? NO_LINKS;
+
+    const subject = toMatchable(site, countsFor(site.id));
     const ctx: ScoreContext = {
         alreadyMatched,
         previouslyDeclined,
@@ -191,7 +204,11 @@ export async function autoPair(site: ExchangeSite): Promise<AutoPairResult> {
         now: new Date(),
     };
 
-    const best = findBestPartner(subject, candidates.map(toMatchable), ctx);
+    const best = findBestPartner(
+        subject,
+        candidates.map((c) => toMatchable(c, countsFor(c.id))),
+        ctx,
+    );
     if (!best) return { matched: false, reason: "no_eligible_partner", category };
 
     const partnerSite = candidates.find((c) => c.id === best.candidate.id);
@@ -221,7 +238,7 @@ export async function autoPair(site: ExchangeSite): Promise<AutoPairResult> {
         widened: match.widened,
     });
 
-    return { matched: true, match, partner: toMaskedPartner(partnerSite) };
+    return { matched: true, match, partner: toMaskedPartner(partnerSite, countsFor(partnerSite.id)) };
 }
 
 /**
@@ -320,7 +337,17 @@ export type MatchView = {
     expiresAt: Date;
 };
 
-async function buildMatchView(match: ExchangeMatch, viewerSiteIds: Set<string>): Promise<MatchView | null> {
+/**
+ * @param partnerCounts - Live link counts for every partner in the batch, when
+ *   the caller is building more than one view. `listMatches` renders up to 50,
+ *   and resolving standing per view would be 50 round trips for one page.
+ *   Omitted by the single-view callers, which then pay one query.
+ */
+async function buildMatchView(
+    match: ExchangeMatch,
+    viewerSiteIds: Set<string>,
+    partnerCounts?: Map<string, LiveLinkCounts>,
+): Promise<MatchView | null> {
     const mineIsA = viewerSiteIds.has(match.siteAId);
     const mySiteId = mineIsA ? match.siteAId : match.siteBId;
     const partnerSiteId = mineIsA ? match.siteBId : match.siteAId;
@@ -330,6 +357,9 @@ async function buildMatchView(match: ExchangeMatch, viewerSiteIds: Set<string>):
 
     const state = match.state;
     const revealed = isRevealed(state);
+    const counts = partnerCounts
+        ? (partnerCounts.get(partnerSite.id) ?? NO_LINKS)
+        : await liveLinkCountsFor(partnerSite.id);
 
     let partner: MaskedPartner | RevealedPartner;
     if (revealed) {
@@ -338,9 +368,9 @@ async function buildMatchView(match: ExchangeMatch, viewerSiteIds: Set<string>):
             .from(exchangeMembers)
             .where(eq(exchangeMembers.userId, partnerSite.ownerId))
             .limit(1);
-        partner = toRevealedPartner(partnerSite, partnerMember?.email ?? "", state);
+        partner = toRevealedPartner(partnerSite, counts, partnerMember?.email ?? "", state);
     } else {
-        partner = toMaskedPartner(partnerSite);
+        partner = toMaskedPartner(partnerSite, counts);
     }
 
     const myAcceptState = mineIsA ? "a_accepted" : "b_accepted";
@@ -403,7 +433,10 @@ export async function listMatches(member: ExchangeMember, state?: MatchState): P
         .limit(50);
 
     const idSet = new Set(ids);
-    const views = await Promise.all(matches.map((m) => buildMatchView(m, idSet)));
+    // Which side is the partner is known from the row alone, so every partner's
+    // standing comes back in one query rather than one per rendered match.
+    const partnerCounts = await liveLinkCounts(matches.map((m) => (idSet.has(m.siteAId) ? m.siteBId : m.siteAId)));
+    const views = await Promise.all(matches.map((m) => buildMatchView(m, idSet, partnerCounts)));
     return views.filter((v): v is MatchView => v !== null);
 }
 

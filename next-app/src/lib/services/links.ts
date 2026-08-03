@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { type ExchangeMember, type ExchangeSite, exchangeLinks, exchangeMatches, exchangeSites } from "@/lib/db/schema";
 import { notifyLinkVerified } from "@/lib/email/notify";
 import { type LinkStatus, type Placement, isRevealed } from "@/lib/exchange";
+import { NO_LINKS, liveLinkCounts } from "@/lib/services/standing";
 import { verifyLink } from "@/lib/verify";
 
 /**
@@ -341,21 +342,12 @@ export async function markLinkPlaced(input: {
 
     if (!link) throw new LinkError("not_found", "The placement could not be recorded.");
 
-    if (result.found && !wasLive) {
-        // Counters move only when the link BECOMES live. Agents retry
-        // `mark_link_placed` as a matter of course, and the upsert above
-        // already treats a re-report as a correction; the counters have to
-        // read it the same way, or every retry inflates the giver's standing,
-        // and standing is what matching trusts.
-        await db()
-            .update(exchangeSites)
-            .set({ linksGiven: sql`${exchangeSites.linksGiven} + 1`, updatedAt: now })
-            .where(eq(exchangeSites.id, mine.id));
-        await db()
-            .update(exchangeSites)
-            .set({ linksGot: sql`${exchangeSites.linksGot} + 1`, updatedAt: now })
-            .where(eq(exchangeSites.id, partner.id));
-    }
+    // Nothing to increment. Standing is a COUNT over the links that are live
+    // right now (`services/standing.ts`), so the upsert above has already moved
+    // it, exactly once, however many times an agent retries this call. The
+    // counter columns that used to be maintained here could not manage that:
+    // the increment read the row first, so two agents reporting at the same
+    // moment both saw nothing and both counted.
 
     if (result.found) {
         // Both directions live promotes the match. Counted rather than assumed:
@@ -469,12 +461,20 @@ export type Standing = {
  */
 export async function getStanding(member: ExchangeMember): Promise<Standing> {
     const sites = await db()
-        .select({ linksGiven: exchangeSites.linksGiven, linksGot: exchangeSites.linksGot })
+        .select({ id: exchangeSites.id })
         .from(exchangeSites)
         .where(eq(exchangeSites.ownerId, member.userId));
 
-    const given = sites.reduce((n, s) => n + s.linksGiven, 0);
-    const received = sites.reduce((n, s) => n + s.linksGot, 0);
+    // Counted from the links that are live right now, across every site the
+    // member owns. A member with two sites has one standing, not two.
+    const counts = await liveLinkCounts(sites.map((s) => s.id));
+    let given = 0;
+    let received = 0;
+    for (const site of sites) {
+        const n = counts.get(site.id) ?? NO_LINKS;
+        given += n.linksGiven;
+        received += n.linksGot;
+    }
 
     if (given + received < 2) {
         return {

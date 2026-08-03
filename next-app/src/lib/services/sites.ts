@@ -2,12 +2,13 @@ import { count, desc, eq } from "drizzle-orm";
 
 import { analyzeSite } from "@/lib/analyze";
 import { type Category, UNMATCHABLE, isCategory } from "@/lib/categories";
-import { AnalyzeError, type SiteAnalysis } from "@/lib/contracts";
+import { AnalyzeError, type LiveLinkCounts, type SiteAnalysis } from "@/lib/contracts";
 import { db } from "@/lib/db";
 import { type ExchangeMember, type ExchangeSite, exchangeMembers, exchangeSites } from "@/lib/db/schema";
 import { notifySiteApproved, notifySiteRejected, notifySubmissionReceived } from "@/lib/email/notify";
 import { PLACEMENT_OFFERS, type PlacementOffer, SITE_STATUSES, type SiteStatus, normalizeDomain } from "@/lib/exchange";
 import { autoPair } from "@/lib/services/matches";
+import { NO_LINKS, liveLinkCounts } from "@/lib/services/standing";
 
 /**
  * @file Listing a site in the exchange.
@@ -202,14 +203,22 @@ export async function commitSite(input: CommitSiteInput): Promise<ExchangeSite> 
 }
 
 /**
- * Lists the sites a member owns, newest first.
+ * Lists the sites a member owns, newest first, with their live link counts.
+ *
+ * The counts are spread OVER the row's own `links_given` / `links_got` columns,
+ * which are stale and awaiting a drop. Doing it at this one seam is what lets
+ * both callers — the dashboard and the `list_my_sites` MCP tool — show a member
+ * their real standing without either of them learning how it is counted.
  */
-export async function listMySites(member: ExchangeMember): Promise<ExchangeSite[]> {
-    return db()
+export async function listMySites(member: ExchangeMember): Promise<(ExchangeSite & LiveLinkCounts)[]> {
+    const sites = await db()
         .select()
         .from(exchangeSites)
         .where(eq(exchangeSites.ownerId, member.userId))
         .orderBy(desc(exchangeSites.createdAt));
+
+    const counts = await liveLinkCounts(sites.map((s) => s.id));
+    return sites.map((site) => ({ ...site, ...(counts.get(site.id) ?? NO_LINKS) }));
 }
 
 // ---------------------------------------------------------------------------

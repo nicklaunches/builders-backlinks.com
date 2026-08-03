@@ -169,6 +169,23 @@ export type FindBestPartner = (
 // ---------------------------------------------------------------------------
 
 /**
+ * A site's give/get standing, counted from the links that are live right now.
+ *
+ * Every view that shows these numbers takes them as a value rather than reading
+ * them off a site row, because they are not a property of the site: they are a
+ * `COUNT` over `exchange_links`, resolved by `services/standing.ts`.
+ *
+ * The type lives here rather than in that service so `services/mask.ts` can name
+ * it without importing from the service layer. Masking deliberately imports
+ * nothing from services — see the reasoning in its own `@file` block — and this
+ * is the one module it already depends on.
+ */
+export type LiveLinkCounts = {
+    linksGiven: number;
+    linksGot: number;
+};
+
+/**
  * A partner as seen BEFORE mutual accept. There is deliberately no domain,
  * url, or email field on this type: making it structurally impossible to leak
  * an identity through a read path is worth more than remembering not to.
