@@ -5,7 +5,7 @@ import { CATEGORIES } from "@/lib/categories";
 import { AnalyzeError } from "@/lib/contracts";
 import type { ExchangeMember } from "@/lib/db/schema";
 import { PLACEMENT_OFFERS } from "@/lib/exchange";
-import { RateLimited, enforceToolLimit } from "@/lib/mcp/limits";
+import { RateLimited, enforceToolLimit } from "@/lib/limits";
 import { getCategoryDepths, getRules } from "@/lib/services/catalog";
 import { LinkError, checkLinks, getLinkBrief, getStanding, markLinkPlaced } from "@/lib/services/links";
 import { MatchError, listMatches, respondToMatch, searchPartners } from "@/lib/services/matches";

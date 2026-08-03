@@ -1,5 +1,6 @@
 "use server";
 
+import { RateLimited, enforceToolLimit, memberCaller, rateLimitedMessage } from "@/lib/limits";
 import { type LinkBrief, LinkError, type PlacementReport, getLinkBrief, markLinkPlaced } from "@/lib/services/links";
 import { MatchError, respondToMatch } from "@/lib/services/matches";
 import { getSessionMember } from "@/lib/session";
@@ -11,6 +12,12 @@ import { getSessionMember } from "@/lib/session";
  * all, which quietly made a coding agent mandatory rather than preferred. These
  * call the same service functions the tools call, so the two interfaces cannot
  * drift: `respond_to_match` and this file both end up in `respondToMatch`.
+ *
+ * Each one spends the budget of the tool it twins, under that tool's name, so a
+ * member has one allowance rather than one per interface. `mark_link_placed` is
+ * the one that matters: it crawls a URL the caller chose, and an uncapped
+ * surface that fetches on demand is a request proxy with our name on the
+ * outbound packets.
  *
  * Conventions, matching `submit/actions.ts` and `app/key/actions.ts`: file-level
  * "use server", a discriminated union with an "idle" arm, the member fetched
@@ -40,9 +47,12 @@ export async function respondToMatchAction(_previous: RespondState, formData: Fo
     if (!matchId) return { status: "error", matchId, message: "No match was submitted." };
 
     try {
+        await enforceToolLimit("respond_to_match", memberCaller(member.id));
+
         const view = await respondToMatch({ member, matchId, accept, reason: reason || undefined });
         return { status: "done", matchId, accepted: accept, revealed: view.revealed };
     } catch (err) {
+        if (err instanceof RateLimited) return { status: "error", matchId, message: rateLimitedMessage(err) };
         if (err instanceof MatchError) return { status: "error", matchId, message: err.message };
         console.error("dashboard: respondToMatch failed", err);
         return { status: "error", matchId, message: "Could not record that. The error was logged." };
@@ -80,9 +90,12 @@ export async function getLinkBriefAction(_previous: BriefState, formData: FormDa
     if (!matchId) return { status: "error", matchId, message: "No match was submitted." };
 
     try {
+        await enforceToolLimit("get_link_brief", memberCaller(member.id));
+
         const brief = await getLinkBrief({ member, matchId, format });
         return { status: "done", matchId, brief };
     } catch (err) {
+        if (err instanceof RateLimited) return { status: "error", matchId, message: rateLimitedMessage(err) };
         if (err instanceof LinkError) return { status: "error", matchId, message: err.message };
         console.error("dashboard: getLinkBrief failed", err);
         return { status: "error", matchId, message: "Could not build that brief. The error was logged." };
@@ -126,6 +139,8 @@ export async function markLinkPlacedAction(_previous: PlaceState, formData: Form
     }
 
     try {
+        await enforceToolLimit("mark_link_placed", memberCaller(member.id));
+
         const report = await markLinkPlaced({
             member,
             matchId,
@@ -134,6 +149,7 @@ export async function markLinkPlacedAction(_previous: PlaceState, formData: Form
         });
         return { status: "done", matchId, report };
     } catch (err) {
+        if (err instanceof RateLimited) return { status: "error", matchId, message: rateLimitedMessage(err) };
         if (err instanceof LinkError) return { status: "error", matchId, message: err.message };
         console.error("dashboard: markLinkPlaced failed", err);
         return { status: "error", matchId, message: "Could not check that page. The error was logged." };

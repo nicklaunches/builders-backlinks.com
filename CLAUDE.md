@@ -15,7 +15,8 @@ next-app/src/
                   endpoint, api/cron/* are the two scheduled jobs.
   lib/services/   The data-access seam. Everything goes through here.
   lib/db/         Drizzle schema and the per-request connection handle.
-  lib/mcp/        Tool registration and rate-limit budgets. No logic of its own.
+  lib/mcp/        Tool registration. No logic of its own.
+  lib/limits.ts   Per-tool budgets, spent by the tools and the server actions alike.
   lib/exchange.ts Pure domain rules, and enum values derived from the pgEnums.
   components/web/ All shared components, flat, kebab-case, named exports.
   emails/         React Email templates.

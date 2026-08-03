@@ -1,7 +1,16 @@
 import { enforceRateLimit } from "@/lib/rate-limit";
 
 /**
- * @file Rate limiting for the MCP surface.
+ * @file Rate limiting for both interfaces.
+ *
+ * It used to live in `lib/mcp/` and cap the tool surface only, which quietly
+ * made the browser the cheap way in: a server action is a POST endpoint that
+ * anyone signed in can call in a loop, and `draftSiteAction` spends a page
+ * fetch, an LLM call and a VerifiedDR lookup per call exactly as `submit_site`
+ * does. One capped path and one uncapped path to the same service function is
+ * not a budget. The budgets are keyed by the TOOL NAME on purpose, so a member
+ * shares one bucket across both interfaces rather than getting a second
+ * allowance by switching surface.
  *
  * The read tools (`search_partners`, `get_categories`, `get_rules`) answer with
  * no credentials at all. That is deliberate, it is what makes `claude mcp add`
@@ -65,7 +74,7 @@ export class RateLimited extends Error {
  * generously enough that ordinary use never notices them.
  */
 export function callerKey(memberId: string | null, headers: Headers): string {
-    if (memberId) return `member:${memberId}`;
+    if (memberId) return memberCaller(memberId);
     // CF-Connecting-IP is set by Cloudflare's edge on every request it proxies
     // and any inbound copy is overwritten, so it cannot be spoofed by the
     // caller. x-forwarded-for is the fallback for anything not behind the edge
@@ -75,6 +84,31 @@ export function callerKey(memberId: string | null, headers: Headers): string {
     const edge = headers.get("cf-connecting-ip")?.trim();
     const forwarded = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
     return `ip:${edge || forwarded || headers.get("x-real-ip") || "unknown"}`;
+}
+
+/**
+ * The bucket a signed-in member shares between the two interfaces.
+ *
+ * The browser knows who the caller is before it does anything, so it never
+ * needs the IP fallback in {@link callerKey}. Same string either way, which is
+ * the point: twenty submits from the tool and twenty from the form are forty
+ * submits, not two allowances of twenty.
+ */
+export function memberCaller(memberId: string): string {
+    return `member:${memberId}`;
+}
+
+/**
+ * What a browser surface tells someone who ran out of budget.
+ *
+ * Kept beside the budgets rather than written out at each call site, so the
+ * five server actions cannot end up saying five different things about the same
+ * refusal. The tool surface has its own wording in `explain()`, which is
+ * addressed to a model and tells it to stop looping.
+ */
+export function rateLimitedMessage(err: RateLimited): string {
+    const minutes = Math.max(1, Math.ceil(err.retryAfterSeconds / 60));
+    return `You are doing that faster than the exchange allows. Wait about ${minutes} minute(s) and try again.`;
 }
 
 /**
