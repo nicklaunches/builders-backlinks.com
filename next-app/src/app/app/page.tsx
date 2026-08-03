@@ -70,7 +70,13 @@ export default async function DashboardPage() {
         return {
             matchId: match.matchId,
             state: match.state,
-            category: match.category,
+            // The PARTNER's category, not the match's. `match.category` is
+            // `best.candidate.category`, which for the side that did not
+            // initiate the pairing is their own category — so "(adjacent)"
+            // would be pointing at itself. The proposal email and the MCP tool
+            // both read `partner.category` for the same reason.
+            category: match.partner.category,
+            widened: match.widened,
             revealed,
             partnerDomain,
             partnerDescription: match.partner.description,

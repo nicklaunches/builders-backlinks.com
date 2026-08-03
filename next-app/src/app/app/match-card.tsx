@@ -40,7 +40,16 @@ import { TabList } from "@/components/web/tab-list";
 export type MatchRow = {
     matchId: string;
     state: string;
+    /**
+     * The PARTNER's category, which is NOT `MatchView.category`. See the
+     * mapping in page.tsx for why the two differ on a widened match.
+     */
     category: string;
+    /**
+     * True when the pair came from an adjacent category. Shown rather than left
+     * to inference: an unlabelled adjacent match just looks like a wrong one.
+     */
+    widened: boolean;
     revealed: boolean;
     /** Present only when revealed. The type mirrors what the server sent. */
     partnerDomain: string | null;
@@ -118,8 +127,23 @@ export function MatchCard({ row }: { row: MatchRow }) {
 
             <p className="mt-4 text-[14.5px] leading-relaxed">{row.partnerDescription}</p>
 
+            {/* The "(adjacent)" tag below is a label, not an explanation. Someone
+                looking at a partner outside their own category needs the reason
+                in the same glance, or the match reads as a mistake.
+
+                Worded from the pair, not from "your category". Only the side
+                that initiated the pairing was measured against WIDEN_BELOW, so
+                telling the other member their own category was thin is a claim
+                we have not checked and is often false. */}
+            {row.widened ? (
+                <p className="text-muted mt-3 text-[14px] leading-relaxed">
+                    One of your two categories was too thin to pair inside it, so we widened by a single adjacent step
+                    rather than leave you both unmatched.
+                </p>
+            ) : null}
+
             <dl className="border-line mt-5 grid gap-px overflow-hidden rounded-sm border sm:grid-cols-3">
-                <Fact label="Category" value={row.category} />
+                <Fact label="Category" value={row.widened ? `${row.category} (adjacent)` : row.category} />
                 <Fact
                     label="Domain Rating"
                     value={row.partnerDomainRating == null ? "Not measured" : String(row.partnerDomainRating)}

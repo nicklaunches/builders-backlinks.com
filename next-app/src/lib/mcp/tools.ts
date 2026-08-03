@@ -331,13 +331,22 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
             return text(
                 matches
                     .map((m) => {
+                        // Say when a pair was widened. Unlabelled, an adjacent
+                        // match is indistinguishable from a wrong one, which is
+                        // exactly what house rule §02 promises not to do.
+                        const category = m.widened ? `${m.partner.category} (adjacent to yours)` : m.partner.category;
                         const who =
                             "domain" in m.partner
-                                ? `${m.partner.domain} (${m.partner.email})`
-                                : `${m.partner.category}, DR ${m.partner.domainRating ?? "unrated"} (hidden until you both accept)`;
+                                ? `${m.partner.domain} (${m.partner.email}), ${category}`
+                                : `${category}, DR ${m.partner.domainRating ?? "unrated"} (hidden until you both accept)`;
                         return [
                             `${m.matchId}  [${m.state}]  ${who}`,
                             `  ${m.partner.description}`,
+                            ...(m.widened
+                                ? [
+                                      "  widened: one of your two categories was too thin to pair inside, so we went one adjacent step out.",
+                                  ]
+                                : []),
                             `  wants: ${m.partner.wantedAnchors.join(", ") || "no anchors given"}`,
                             `  next: ${m.nextStep}`,
                         ].join("\n");

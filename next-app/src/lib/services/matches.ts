@@ -278,6 +278,26 @@ export type MatchView = {
     matchId: string;
     state: MatchState;
     category: Category;
+    /**
+     * True when this pair came from an adjacent category, because the exact one
+     * was too thin to pair inside.
+     *
+     * Exposed because the landing page and house rule §02 both promise we widen
+     * "and say so", and a widened match is indistinguishable from a wrong one
+     * unless we say which it is. The proposal email has always disclosed this;
+     * every other surface showed a bare category and left the member to
+     * conclude the matching was simply bad.
+     *
+     * A property of the PAIR, not of the viewer: it is stored as
+     * `best.candidate.category !== category`, so it is true exactly when the two
+     * sites sit in different categories, which reads the same from either end.
+     * Both sides can therefore render it, and each side's "adjacent" means the
+     * OTHER site's category. What is not symmetric is which category was thin:
+     * only the side that initiated the pairing was measured against
+     * `WIDEN_BELOW`, so no surface should tell a member their own category was
+     * the thin one.
+     */
+    widened: boolean;
     /** The viewer's own site in this match. */
     mySiteId: string;
     /** Masked before mutual accept, revealed after. */
@@ -344,6 +364,7 @@ async function buildMatchView(match: ExchangeMatch, viewerSiteIds: Set<string>):
         matchId: match.id,
         state,
         category: match.category,
+        widened: match.widened,
         mySiteId,
         partner,
         revealed,
