@@ -78,14 +78,87 @@ export function isRevealed(state: MatchState): boolean {
     return state === "agreed" || state === "placed";
 }
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
 /**
- * Recheck schedule after a link is first seen live: day 7, day 30, then monthly.
+ * Days between checks of a live link, by how many checks it has already had.
  *
- * @returns The next due date, or null when the link is not live (nothing to
- *   recheck, and a link that was never seen has no anchor date to count from).
+ * Read as gaps, not offsets: 7, then 23, then 30 forever, which puts the checks
+ * on day 7, day 30, day 60, day 90 — the documented schedule. The last entry
+ * repeats once the list runs out.
  */
-export function nextCheckAt(link: { status: LinkStatus; firstSeenAt?: Date | null; checkCount?: number }): Date | null {
-    if (link.status !== "live" || !link.firstSeenAt) return null;
-    const days = link.checkCount && link.checkCount >= 2 ? 30 : 7;
-    return new Date(link.firstSeenAt.getTime() + days * 24 * 60 * 60 * 1000);
+export const LIVE_CHECK_INTERVAL_DAYS = [7, 23, 30] as const;
+
+/**
+ * Days between checks of a link that is not live yet, or not live any more.
+ *
+ * Tighter than the live schedule and for a different reason. A `promised` link
+ * is one whose first crawl was inconclusive, and a `missing` one is a link the
+ * member may well be in the middle of fixing; in both cases the useful answer
+ * arrives within a day or two, so look again soon and then back off.
+ */
+export const RETRY_CHECK_INTERVAL_DAYS = [1, 1, 1, 7] as const;
+
+/**
+ * How many checks a link that has NEVER been live gets before it is dropped.
+ *
+ * Only ever applied to a link with no `firstSeenAt`. A link that was once live
+ * is never given up on: noticing six weeks later that it quietly came down is
+ * the entire point of the recheck job, and a link that is missing today is
+ * exactly the one worth looking at next month.
+ *
+ * The bound exists because the cron orders candidates by `lastCheckedAt` and a
+ * link nothing will ever confirm would otherwise sit at the head of that queue
+ * for good, spending the batch on itself.
+ */
+export const GIVE_UP_AFTER_CHECKS = 8;
+
+function intervalDays(schedule: readonly number[], checkCount: number): number {
+    const index = Math.min(Math.max(checkCount, 1), schedule.length) - 1;
+    return schedule[index]!;
+}
+
+/**
+ * When a link is next due to be verified, or null when it should not be.
+ *
+ * THE ANCHOR IS THE LAST CHECK, NOT THE FIRST SIGHTING. `firstSeenAt` is the
+ * tempting anchor and it is a trap: it never moves, so any schedule counted
+ * from it stops advancing the moment the interval stops growing, and the due
+ * date is then permanently in the past. That was the real behaviour here —
+ * `firstSeenAt + 30 days` from the second check onward, i.e. every live link
+ * due on every run, "day 7, day 30, then daily forever". Anchoring on
+ * `lastCheckedAt` means the schedule advances by construction: it cannot fall
+ * behind a clock it is measured from.
+ *
+ * `firstSeenAt` remains the fallback for a live link that has somehow never
+ * been checked since, and `createdAt` for a link that has never been checked at
+ * all, which is what makes a freshly reported link due rather than unschedulable.
+ *
+ * Three statuses are scheduled, not one. `missing` used to be selected by the
+ * cron and then never be due, so those rows were fetched on every run and
+ * checked on none; `promised` was never selected at all, so a first report whose
+ * crawl failed was never looked at again. Both are links the record is currently
+ * wrong about, which makes them the ones most worth re-crawling.
+ *
+ * @returns The next due date, or null for a terminal `removed` link and for one
+ *   that has never been confirmed live within {@link GIVE_UP_AFTER_CHECKS}.
+ */
+export function nextCheckAt(link: {
+    status: LinkStatus;
+    firstSeenAt?: Date | null;
+    lastCheckedAt?: Date | null;
+    createdAt?: Date | null;
+    checkCount?: number;
+}): Date | null {
+    if (link.status === "removed") return null;
+
+    const checkCount = link.checkCount ?? 0;
+    const wasEverLive = link.firstSeenAt != null;
+    if (!wasEverLive && checkCount >= GIVE_UP_AFTER_CHECKS) return null;
+
+    const anchor = link.lastCheckedAt ?? link.firstSeenAt ?? link.createdAt;
+    if (!anchor) return null;
+
+    const schedule = link.status === "live" ? LIVE_CHECK_INTERVAL_DAYS : RETRY_CHECK_INTERVAL_DAYS;
+    return new Date(anchor.getTime() + intervalDays(schedule, checkCount) * MS_PER_DAY);
 }

@@ -195,7 +195,16 @@ export const exchangeSites = pgTable(
         status: siteStatusEnum("status").default("pending_review").notNull(),
         reviewNote: text("review_note"),
 
+        /**
+         * @deprecated Stale, and awaiting a drop. Standing is counted from the
+         * links that are live right now, in `services/standing.ts`. These two
+         * columns are no longer read or written by anything: they are still
+         * here only because a destructive migration ships one deploy behind the
+         * code that stops using it, per the migration rule in `CLAUDE.md`.
+         * Do not start reading them again, and do not reintroduce a counter.
+         */
         linksGiven: integer("links_given").default(0).notNull(),
+        /** @deprecated See {@link linksGiven}. */
         linksGot: integer("links_got").default(0).notNull(),
         trustScore: integer("trust_score").default(50).notNull(),
         lastMatchedAt: timestamp("last_matched_at", { withTimezone: true }),

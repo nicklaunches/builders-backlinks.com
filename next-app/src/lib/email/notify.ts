@@ -18,6 +18,7 @@ import { sendEmail } from "@/lib/email/send";
 import type { Placement } from "@/lib/exchange";
 import type { LinkBrief } from "@/lib/services/links";
 import { toMaskedPartner, toRevealedPartner } from "@/lib/services/mask";
+import { NO_LINKS, liveLinkCounts } from "@/lib/services/standing";
 
 /**
  * @file The trigger layer: every email the product sends is fired from here.
@@ -118,7 +119,11 @@ export async function notifyMatchProposed(input: {
     const { matchId, siteA, siteB, expiresAt, widened } = input;
 
     await safely("match-proposed", async () => {
-        const [emailA, emailB] = await Promise.all([emailForSite(siteA), emailForSite(siteB)]);
+        const [emailA, emailB, counts] = await Promise.all([
+            emailForSite(siteA),
+            emailForSite(siteB),
+            liveLinkCounts([siteA.id, siteB.id]),
+        ]);
 
         // Each side is shown the OTHER, masked.
         const sends: Promise<unknown>[] = [];
@@ -127,7 +132,12 @@ export async function notifyMatchProposed(input: {
                 sendEmail({
                     to: emailA,
                     subject: "You have a new match in the exchange",
-                    react: MatchProposedEmail({ matchId, partner: toMaskedPartner(siteB), expiresAt, widened }),
+                    react: MatchProposedEmail({
+                        matchId,
+                        partner: toMaskedPartner(siteB, counts.get(siteB.id) ?? NO_LINKS),
+                        expiresAt,
+                        widened,
+                    }),
                     emailType: "match-proposed",
                 }),
             );
@@ -137,7 +147,12 @@ export async function notifyMatchProposed(input: {
                 sendEmail({
                     to: emailB,
                     subject: "You have a new match in the exchange",
-                    react: MatchProposedEmail({ matchId, partner: toMaskedPartner(siteA), expiresAt, widened }),
+                    react: MatchProposedEmail({
+                        matchId,
+                        partner: toMaskedPartner(siteA, counts.get(siteA.id) ?? NO_LINKS),
+                        expiresAt,
+                        widened,
+                    }),
                     emailType: "match-proposed",
                 }),
             );
@@ -166,7 +181,11 @@ export async function notifyMatchAgreed(input: {
     const { matchId, siteA, siteB, briefForA, briefForB } = input;
 
     await safely("match-agreed", async () => {
-        const [emailA, emailB] = await Promise.all([emailForSite(siteA), emailForSite(siteB)]);
+        const [emailA, emailB, counts] = await Promise.all([
+            emailForSite(siteA),
+            emailForSite(siteB),
+            liveLinkCounts([siteA.id, siteB.id]),
+        ]);
         const sends: Promise<unknown>[] = [];
 
         if (emailA && emailB) {
@@ -176,7 +195,7 @@ export async function notifyMatchAgreed(input: {
                     subject: "You both accepted, here is who you matched with",
                     react: MatchAgreedEmail({
                         matchId,
-                        partner: toRevealedPartner(siteB, emailB, "agreed"),
+                        partner: toRevealedPartner(siteB, counts.get(siteB.id) ?? NO_LINKS, emailB, "agreed"),
                         brief: briefForA,
                     }),
                     emailType: "match-agreed",
@@ -186,7 +205,7 @@ export async function notifyMatchAgreed(input: {
                     subject: "You both accepted, here is who you matched with",
                     react: MatchAgreedEmail({
                         matchId,
-                        partner: toRevealedPartner(siteA, emailA, "agreed"),
+                        partner: toRevealedPartner(siteA, counts.get(siteA.id) ?? NO_LINKS, emailA, "agreed"),
                         brief: briefForB,
                     }),
                     emailType: "match-agreed",

@@ -1,11 +1,11 @@
-import { and, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
 import { exchangeLinks, exchangeMatches, exchangeSites } from "@/lib/db/schema";
 import { isAuthorizedCron } from "@/lib/email/cron-auth";
 import { notifyLinkRemoved } from "@/lib/email/notify";
-import { nextCheckAt } from "@/lib/exchange";
+import { GIVE_UP_AFTER_CHECKS, nextCheckAt } from "@/lib/exchange";
 import { verifyLink } from "@/lib/verify";
 
 /**
@@ -15,7 +15,10 @@ import { verifyLink } from "@/lib/verify";
  * spending a second cron slot. The expiry sweep runs first and is unrelated to
  * link verification; see the comment on it for why it exists.
  *
- * The recheck loop proper: day 7, day 30, then monthly.
+ * The recheck loop proper: day 7, day 30, then monthly for a live link, and a
+ * tighter retry for one that is `promised` or `missing`. The schedule itself
+ * lives in `nextCheckAt` (`lib/exchange.ts`), which is where the reasoning about
+ * anchoring on the last check rather than the first sighting is written down.
  *
  * This is the half of the promise nobody else in the category makes. Verifying
  * a link the day it goes in is easy and most competitors do some version of it.
@@ -81,10 +84,25 @@ export async function GET(request: Request) {
     // links that have waited longest. NULLS FIRST is explicit: a link that has
     // never been checked has waited longest of all, and an ascending sort in
     // Postgres would otherwise put it at the very back of the queue.
+    //
+    // `promised` is in the set because a first report whose crawl was
+    // inconclusive lands there, and nothing else ever looks at it again.
+    //
+    // The second clause drops links `nextCheckAt` has given up on. It is the
+    // same predicate, expressed here rather than left to the filter below, and
+    // it has to be: this ordering puts the never-confirmable links at the very
+    // front of the queue forever, so filtering them in JavaScript would still
+    // spend the whole window fetching them. Written as the negation of "never
+    // live AND out of attempts" so it reads next to the rule it mirrors.
     const candidates = await db()
         .select()
         .from(exchangeLinks)
-        .where(inArray(exchangeLinks.status, ["live", "missing"]))
+        .where(
+            and(
+                inArray(exchangeLinks.status, ["promised", "live", "missing"]),
+                or(isNotNull(exchangeLinks.firstSeenAt), lt(exchangeLinks.checkCount, GIVE_UP_AFTER_CHECKS)),
+            ),
+        )
         .orderBy(sql`${exchangeLinks.lastCheckedAt} asc nulls first`)
         .limit(BATCH * 3);
 
@@ -139,28 +157,25 @@ export async function GET(request: Request) {
             continue;
         }
 
-        // Genuinely gone, and it was live before.
+        // Confirmed absent. `removed` is reserved for a link that WAS live and
+        // then went away: it is the word the ledger and the email both use, and
+        // it carries a `removedAt`. A link that has never been confirmed live
+        // has nothing to have been removed, so it goes to `missing` instead and
+        // stays in the retry schedule until it runs out of attempts. Before
+        // `promised` and `missing` were rechecked at all, only live links could
+        // reach this branch and the distinction could not come up.
         const wasLive = link.status === "live";
         await db()
             .update(exchangeLinks)
-            .set({ ...touched, status: "removed", removedAt: now })
+            .set(wasLive ? { ...touched, status: "removed", removedAt: now } : { ...touched, status: "missing" })
             .where(eq(exchangeLinks.id, link.id));
 
         if (wasLive) {
             removed++;
-            // Reciprocity is derived from what is actually live, so the giver
-            // loses the credit for a link that no longer exists. Floored at
-            // zero in SQL: the counters are non-negative by definition, and an
-            // unmatched decrement would otherwise be permanent.
-            await db()
-                .update(exchangeSites)
-                .set({ linksGiven: sql`greatest(${exchangeSites.linksGiven} - 1, 0)`, updatedAt: now })
-                .where(eq(exchangeSites.id, hostSite.id));
-            await db()
-                .update(exchangeSites)
-                .set({ linksGot: sql`greatest(${exchangeSites.linksGot} - 1, 0)`, updatedAt: now })
-                .where(eq(exchangeSites.id, beneficiarySite.id));
-
+            // Nothing to decrement: standing is a COUNT over links that are
+            // live right now (`services/standing.ts`), so writing `removed`
+            // above has already changed it. The counter columns this used to
+            // maintain are what issue #6 was about.
             void notifyLinkRemoved({
                 matchId: link.matchId,
                 hostSite,

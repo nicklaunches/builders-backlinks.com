@@ -1,4 +1,4 @@
-import type { MaskedPartner, RevealedPartner } from "@/lib/contracts";
+import type { LiveLinkCounts, MaskedPartner, RevealedPartner } from "@/lib/contracts";
 import type { ExchangeSite } from "@/lib/db/schema";
 import { type MatchState, isRevealed } from "@/lib/exchange";
 
@@ -32,19 +32,16 @@ import { type MatchState, isRevealed } from "@/lib/exchange";
  * allowed to read. `domain` and `url` are in the set only because
  * `toRevealedPartner` needs them, and that function is the only thing here that
  * touches them.
+ *
+ * `linksGiven` and `linksGot` are deliberately NOT in the set, though the row
+ * still carries columns by those names. They are stale — standing is counted
+ * from live links now, not stored — and leaving them out means this file cannot
+ * read the wrong number even by accident. The counts arrive as an argument
+ * instead.
  */
 type SiteLike = Pick<
     ExchangeSite,
-    | "id"
-    | "category"
-    | "description"
-    | "domain"
-    | "domainRating"
-    | "keywords"
-    | "linksGiven"
-    | "linksGot"
-    | "placementOffered"
-    | "url"
+    "id" | "category" | "description" | "domain" | "domainRating" | "keywords" | "placementOffered" | "url"
 >;
 
 /**
@@ -54,9 +51,12 @@ type SiteLike = Pick<
  * argument to `propose_trade`, so handing it out does not reveal anything.
  *
  * @param site - The candidate site row.
+ * @param counts - Live link counts for this site, from `services/standing.ts`.
+ *   Required rather than optional so that a caller who has not resolved them
+ *   fails to compile instead of quietly publishing zeroes or stale columns.
  * @returns A partner view with no identifying fields.
  */
-export function toMaskedPartner(site: SiteLike): MaskedPartner {
+export function toMaskedPartner(site: SiteLike, counts: LiveLinkCounts): MaskedPartner {
     return {
         partnerId: site.id,
         category: site.category,
@@ -64,8 +64,8 @@ export function toMaskedPartner(site: SiteLike): MaskedPartner {
         domainRating: site.domainRating,
         wantedAnchors: site.keywords,
         placementOffered: site.placementOffered,
-        linksGiven: site.linksGiven,
-        linksGot: site.linksGot,
+        linksGiven: counts.linksGiven,
+        linksGot: counts.linksGot,
     };
 }
 
@@ -73,18 +73,24 @@ export function toMaskedPartner(site: SiteLike): MaskedPartner {
  * Builds the post-accept view of a partner, including how to reach them.
  *
  * @param site - The partner's site row.
+ * @param counts - Live link counts for this site, as {@link toMaskedPartner}.
  * @param ownerEmail - The partner's email, resolved from their member record.
  * @param state - The current match state. Anything before `agreed` throws.
  * @throws When called for a match that has not reached mutual accept. This is a
  *   programming error, not a user error: reaching this means a caller tried to
  *   reveal an identity the member has not consented to share yet.
  */
-export function toRevealedPartner(site: SiteLike, ownerEmail: string, state: MatchState): RevealedPartner {
+export function toRevealedPartner(
+    site: SiteLike,
+    counts: LiveLinkCounts,
+    ownerEmail: string,
+    state: MatchState,
+): RevealedPartner {
     if (!isRevealed(state)) {
         throw new Error(`Refusing to reveal partner identity for a match in state "${state}"`);
     }
     return {
-        ...toMaskedPartner(site),
+        ...toMaskedPartner(site, counts),
         domain: site.domain,
         url: site.url,
         email: ownerEmail,
