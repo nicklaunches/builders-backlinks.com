@@ -1,8 +1,8 @@
-import { Resvg } from "@resvg/resvg-js";
-import { mkdir, readdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { sizes } from "./brand";
+import { ensureFonts, rasterise, report } from "./render";
 import { flowSvg, iconSvg, logoSvg, ogSvg } from "./svg";
 
 /**
@@ -16,12 +16,8 @@ import { flowSvg, iconSvg, logoSvg, ogSvg } from "./svg";
  * needs a network or a font. Run it when the brand changes, look at what it
  * produced, commit it.
  *
- * Fonts are fetched once into `.fonts/` beside this file (gitignored) rather
- * than vendored, because the typeface is JetBrains Mono under the OFL and a
- * binary in the repo is a licence obligation nobody remembers. Rasterisation
- * passes those files explicitly with `loadSystemFonts: false`, so output is
- * byte-identical everywhere instead of picking up whatever the host has
- * installed. Delete `.fonts/` to force a re-fetch.
+ * Fonts and rasterisation live in `render.ts`, shared with `post-card.ts`.
+ * Delete `.fonts/` to force a re-fetch.
  *
  * Run with `pnpm assets:generate`. Exits non-zero if anything fails.
  */
@@ -29,70 +25,6 @@ import { flowSvg, iconSvg, logoSvg, ogSvg } from "./svg";
 const ROOT = process.cwd();
 const APP_DIR = path.join(ROOT, "src/app");
 const PUBLIC_DIR = path.join(ROOT, "public");
-const FONT_DIR = path.join(ROOT, "scripts/assets/.fonts");
-
-/**
- * Static, versioned URLs. Pinned to a release tag rather than `main` so a
- * regenerate a year from now produces the same pixels as today.
- */
-const FONTS: readonly { file: string; url: string }[] = [
-    {
-        file: "JetBrainsMono-Bold.ttf",
-        url: "https://raw.githubusercontent.com/JetBrains/JetBrainsMono/v2.304/fonts/ttf/JetBrainsMono-Bold.ttf",
-    },
-    {
-        file: "JetBrainsMono-SemiBold.ttf",
-        url: "https://raw.githubusercontent.com/JetBrains/JetBrainsMono/v2.304/fonts/ttf/JetBrainsMono-SemiBold.ttf",
-    },
-    {
-        file: "JetBrainsMono-Medium.ttf",
-        url: "https://raw.githubusercontent.com/JetBrains/JetBrainsMono/v2.304/fonts/ttf/JetBrainsMono-Medium.ttf",
-    },
-    {
-        file: "JetBrainsMono-Regular.ttf",
-        url: "https://raw.githubusercontent.com/JetBrains/JetBrainsMono/v2.304/fonts/ttf/JetBrainsMono-Regular.ttf",
-    },
-];
-
-/** Downloads the typeface once. Later runs are offline. */
-async function ensureFonts(): Promise<string[]> {
-    await mkdir(FONT_DIR, { recursive: true });
-    const present = new Set(await readdir(FONT_DIR).catch(() => []));
-
-    for (const font of FONTS) {
-        if (present.has(font.file)) continue;
-        process.stdout.write(`  fetching ${font.file} ... `);
-        const response = await fetch(font.url);
-        if (!response.ok) {
-            throw new Error(`Could not download ${font.file}: ${response.status} ${response.statusText}`);
-        }
-        await writeFile(path.join(FONT_DIR, font.file), Buffer.from(await response.arrayBuffer()));
-        console.log("ok");
-    }
-
-    return FONTS.map((f) => path.join(FONT_DIR, f.file));
-}
-
-/**
- * SVG to PNG, with fonts supplied explicitly.
- *
- * `loadSystemFonts: false` is the whole point. With it on, a machine missing
- * JetBrains Mono silently substitutes something else and the committed asset
- * changes depending on who ran the script.
- */
-function rasterise(svg: string, fontFiles: string[], width: number): Buffer {
-    const resvg = new Resvg(svg, {
-        fitTo: { mode: "width", value: width },
-        font: { fontFiles, loadSystemFonts: false, defaultFontFamily: "JetBrains Mono" },
-    });
-    return Buffer.from(resvg.render().asPng());
-}
-
-/** One aligned line per artifact, matching the shape of `render-emails.ts`. */
-function report(label: string, bytes: number, dimensions: string): void {
-    const kb = (bytes / 1024).toFixed(1);
-    console.log(`  ok    ${label.padEnd(34)}${dimensions.padEnd(12)}${kb} kB`);
-}
 
 async function main() {
     console.log("Generating brand assets\n");

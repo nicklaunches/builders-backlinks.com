@@ -15,6 +15,7 @@
         "test:mcp": "node --import tsx scripts/mcp-smoke.ts",
         "emails:render": "node --import tsx scripts/render-emails.ts",
         "assets:generate": "node --import tsx scripts/assets/generate.ts",
+        "assets:post": "node --import tsx scripts/assets/post-card.ts",
         "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
         "deploy": "pnpm db:migrate:deploy && opennextjs-cloudflare build && opennextjs-cloudflare deploy",
         "cf-typegen": "wrangler types",
