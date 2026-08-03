@@ -59,16 +59,51 @@ const GUIDANCE: string[] = [
     "A footer or sidebar link is allowed and still counts. It is simply worth less, and your partner will see exactly what you gave, as you will see theirs.",
 ];
 
+/**
+ * Escapes markup out of a value before it is pasted into somebody's source.
+ *
+ * JSX reads the same entities HTML does, in text and in a quoted attribute
+ * alike, so one function covers both formats.
+ */
+function escapeHtml(value: string): string {
+    return value
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+/** Escapes the characters that would close a markdown link label early. */
+function escapeMarkdownText(value: string): string {
+    return value.replace(/[\\[\]]/g, (character) => `\\${character}`);
+}
+
+/**
+ * Builds the one line a member pastes into their own site.
+ *
+ * BOTH HALVES ARE UNTRUSTED HERE. The anchor is the partner's keyword, typed by
+ * them and only ever trimmed and lowercased on the way in, and this string is
+ * handed to an agent with the instruction to put it in a file and deploy. An
+ * anchor of `x](https://elsewhere.example` silently repoints the markdown link,
+ * so the member gives a real backlink to a domain that was never in the trade,
+ * and `</a><script>` in the HTML form is script in their page rather than link
+ * text. Anything added to this function has to escape for the format it emits.
+ *
+ * The URL is escaped too. It comes from our own fetcher today, so it is already
+ * an absolute http(s) URL, but that is an argument for it costing nothing to
+ * escape rather than an argument for trusting it: markdown uses the
+ * angle-bracket destination form so a parenthesis cannot end the link.
+ */
 function buildSnippet(format: SnippetFormat, url: string, anchor: string): string {
     switch (format) {
         case "markdown":
         case "mdx":
-            return `[${anchor}](${url})`;
+            return `[${escapeMarkdownText(anchor)}](<${url.replace(/[<>]/g, encodeURIComponent)}>)`;
         case "jsx":
-            return `<a href="${url}">${anchor}</a>`;
         case "html":
         default:
-            return `<a href="${url}">${anchor}</a>`;
+            return `<a href="${escapeHtml(url)}">${escapeHtml(anchor)}</a>`;
     }
 }
 
