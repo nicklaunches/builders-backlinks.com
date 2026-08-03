@@ -8,6 +8,13 @@
       "when": 1785251784270,
       "tag": "0000_curvy_dexter_bennett",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785784422225,
+      "tag": "0001_polite_arachne",
+      "breakpoints": true
     }
   ]
 }
