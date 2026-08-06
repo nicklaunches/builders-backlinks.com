@@ -21,17 +21,31 @@ import { NO_LINKS, liveLinkCounts, liveLinkCountsFor } from "@/lib/services/stan
 /**
  * @file Finding partners and moving a match toward agreement.
  *
- * `autoPair` runs at exactly one moment: approval. It used to also run on
- * submit, which read as instant matching but was the review gate leaking — a
- * `pending_review` site was being proposed to real members before anyone had
- * looked at it. The guard inside `autoPair` closed that, and the two submit
- * surfaces stopped calling it, since the call could no longer do anything.
+ * `autoPair` has two callers: approval (`setSiteStatus`) and the daily re-pair
+ * pass in `api/cron/recheck`. It used to also run on submit, which read as
+ * instant matching but was the review gate leaking — a `pending_review` site was
+ * being proposed to real members before anyone had looked at it. The guard
+ * inside `autoPair` closed that, and the two submit surfaces stopped calling it,
+ * since the call could no longer do anything.
  *
  * The cost of that is real and worth naming: time to first match is now bounded
  * by how fast the /admin queue gets worked, and this file used to argue that the
  * instant path is what makes an exchange survivable while it is small. It is
  * still the right trade, because /terms promises review first, but the queue is
  * now on the critical path and should be watched like one.
+ *
+ * WHY THE DAILY PASS EXISTS. Approval used to be the only trigger, which meant a
+ * site that missed that one instant was invisible to matching forever. That is
+ * not hypothetical: 26 of 33 active sites had never been matched on 2026-08-06,
+ * while the matcher itself would have paired 24 of them on the spot. Whatever
+ * put them in that state — activation outside the app is the leading theory —
+ * one instant was never enough, and a pass that reconsiders the whole idle pool
+ * is the difference between a bug like that costing a day and costing a month.
+ *
+ * That pass is only safe because a repeat call is silent: `upsertMatch` reports
+ * whether it actually inserted, and `autoPair` returns `already_matched` without
+ * stamping or emailing when it did not. Remove that and the pass mails every
+ * member every night.
  *
  * When there is no partner yet, that is reported honestly rather than papered
  * over. The weekly digest cron (`api/cron/digest`) covers the members `autoPair`
@@ -116,20 +130,118 @@ export async function searchPartners(input: {
 
 export type AutoPairResult =
     | { matched: true; match: ExchangeMatch; partner: MaskedPartner }
-    | { matched: false; reason: "first_in_category" | "no_eligible_partner" | "not_active"; category: Category };
+    | {
+          matched: false;
+          reason: "first_in_category" | "no_eligible_partner" | "not_active" | "already_matched";
+          category: Category;
+      };
 
 /**
  * Finds and proposes the best available partner for a site, right now.
  *
- * Called from `setSiteStatus` the moment a site is approved. NOT from the submit
- * flow: a freshly listed site is `pending_review` and the guard below turns the
- * call into a no-op, so both submit surfaces stopped making it rather than
- * carrying copy for a branch that could not be reached.
+ * Called from `setSiteStatus` the moment a site is approved, and from the daily
+ * re-pair pass for every active site still holding no open match. NOT from the
+ * submit flow: a freshly listed site is `pending_review` and the guard below
+ * turns the call into a no-op, so both submit surfaces stopped making it rather
+ * than carrying copy for a branch that could not be reached.
+ *
+ * SAFE TO CALL REPEATEDLY, and the daily pass depends on that. A call that finds
+ * only a partner this site already has a match row with returns
+ * `already_matched` having written and sent nothing, so re-running it over an
+ * unchanged pool is free and silent.
  *
  * @param site - The site needing a partner. Ignored unless it is `active`.
  * @returns The created match and a masked view of the partner, or a reason why not.
  */
 export async function autoPair(site: ExchangeSite): Promise<AutoPairResult> {
+    const choice = await selectPartner(site);
+    if (!choice.ok) return { matched: false, reason: choice.reason, category: choice.category };
+
+    const { partnerSite, category } = choice;
+
+    const { match, created } = await upsertMatch({
+        siteId: site.id,
+        partnerSiteId: partnerSite.id,
+        category: partnerSite.category,
+        score: choice.score,
+        widened: choice.widened,
+    });
+
+    // The pair already had a match row, so nothing was proposed just now and
+    // there is nothing to announce. Stamping `lastMatchedAt` or sending
+    // `match-proposed` here would describe an event that did not happen: the
+    // email would carry the OLD match id and the OLD expiry, and for a pair that
+    // already declined each other it would read as a proposal they had settled.
+    //
+    // Only reachable when the best candidate is one this site has been matched
+    // with before. `scoreCandidate` deprioritises those but keeps them eligible,
+    // deliberately, so a thin category re-offers a known partner rather than
+    // nothing. When approval was the only caller this branch could not come up
+    // twice for the same site; the daily re-pair pass makes it routine, and it
+    // has to stay silent to stay idempotent.
+    if (!created) {
+        return { matched: false, reason: "already_matched", category };
+    }
+
+    const stamp = new Date();
+    await db()
+        .update(exchangeSites)
+        .set({ lastMatchedAt: stamp, updatedAt: stamp })
+        .where(inArray(exchangeSites.id, [site.id, partnerSite.id]));
+
+    // Fire and forget. A member who is matched and never told is the same as
+    // not being matched, but email must never be able to fail a submission.
+    void notifyMatchProposed({
+        matchId: match.id,
+        siteA: site,
+        siteB: partnerSite,
+        expiresAt: match.expiresAt,
+        widened: match.widened,
+    });
+
+    return { matched: true, match, partner: toMaskedPartner(partnerSite, choice.partnerCounts) };
+}
+
+/**
+ * What {@link autoPair} would do, without doing any of it.
+ *
+ * Exists so the daily re-pair pass can be dry-run against production before it
+ * is allowed to write and send. It shares {@link selectPartner} with `autoPair`
+ * rather than reimplementing the query-and-score sequence, which is the only
+ * thing that makes the preview worth trusting: a rehearsal that picked partners
+ * by its own logic would answer a different question than the one being asked.
+ *
+ * Returns the partner ROW, not a `MaskedPartner`. This is operator output bound
+ * for a log, not a member-facing read, and a preview that hid the domain would
+ * be unreviewable. It is not exported to any route that renders to a member.
+ */
+export async function previewPair(
+    site: ExchangeSite,
+): Promise<{ ok: true; partnerSite: ExchangeSite; score: number } | { ok: false; reason: string }> {
+    const choice = await selectPartner(site);
+    if (!choice.ok) return { ok: false, reason: choice.reason };
+    return { ok: true, partnerSite: choice.partnerSite, score: choice.score };
+}
+
+type PartnerChoice =
+    | {
+          ok: true;
+          partnerSite: ExchangeSite;
+          partnerCounts: LiveLinkCounts;
+          score: number;
+          widened: boolean;
+          category: Category;
+      }
+    | { ok: false; reason: "first_in_category" | "no_eligible_partner" | "not_active"; category: Category };
+
+/**
+ * Chooses the best partner for a site, and writes nothing.
+ *
+ * Split out of `autoPair` so that committing a match and rehearsing one cannot
+ * drift apart. Every rule that decides WHO a site pairs with lives here; the
+ * caller decides what to do about it.
+ */
+async function selectPartner(site: ExchangeSite): Promise<PartnerChoice> {
     const category = site.category;
 
     // Only an active site may be proposed to anyone. Every filter below checks
@@ -142,7 +254,7 @@ export async function autoPair(site: ExchangeSite): Promise<AutoPairResult> {
     // `banned` take this branch too, and naming it after only the first one
     // would be wrong three ways out of four.
     if (site.status !== "active") {
-        return { matched: false, reason: "not_active", category };
+        return { ok: false, reason: "not_active", category };
     }
 
     const [active] = await db()
@@ -152,7 +264,7 @@ export async function autoPair(site: ExchangeSite): Promise<AutoPairResult> {
 
     const pools = candidateCategories(category, active?.n ?? 0);
     if (pools.length === 0) {
-        return { matched: false, reason: "no_eligible_partner", category };
+        return { ok: false, reason: "no_eligible_partner", category };
     }
 
     const candidates = await db()
@@ -171,7 +283,7 @@ export async function autoPair(site: ExchangeSite): Promise<AutoPairResult> {
     if (candidates.length === 0) {
         // Nobody else is here yet. This is not a failure, it is the queue
         // working: this site becomes the instant match for the next joiner.
-        return { matched: false, reason: "first_in_category", category };
+        return { ok: false, reason: "first_in_category", category };
     }
 
     const priorMatches = await db()
@@ -209,36 +321,19 @@ export async function autoPair(site: ExchangeSite): Promise<AutoPairResult> {
         candidates.map((c) => toMatchable(c, countsFor(c.id))),
         ctx,
     );
-    if (!best) return { matched: false, reason: "no_eligible_partner", category };
+    if (!best) return { ok: false, reason: "no_eligible_partner", category };
 
     const partnerSite = candidates.find((c) => c.id === best.candidate.id);
-    if (!partnerSite) return { matched: false, reason: "no_eligible_partner", category };
+    if (!partnerSite) return { ok: false, reason: "no_eligible_partner", category };
 
-    const match = await upsertMatch({
-        siteId: site.id,
-        partnerSiteId: partnerSite.id,
-        category: best.candidate.category,
+    return {
+        ok: true,
+        partnerSite,
+        partnerCounts: countsFor(partnerSite.id),
         score: best.score.total,
         widened: best.candidate.category !== category,
-    });
-
-    const stamp = new Date();
-    await db()
-        .update(exchangeSites)
-        .set({ lastMatchedAt: stamp, updatedAt: stamp })
-        .where(inArray(exchangeSites.id, [site.id, partnerSite.id]));
-
-    // Fire and forget. A member who is matched and never told is the same as
-    // not being matched, but email must never be able to fail a submission.
-    void notifyMatchProposed({
-        matchId: match.id,
-        siteA: site,
-        siteB: partnerSite,
-        expiresAt: match.expiresAt,
-        widened: match.widened,
-    });
-
-    return { matched: true, match, partner: toMaskedPartner(partnerSite, countsFor(partnerSite.id)) };
+        category,
+    };
 }
 
 /**
@@ -254,6 +349,13 @@ export async function autoPair(site: ExchangeSite): Promise<AutoPairResult> {
  * The re-select is by the ordered pair rather than by id because the loser
  * never learns the winner's id, and that is exactly what `orderPair` guarantees
  * is enough to find it.
+ *
+ * `created` distinguishes the two, and callers have to read it. The returned row
+ * is a match either way, but only a `created` one was proposed by this call, and
+ * announcing the other would describe an event that did not happen. The row it
+ * hands back on a conflict can be in ANY state, `declined` and `expired`
+ * included, since the unique index covers the pair for all time rather than the
+ * open ones.
  */
 async function upsertMatch(input: {
     siteId: string;
@@ -261,7 +363,7 @@ async function upsertMatch(input: {
     category: Category;
     score: number;
     widened: boolean;
-}): Promise<ExchangeMatch> {
+}): Promise<{ match: ExchangeMatch; created: boolean }> {
     const [siteAId, siteBId] = orderPair(input.siteId, input.partnerSiteId);
     const pair = and(eq(exchangeMatches.siteAId, siteAId), eq(exchangeMatches.siteBId, siteBId));
 
@@ -280,7 +382,7 @@ async function upsertMatch(input: {
         .onConflictDoNothing({ target: [exchangeMatches.siteAId, exchangeMatches.siteBId] })
         .returning();
 
-    if (inserted) return inserted;
+    if (inserted) return { match: inserted, created: true };
 
     const [existing] = await db().select().from(exchangeMatches).where(pair).limit(1);
     if (!existing) {
@@ -288,7 +390,7 @@ async function upsertMatch(input: {
         // and this read, which nothing in the product does.
         throw new Error(`Match for pair (${siteAId}, ${siteBId}) conflicted on insert but could not be read back`);
     }
-    return existing;
+    return { match: existing, created: false };
 }
 
 export type MatchView = {

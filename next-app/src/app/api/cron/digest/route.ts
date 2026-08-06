@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { exchangeMatches, exchangeMembers, exchangeSites } from "@/lib/db/schema";
 import { isAuthorizedCron } from "@/lib/email/cron-auth";
 import { notifyDigest } from "@/lib/email/notify";
+import { OPEN_MATCH_STATES } from "@/lib/exchange";
 import { toMaskedPartner } from "@/lib/services/mask";
 import { NO_LINKS, liveLinkCounts } from "@/lib/services/standing";
 
@@ -43,8 +44,10 @@ const MAX_CANDIDATES = 5;
 
 const CADENCE_DAYS: Record<string, number> = { weekly: 7, biweekly: 14 };
 
-/** States that still want a decision from somebody. */
-const OPEN_STATES = ["proposed", "a_accepted", "b_accepted", "agreed"] as const;
+// `OPEN_MATCH_STATES` (`lib/exchange.ts`) used to be a local `OPEN_STATES` here.
+// The daily re-pair pass needs the same answer to "is this member already busy?",
+// and two copies of that list drifting apart is how someone ends up matched twice
+// over or never nudged again.
 
 export async function GET(request: Request) {
     if (!isAuthorizedCron(request)) {
@@ -94,7 +97,7 @@ export async function GET(request: Request) {
         const openMatch = await db()
             .select({ id: exchangeMatches.id })
             .from(exchangeMatches)
-            .where(and(involvesMe, inArray(exchangeMatches.state, [...OPEN_STATES])))
+            .where(and(involvesMe, inArray(exchangeMatches.state, [...OPEN_MATCH_STATES])))
             .limit(1);
         if (openMatch.length > 0) {
             skippedOpenMatch++;

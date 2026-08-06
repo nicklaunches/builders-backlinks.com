@@ -30,7 +30,10 @@ export type ReviewState =
  * and "why did that not work" is exactly what a reviewer needs to know.
  */
 export async function setSiteStatusAction(_previous: ReviewState, formData: FormData): Promise<ReviewState> {
-    await requireAdmin();
+    // The reviewer's own id is passed through to `setSiteStatus` below, which
+    // stamps it on the row. `requireAdmin` already resolves the session for the
+    // gate, so attribution costs nothing extra here.
+    const admin = await requireAdmin();
 
     const siteId = String(formData.get("siteId") ?? "");
     const next = String(formData.get("status") ?? "");
@@ -56,7 +59,7 @@ export async function setSiteStatusAction(_previous: ReviewState, formData: Form
     }
 
     try {
-        const site = await setSiteStatus(siteId, status, reviewNote || undefined);
+        const site = await setSiteStatus(siteId, status, reviewNote || undefined, admin.id);
         return { status: "done", siteId, applied: status, domain: site.domain };
     } catch (err) {
         if (err instanceof SiteError) {

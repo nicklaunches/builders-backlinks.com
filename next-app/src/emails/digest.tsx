@@ -23,11 +23,12 @@ import { EmailLayout, drLabel, palette, placementOfferLabel, styles } from "./_l
  * choice. Every row used to end with `propose_trade partnerId="<uuid>"`, and the
  * primary call to action was the same string in a code block. No such tool has
  * ever existed: the only writer of `exchange_matches` is `upsertMatch`, called
- * only by `autoPair`, called only by `setSiteStatus` on approval. Matching is
- * server-initiated end to end, so there was nothing a member could do with a
- * candidate, and this email spent its most prominent line telling them to do it
- * anyway. A member reported it publicly on 2026-08-03 after pasting the line
- * into an agent and getting nowhere.
+ * only by `autoPair`, which is reached only from `setSiteStatus` on approval and
+ * from the daily re-pair pass in `api/cron/recheck`. Both are server-initiated,
+ * so there was nothing a member could do with a candidate, and this email spent
+ * its most prominent line telling them to do it anyway. A member reported it
+ * publicly on 2026-08-03 after pasting the line into an agent and getting
+ * nowhere.
  *
  * The id itself is still safe to print — it is opaque and decodes to nothing —
  * but an argument to a call that does not exist is worse than no argument at
@@ -122,9 +123,10 @@ export function DigestEmail({ category, candidates, widenedCount = 0, standingNo
 
             <Text style={styles.subheading}>How a match starts</Text>
             <Text style={styles.paragraph}>
-                We pair you, you do not pick. Every time a site is approved we look for the best partner for it, and the
-                sites above are the pool you are being matched against. When one of them becomes your match you get a
-                separate email with a match id, and you accept or decline it from your agent or the dashboard.
+                We pair you, you do not pick. We look for the best partner for a site the moment it is approved, and
+                again every day for anyone not currently in a match, so the sites above are the pool you are being
+                matched against right now. When one of them becomes your match you get a separate email with a match id,
+                and you accept or decline it from your agent or the dashboard.
             </Text>
             <Text style={styles.paragraph}>
                 So there is nothing to answer here. This is the pool, sent so you can see it is not empty.

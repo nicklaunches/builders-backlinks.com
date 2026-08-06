@@ -195,6 +195,25 @@ export const exchangeSites = pgTable(
         status: siteStatusEnum("status").default("pending_review").notNull(),
         reviewNote: text("review_note"),
 
+        /**
+         * Who moved `status` last, and when. Written ONLY by `setSiteStatus`.
+         *
+         * These exist to answer a question the data could not answer on
+         * 2026-08-06: 33 sites were `active`, 26 of them had never been matched,
+         * and there was no way to tell whether they had been approved through
+         * /admin (making the approval path suspect) or flipped by hand in SQL
+         * (making it a process problem). Every writer of `status` in the app
+         * goes through `setSiteStatus`, so from here on the inference is direct:
+         * an `active` row with a NULL `status_changed_by` did not become active
+         * through this application.
+         *
+         * Nullable forever, and not backfilled. The 33 rows that predate this
+         * genuinely have no attribution, and inventing one would destroy the
+         * only signal these columns carry.
+         */
+        statusChangedAt: timestamp("status_changed_at", { withTimezone: true }),
+        statusChangedBy: uuid("status_changed_by").references(() => users.id, { onDelete: "set null" }),
+
         trustScore: integer("trust_score").default(50).notNull(),
         lastMatchedAt: timestamp("last_matched_at", { withTimezone: true }),
 

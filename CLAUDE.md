@@ -95,7 +95,17 @@ fired by hand:
 
 ```bash
 curl "http://localhost:8788/__scheduled?cron=0+9+*+*+2"   # weekly digest
-curl "http://localhost:8788/__scheduled?cron=0+4+*+*+*"   # link rechecks
+curl "http://localhost:8788/__scheduled?cron=0+4+*+*+*"   # expiry, re-pair, link rechecks
+```
+
+The daily job also re-pairs every active site holding no open match, which
+proposes matches and emails both sides. It takes `?dry=1` when reached over HTTP
+directly, which logs the pairs it would create and writes and sends nothing —
+worth using before pointing it at production for the first time:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" \
+  "https://builders-backlinks.com/api/cron/recheck?dry=1"
 ```
 
 **Migrations run before the deploy**, in CI and in `pnpm run deploy` alike, so the
@@ -232,9 +242,10 @@ Two things to know before touching `/app`:
 
 - `MCP_SMOKE_BASE` is used by `scripts/mcp-smoke.ts` but is not in `.env.example`.
 - **Nobody can propose a trade with a chosen partner** (issue #18). Matching is
-  entirely server-initiated, and by exactly one trigger: `autoPair`, called only
-  by `setSiteStatus` on approval. It does **not** run on submit, and the weekly
-  digest does not pair anyone either — that cron writes nothing but
+  entirely server-initiated, by two triggers, both calling `autoPair`:
+  `setSiteStatus` on approval (the fast path) and the daily re-pair pass in
+  `api/cron/recheck` (the safety net). It does **not** run on submit, and the
+  weekly digest does not pair anyone either — that cron writes nothing but
   `lastDigestSentAt`. `search_partners` still returns `MaskedPartner.partnerId`,
   which now has no consumer at all.
   This used to be a documentation gap that had become a member-facing one:
@@ -244,6 +255,19 @@ Two things to know before touching `/app`:
   found no such tool, and said so publicly. The advertising is gone; the
   capability is still missing. Do not re-add a call to action here without
   building the thing behind it.
+- **Nobody knows how 33 sites became `active`.** On 2026-08-06, every site was
+  `active`, 26 of them had never been matched, and the matcher would have paired
+  24 on the spot — the engine was fine, the trigger was the problem. `autoPair`
+  ran only at the approval instant, so a site that missed it was invisible to
+  matching forever. There was also no `POST /admin` anywhere in the six-day
+  Workers log window while ~22 sites went active, which points at activation
+  outside the app, but request logs may be sampled and `console.log` is not in
+  that view, so it was never proven. Two things came out of it: the daily
+  re-pair pass, which makes the cause moot operationally, and
+  `exchange_sites.status_changed_at` / `status_changed_by`, written only by
+  `setSiteStatus`. **An `active` row with a NULL `status_changed_by` did not
+  become active through this application.** The 33 original rows are all NULL
+  and are deliberately not backfilled, so the signal starts clean.
 - **A member cannot edit or pause their own listing.** `setSiteStatus` is
   admin-gated and there is no function to change a description, category or
   keywords after submission. A member who wants to fix a bad analysis has no path

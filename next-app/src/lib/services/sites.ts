@@ -270,13 +270,21 @@ export async function listSitesForReview(status?: SiteStatus): Promise<SiteForRe
  * The reviewer's note is written to `review_note`, a column that has existed
  * since the first migration and had no reader or writer until now.
  *
- * Approving MATCHES IMMEDIATELY, and this is the ONLY place `autoPair` is
- * called from. A site is `pending_review` from the moment it is submitted until
- * a human clears it, and `autoPair` refuses to pair anything that is not
- * `active` (that is the review promise in /terms), so approval is the first
- * moment the site can pair with anyone at all. Without the call here an approved
- * site would sit idle until the Tuesday cron, which is a week of silence at
- * exactly the moment the member has just been told they are live.
+ * Approving MATCHES IMMEDIATELY. A site is `pending_review` from the moment it
+ * is submitted until a human clears it, and `autoPair` refuses to pair anything
+ * that is not `active` (that is the review promise in /terms), so approval is
+ * the first moment the site can pair with anyone at all. Without the call here
+ * an approved site would wait a full day for the re-pair pass, at exactly the
+ * moment the member has just been told they are live.
+ *
+ * This used to be the ONLY caller of `autoPair`, and that was the bug rather
+ * than the design: a site that missed this instant was never reconsidered, which
+ * had stranded 26 of 33 active sites by 2026-08-06. The daily re-pair pass in
+ * `api/cron/recheck` is now the safety net. This call is the fast path, not the
+ * guarantee — do not remove it, but do not rely on it as the only one either.
+ *
+ * This is also the only writer of `status` in the app, which is what makes
+ * `statusChangedAt` / `statusChangedBy` diagnostic rather than decorative.
  *
  * Pairing is awaited rather than fired and forgotten, because its own
  * `match-proposed` email should land after the approval email rather than
@@ -288,17 +296,30 @@ export async function listSitesForReview(status?: SiteStatus): Promise<SiteForRe
  * @returns The updated row.
  * @throws `SiteError` when the id matches nothing.
  */
-export async function setSiteStatus(siteId: string, status: SiteStatus, reviewNote?: string): Promise<ExchangeSite> {
+export async function setSiteStatus(
+    siteId: string,
+    status: SiteStatus,
+    reviewNote?: string,
+    actorUserId?: string,
+): Promise<ExchangeSite> {
     if (!(SITE_STATUSES as readonly string[]).includes(status)) {
         throw new SiteError("invalid", `"${status}" is not a site status.`);
     }
 
     const note = reviewNote?.trim();
+    const now = new Date();
     const [updated] = await db()
         .update(exchangeSites)
         .set({
             status,
-            updatedAt: new Date(),
+            updatedAt: now,
+            // The attribution pair. Written on every status move, including the
+            // ones with no actor, because "changed at this time by nobody
+            // identifiable" is itself the finding: this is the only writer of
+            // `status` in the app, so a status that moves without leaving a
+            // `status_changed_at` behind did not move through here at all.
+            statusChangedAt: now,
+            statusChangedBy: actorUserId ?? null,
             // Only overwrite the note when one was given. Approving a site does
             // not erase the note explaining why it was rejected last month.
             ...(note ? { reviewNote: note } : {}),

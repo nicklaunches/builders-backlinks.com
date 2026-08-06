@@ -1,19 +1,30 @@
-import { and, eq, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, lt, notExists, or, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
 import { exchangeLinks, exchangeMatches, exchangeSites } from "@/lib/db/schema";
 import { isAuthorizedCron } from "@/lib/email/cron-auth";
 import { notifyLinkRemoved } from "@/lib/email/notify";
-import { GIVE_UP_AFTER_CHECKS, nextCheckAt } from "@/lib/exchange";
+import { GIVE_UP_AFTER_CHECKS, OPEN_MATCH_STATES, nextCheckAt } from "@/lib/exchange";
+import { autoPair, previewPair } from "@/lib/services/matches";
 import { verifyLink } from "@/lib/verify";
 
 /**
- * @file The daily maintenance run: expire stale matches, then recheck links.
+ * @file The daily maintenance run: expire stale matches, re-pair the idle pool,
+ * then recheck links.
  *
- * Two jobs, both time-based, both cheap, so they share one trigger rather than
- * spending a second cron slot. The expiry sweep runs first and is unrelated to
- * link verification; see the comment on it for why it exists.
+ * Three jobs, all time-based, all cheap, so they share one trigger rather than
+ * spending a cron slot each. The order is not arbitrary and should not be
+ * shuffled: expiry frees sites back into the pool, the re-pair pass then picks
+ * them up in the same run, and only then does the slow link crawling start. Each
+ * is unrelated to the next; see the comment on each for why it exists.
+ *
+ * The re-pair pass is the newest and the one with the least obvious reason to be
+ * here. It exists because `autoPair` used to be reachable only at the instant a
+ * site was approved, so a site that missed that instant was never reconsidered
+ * by anything. That is not theoretical: it had silently stranded 26 of 33 active
+ * sites by 2026-08-06. Pairing needed a heartbeat, and this file is where the
+ * daily heartbeat already was.
  *
  * The recheck loop proper: day 7, day 30, then monthly for a live link, and a
  * tighter retry for one that is `promised` or `missing`. The schedule itself
@@ -42,6 +53,17 @@ export const maxDuration = 60;
 /** Kept small so one run cannot exhaust the send quota or the function budget. */
 const BATCH = 40;
 
+/**
+ * Idle sites considered per run by the re-pair pass.
+ *
+ * Lower than {@link BATCH} because pairing is the expensive half: each match
+ * sends TWO `match-proposed` emails, and `autoPair` voids them onto `waitUntil`
+ * rather than awaiting, so a large batch turns into a burst against an SES
+ * account capped at fourteen sends a second. Twenty-five idle sites is at most
+ * twelve matches and twenty-four sends, which clears comfortably.
+ */
+const PAIR_BATCH = 25;
+
 export async function GET(request: Request) {
     if (!isAuthorizedCron(request)) {
         return NextResponse.json({ error: "unauthorized" }, { status: 403 });
@@ -56,9 +78,9 @@ export async function GET(request: Request) {
     // then never compared against anything, so no match had ever actually
     // expired and the state was decoration. That is worse than cosmetic: the
     // weekly digest SKIPS any member holding an open match
-    // (`OPEN_STATES` in the digest route), so a single proposal nobody ever
-    // answered silently ended that member's digest permanently. They stopped
-    // hearing from us and there was no way for them to find out why.
+    // (`OPEN_MATCH_STATES`), so a single proposal nobody ever answered silently
+    // ended that member's digest permanently. They stopped hearing from us and
+    // there was no way for them to find out why.
     //
     // Expiring returns both sites to the pool, since matching only excludes
     // partners with a live match, and lets the digest reach the member again.
@@ -68,16 +90,106 @@ export async function GET(request: Request) {
     const expired = await db()
         .update(exchangeMatches)
         .set({ state: "expired", updatedAt: now })
-        .where(
-            and(
-                inArray(exchangeMatches.state, ["proposed", "a_accepted", "b_accepted", "agreed"]),
-                lt(exchangeMatches.expiresAt, now),
-            ),
-        )
+        .where(and(inArray(exchangeMatches.state, [...OPEN_MATCH_STATES]), lt(exchangeMatches.expiresAt, now)))
         .returning({ id: exchangeMatches.id });
 
     if (expired.length > 0) {
         console.log(`recheck: expired ${expired.length} match(es) past their deadline`);
+    }
+
+    // ---------------------------------------------------------------------
+    // Re-pair the idle pool.
+    //
+    // Approval used to be the only thing that ever called `autoPair`, which
+    // meant a site that missed that single instant was invisible to matching
+    // for good. On 2026-08-06 that was 26 of 33 active sites, while the matcher
+    // itself would have paired 24 of them immediately. One trigger was never
+    // enough, and no amount of fixing the approval path would have found the
+    // sites it had already passed over.
+    //
+    // Deliberately AFTER the expiry sweep above. That sweep is what returns a
+    // stale match's two sites to the pool, and running in the other order would
+    // make every freshly expired site wait a further day for no reason.
+    //
+    // Safe to run daily because a repeat call is silent: `autoPair` returns
+    // `already_matched` without writing or sending when the only partner left is
+    // one this site already has a match row with. Sites already holding an open
+    // match are excluded before that, so the pass is idempotent over an
+    // unchanged pool.
+    // ---------------------------------------------------------------------
+    const dryRun = new URL(request.url).searchParams.get("dry") === "1";
+
+    const idle = await db()
+        .select()
+        .from(exchangeSites)
+        .where(
+            and(
+                eq(exchangeSites.status, "active"),
+                notExists(
+                    db()
+                        .select({ one: sql`1` })
+                        .from(exchangeMatches)
+                        .where(
+                            and(
+                                or(
+                                    eq(exchangeMatches.siteAId, exchangeSites.id),
+                                    eq(exchangeMatches.siteBId, exchangeSites.id),
+                                ),
+                                inArray(exchangeMatches.state, [...OPEN_MATCH_STATES]),
+                            ),
+                        ),
+                ),
+            ),
+        )
+        // NULLS FIRST for the same reason every other sweep in this codebase asks
+        // for it: a site that has never been matched has waited longest of all,
+        // and an ascending sort in Postgres would bury exactly those.
+        .orderBy(sql`${exchangeSites.lastMatchedAt} asc nulls first`)
+        .limit(PAIR_BATCH);
+
+    // Pairing consumes two sites, so a site matched earlier in this loop is no
+    // longer idle even though the query above said it was. Skipping it here is
+    // cheaper than re-querying, and without it the partner's own turn would
+    // propose a second match to somebody who just got one.
+    const spokenFor = new Set<string>();
+    let paired = 0;
+
+    for (const site of idle) {
+        if (spokenFor.has(site.id)) continue;
+
+        if (dryRun) {
+            const preview = await previewPair(site);
+            console.log(
+                preview.ok
+                    ? `recheck: [dry] would pair ${site.domain} with ${preview.partnerSite.domain} (score ${preview.score})`
+                    : `recheck: [dry] no pair for ${site.domain} (${preview.reason})`,
+            );
+            if (preview.ok) {
+                spokenFor.add(site.id).add(preview.partnerSite.id);
+                paired++;
+            }
+            continue;
+        }
+
+        const result = await autoPair(site);
+        if (result.matched) {
+            spokenFor.add(site.id).add(result.match.siteAId === site.id ? result.match.siteBId : result.match.siteAId);
+            paired++;
+            console.log(`recheck: paired ${site.domain} (match ${result.match.id})`);
+        } else {
+            console.log(`recheck: no pair for ${site.domain} (${result.reason})`);
+        }
+    }
+
+    if (idle.length > 0) {
+        console.log(
+            `recheck: ${dryRun ? "[dry] " : ""}re-pair pass looked at ${idle.length} idle site(s), paired ${paired}`,
+        );
+    }
+    // A full batch means there is more backlog than one run can clear. Say so
+    // rather than letting a silent cap read as "the pool is drained".
+    if (idle.length === PAIR_BATCH) {
+        console.log(`recheck: re-pair batch was full at ${PAIR_BATCH}, more idle sites remain for tomorrow`);
     }
 
     // Oldest checked first, so a backlog drains fairly rather than starving the
