@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { brand } from "./brand";
+import { brand, copy } from "./brand";
 import { ensureFonts, esc, rasterise, report } from "./render";
 import { monoWidth } from "./svg";
 
@@ -59,7 +59,30 @@ const SNAPSHOT = {
  */
 const VISIBLE_ROWS = 7;
 
+/**
+ * Our own standing, pulled from `get_my_standing` on the date below.
+ *
+ * `was` is not a second reading. It is what post 360 published on 2026-08-03,
+ * so the card states a change against a claim that is already public rather than
+ * against a number only this repo has seen.
+ */
+const STANDING = {
+    date: "2026-08-06",
+    sites: 5,
+    given: 1,
+    received: 1,
+    /** The product's own verdict, printed verbatim rather than re-derived here. */
+    standing: "healthy",
+    was: { given: 0, received: 0 },
+    headline: "the first trade, closed both ways",
+} as const;
+
 type Snapshot = typeof SNAPSHOT;
+type Standing = typeof STANDING;
+
+/** Measured as one glyph, emitted as ASCII. Both matter: see `valueRow`. */
+const ARROW = "→";
+const ARROW_ENTITY = "&#8594;";
 
 /**
  * The category ladder.
@@ -181,16 +204,133 @@ export function categoryLadderSvg(snapshot: Snapshot): string {
 </svg>`;
 }
 
+/**
+ * Our link standing, as four rows.
+ *
+ * This exists because the alternative leaks. Post 360 shipped a terminal capture
+ * of the agent listing matches, and it carried a masked partner's description,
+ * their DR and five anchor targets out with it; `posted/2026-08-03.md` wrote the
+ * rule afterwards as "crop to the standing lines and cut the partner block".
+ *
+ * A crop depends on remembering that every time. THIS CANNOT LEAK A PARTNER,
+ * because `Standing` has no field that can hold one. That property is the reason
+ * to prefer a generated card over a screenshot here, and it is worth more than
+ * the typography.
+ *
+ * Same ground, frame, corner bug and wordmark as `categoryLadderSvg`: it is the
+ * same object seen in the same place.
+ */
+export function standingSvg(snapshot: Standing): string {
+    const width = 1600;
+    const height = 900;
+    const pad = 64;
+
+    const markSize = 56;
+    const headSize = 40;
+    const labelSize = 40;
+    const valueSize = 72;
+    const wordSize = 34;
+
+    const rowsTop = 310;
+    const rowHeight = 124;
+    const labelGap = 48;
+
+    const rows = [
+        { label: "sites", value: String(snapshot.sites) },
+        { label: "given", value: String(snapshot.given), was: snapshot.was.given },
+        { label: "received", value: String(snapshot.received), was: snapshot.was.received },
+        { label: "standing", value: snapshot.standing },
+    ];
+
+    const gutter = Math.max(...rows.map((r) => monoWidth(r.label, labelSize)));
+    const valueX = pad + gutter + labelGap;
+
+    const headY = pad + 42;
+    const footerY = height - pad;
+
+    const leftW = monoWidth(copy.wordmarkLeft, wordSize);
+    const slashW = monoWidth(copy.wordmarkSlash, wordSize);
+
+    const bugX = width - pad - markSize;
+    const bugY = pad;
+
+    const body = rows
+        .map(({ label, value, was }, i) => {
+            const baseline = rowsTop + i * rowHeight;
+            // Labels are right-aligned into the gutter so every value starts at
+            // the same x, the same way the ladder aligns its bars.
+            const labelX = pad + gutter - monoWidth(label, labelSize);
+
+            // A row only carries its previous value when that value actually
+            // moved. A later snapshot where nothing changed prints a bare
+            // number rather than claiming "1 → 1", which would read as news.
+            const changed = was !== undefined && String(was) !== value;
+            // Measured with the trailing space, emitted without it: SVG collapses
+            // trailing whitespace, so the gap has to come from the offset.
+            const prefixX = changed ? monoWidth(`${was} ${ARROW} `, valueSize) : 0;
+            const prefix = changed
+                ? `<text x="${valueX}" y="${baseline}" font-size="${valueSize}" font-weight="500" fill="${brand.muted}">${was} ${ARROW_ENTITY}</text>`
+                : "";
+
+            return `<text x="${labelX}" y="${baseline}" font-size="${labelSize}" font-weight="500" fill="${brand.muted}">${esc(label)}</text>
+      ${prefix}
+      <text x="${valueX + prefixX}" y="${baseline}" font-size="${valueSize}" font-weight="700" fill="${brand.fg}">${esc(value)}</text>`;
+        })
+        .join("\n      ");
+
+    const dateX = width - pad - monoWidth(snapshot.date, wordSize);
+
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <rect width="${width}" height="${height}" fill="${brand.bg}"/>
+
+  <!-- Hairline frame, echoing the bordered cards the site is built from. -->
+  <rect x="24" y="24" width="${width - 48}" height="${height - 48}" rx="10" fill="none" stroke="${brand.line}" stroke-width="2"/>
+
+  <!-- The mark, as a bug in the top-right. Same geometry as the favicon. -->
+  <line x1="${bugX + markSize * 0.2}" y1="${bugY + markSize * 0.82}" x2="${bugX + markSize * 0.8}" y2="${bugY + markSize * 0.18}" stroke="${brand.accent}" stroke-width="${Math.round(markSize * 0.14)}" stroke-linecap="square"/>
+
+  <g font-family="JetBrains Mono, ui-monospace, monospace">
+    <text x="${pad}" y="${headY}" font-size="${headSize}" font-weight="500" fill="${brand.fg}">${esc(snapshot.headline)}</text>
+
+    <g>
+      ${body}
+    </g>
+
+    <text x="${dateX}" y="${footerY}" font-size="${wordSize}" font-weight="500" fill="${brand.muted}">${esc(snapshot.date)}</text>
+
+    <!-- Wordmark. Three runs, positioned by exact monospace advance. -->
+    <g font-size="${wordSize}" font-weight="700">
+      <text x="${pad}" y="${footerY}" fill="${brand.fg}">${copy.wordmarkLeft}</text>
+      <text x="${pad + leftW}" y="${footerY}" fill="${brand.accent}">${copy.wordmarkSlash}</text>
+      <text x="${pad + leftW + slashW}" y="${footerY}" fill="${brand.fg}">${copy.wordmarkRight}</text>
+    </g>
+  </g>
+</svg>`;
+}
+
+/**
+ * Every card ever published, not just the newest one.
+ *
+ * Each entry stays here after its post has run so that rerunning this script
+ * reproduces the whole set byte for byte. Removing an entry is how a published
+ * claim quietly loses its evidence.
+ */
+const CARDS: readonly { name: string; svg: string }[] = [
+    { name: `${SNAPSHOT.date}-categories.png`, svg: categoryLadderSvg(SNAPSHOT) },
+    { name: `${STANDING.date}-standing.png`, svg: standingSvg(STANDING) },
+];
+
 async function main() {
     console.log("Generating post cards\n");
 
     const fontFiles = await ensureFonts();
     await mkdir(OUT_DIR, { recursive: true });
 
-    const name = `${SNAPSHOT.date}-categories.png`;
-    const png = rasterise(categoryLadderSvg(SNAPSHOT), fontFiles, 1600);
-    await writeFile(path.join(OUT_DIR, name), png);
-    report(`public/posts/${name}`, png.length, "1600×900");
+    for (const card of CARDS) {
+        const png = rasterise(card.svg, fontFiles, 1600);
+        await writeFile(path.join(OUT_DIR, card.name), png);
+        report(`public/posts/${card.name}`, png.length, "1600×900");
+    }
 
     console.log("\nAttach it to the post by hand. Nothing serves these by convention.");
 }
