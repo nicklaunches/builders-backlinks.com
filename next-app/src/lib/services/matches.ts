@@ -12,7 +12,7 @@ import {
     exchangeSites,
 } from "@/lib/db/schema";
 import { notifyMatchAgreed, notifyMatchProposed } from "@/lib/email/notify";
-import { type MatchState, isRevealed, orderPair } from "@/lib/exchange";
+import { type MatchState, OPEN_MATCH_STATES, isRevealed, orderPair } from "@/lib/exchange";
 import { findBestPartner } from "@/lib/matching";
 import { briefFor } from "@/lib/services/links";
 import { toMaskedPartner, toRevealedPartner } from "@/lib/services/mask";
@@ -153,10 +153,14 @@ export type AutoPairResult =
  * unchanged pool is free and silent.
  *
  * @param site - The site needing a partner. Ignored unless it is `active`.
+ * @param exclude - Sites already paired earlier in the same batch. Optional, and
+ *   redundant on the live path — a site paired a moment ago now holds an open
+ *   match and {@link selectPartner} filters it out on that basis alone. Passed
+ *   anyway so the live pass and its dry run are driven identically.
  * @returns The created match and a masked view of the partner, or a reason why not.
  */
-export async function autoPair(site: ExchangeSite): Promise<AutoPairResult> {
-    const choice = await selectPartner(site);
+export async function autoPair(site: ExchangeSite, exclude?: ReadonlySet<string>): Promise<AutoPairResult> {
+    const choice = await selectPartner(site, exclude);
     if (!choice.ok) return { matched: false, reason: choice.reason, category: choice.category };
 
     const { partnerSite, category } = choice;
@@ -216,13 +220,57 @@ export async function autoPair(site: ExchangeSite): Promise<AutoPairResult> {
  * Returns the partner ROW, not a `MaskedPartner`. This is operator output bound
  * for a log, not a member-facing read, and a preview that hid the domain would
  * be unreviewable. It is not exported to any route that renders to a member.
+ *
+ * SHARING `selectPartner` IS NOT ENOUGH ON ITS OWN, which is the correction this
+ * function needed. Selection is only half of what `autoPair` does; the other
+ * half is `upsertMatch` discovering the pair already has a row and reporting
+ * `already_matched`. A preview that skipped that half claimed a pairing in
+ * exactly the state where the live run writes nothing, so the rehearsal
+ * overcounted precisely where it was most load-bearing — the operator reads
+ * `paired: 1`, then the live run pairs none. The pair lookup below is the same
+ * question `upsertMatch` answers by conflicting, asked without writing.
+ *
+ * It is a check, not a reservation: two runs racing could both preview the same
+ * pair. That is fine, because a dry run is a rehearsal, and the live path still
+ * settles it with a unique index rather than a read.
+ *
+ * The score is rounded here for the same reason `upsertMatch` rounds it — the
+ * column is `integer`. A preview reporting 79.9 for a match that would be stored
+ * as 80 is a third way for the two to disagree.
  */
 export async function previewPair(
     site: ExchangeSite,
+    exclude?: ReadonlySet<string>,
 ): Promise<{ ok: true; partnerSite: ExchangeSite; score: number } | { ok: false; reason: string }> {
-    const choice = await selectPartner(site);
+    const choice = await selectPartner(site, exclude);
     if (!choice.ok) return { ok: false, reason: choice.reason };
-    return { ok: true, partnerSite: choice.partnerSite, score: choice.score };
+
+    const existing = await findPairMatch(site.id, choice.partnerSite.id);
+    if (existing) return { ok: false, reason: "already_matched" };
+
+    return { ok: true, partnerSite: choice.partnerSite, score: Math.round(choice.score) };
+}
+
+/** The empty default for `exclude`, hoisted so each call does not allocate one. */
+const EMPTY_EXCLUDE: ReadonlySet<string> = new Set<string>();
+
+/**
+ * Reads the match row for a pair, in either write order.
+ *
+ * `orderPair` is what makes one lookup enough: the row is stored with the
+ * lexicographically smaller uuid in `site_a_id` always, so the caller does not
+ * have to know which side it is on. Shared by `upsertMatch`'s conflict readback
+ * and `previewPair`, because two spellings of "does this pair already exist"
+ * would be two chances to answer it differently.
+ */
+async function findPairMatch(siteId: string, partnerSiteId: string): Promise<ExchangeMatch | undefined> {
+    const [siteAId, siteBId] = orderPair(siteId, partnerSiteId);
+    const [row] = await db()
+        .select()
+        .from(exchangeMatches)
+        .where(and(eq(exchangeMatches.siteAId, siteAId), eq(exchangeMatches.siteBId, siteBId)))
+        .limit(1);
+    return row;
 }
 
 type PartnerChoice =
@@ -242,8 +290,13 @@ type PartnerChoice =
  * Split out of `autoPair` so that committing a match and rehearsing one cannot
  * drift apart. Every rule that decides WHO a site pairs with lives here; the
  * caller decides what to do about it.
+ *
+ * @param site - The site needing a partner.
+ * @param exclude - Sites the CALLER knows are taken but the database does not
+ *   show as taken yet, which in practice means a dry run: it writes nothing, so
+ *   nothing it decided earlier in the batch is visible to the query here.
  */
-async function selectPartner(site: ExchangeSite): Promise<PartnerChoice> {
+async function selectPartner(site: ExchangeSite, exclude: ReadonlySet<string> = EMPTY_EXCLUDE): Promise<PartnerChoice> {
     const category = site.category;
 
     // Only an active site may be proposed to anyone. Every filter below checks
@@ -269,7 +322,7 @@ async function selectPartner(site: ExchangeSite): Promise<PartnerChoice> {
         return { ok: false, reason: "no_eligible_partner", category };
     }
 
-    const candidates = await db()
+    const pool = await db()
         .select()
         .from(exchangeSites)
         .where(
@@ -282,10 +335,54 @@ async function selectPartner(site: ExchangeSite): Promise<PartnerChoice> {
         )
         .limit(200);
 
-    if (candidates.length === 0) {
+    if (pool.length === 0) {
         // Nobody else is here yet. This is not a failure, it is the queue
         // working: this site becomes the instant match for the next joiner.
         return { ok: false, reason: "first_in_category", category };
+    }
+
+    // A SITE HOLDING AN OPEN MATCH IS NOT AVAILABLE, and leaving that out is how
+    // one member could collect several. `spokenFor` in the re-pair pass only
+    // ever guarded the OUTER loop — it stopped a site being processed twice, not
+    // a site being CHOSEN twice — so three idle sites in one category reliably
+    // produced two matches both pointing at the middle one, with two
+    // `match-proposed` emails to somebody who had answered neither.
+    //
+    // One open match at a time is the model the rest of the codebase already
+    // assumes: the weekly digest skips a member holding one, and the re-pair
+    // pass treats "no open match" as the definition of idle. This is the same
+    // question asked from the other side, so it reads `OPEN_MATCH_STATES` too.
+    //
+    // Filtered in memory rather than as a `notExists` on the query above so that
+    // an empty result can still be reported honestly. A pool that is empty
+    // because nobody else joined is `first_in_category`; a pool that is empty
+    // because everyone is busy is `no_eligible_partner`, and answering the
+    // second with the first would tell a member in a thriving category that they
+    // are alone in it.
+    const poolIds = pool.map((c) => c.id);
+    const openRows = await db()
+        .select({ a: exchangeMatches.siteAId, b: exchangeMatches.siteBId })
+        .from(exchangeMatches)
+        .where(
+            and(
+                inArray(exchangeMatches.state, [...OPEN_MATCH_STATES]),
+                or(inArray(exchangeMatches.siteAId, poolIds), inArray(exchangeMatches.siteBId, poolIds)),
+            ),
+        );
+
+    const busy = new Set<string>();
+    for (const row of openRows) {
+        busy.add(row.a);
+        busy.add(row.b);
+    }
+
+    // `exclude` carries the sites already spoken for earlier in the SAME run.
+    // The database cannot answer that during a dry run, because a dry run writes
+    // nothing — without it the rehearsal would hand the same partner out twice
+    // and report pairs the live run would never create.
+    const candidates = pool.filter((c) => !busy.has(c.id) && !exclude.has(c.id));
+    if (candidates.length === 0) {
+        return { ok: false, reason: "no_eligible_partner", category };
     }
 
     const priorMatches = await db()
@@ -367,7 +464,6 @@ async function upsertMatch(input: {
     widened: boolean;
 }): Promise<{ match: ExchangeMatch; created: boolean }> {
     const [siteAId, siteBId] = orderPair(input.siteId, input.partnerSiteId);
-    const pair = and(eq(exchangeMatches.siteAId, siteAId), eq(exchangeMatches.siteBId, siteBId));
 
     const [inserted] = await db()
         .insert(exchangeMatches)
@@ -405,7 +501,7 @@ async function upsertMatch(input: {
 
     if (inserted) return { match: inserted, created: true };
 
-    const [existing] = await db().select().from(exchangeMatches).where(pair).limit(1);
+    const existing = await findPairMatch(siteAId, siteBId);
     if (!existing) {
         // Only reachable if the conflicting row was deleted between the insert
         // and this read, which nothing in the product does.

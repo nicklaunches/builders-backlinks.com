@@ -153,6 +153,15 @@ export async function GET(request: Request) {
     // longer idle even though the query above said it was. Skipping it here is
     // cheaper than re-querying, and without it the partner's own turn would
     // propose a second match to somebody who just got one.
+    //
+    // PASSED DOWN AS WELL AS CHECKED HERE, and it has to be both. Checking it
+    // only at the top of the loop guards a site from being the SUBJECT twice
+    // while leaving it free to be CHOSEN twice: three idle sites in one category
+    // reliably produced two matches both pointing at the middle one. The live
+    // path no longer needs the hint — `selectPartner` now excludes anyone
+    // holding an open match, which a just-paired site does — but the dry run
+    // does, because it writes nothing for that query to see. Handing the same
+    // set to both is what keeps the rehearsal honest.
     const spokenFor = new Set<string>();
     let paired = 0;
     let failed = 0;
@@ -179,7 +188,7 @@ export async function GET(request: Request) {
         // integer column.
         try {
             if (dryRun) {
-                const preview = await previewPair(site);
+                const preview = await previewPair(site, spokenFor);
                 console.log(
                     preview.ok
                         ? `recheck: [dry] would pair ${site.domain} with ${preview.partnerSite.domain} (score ${preview.score})`
@@ -195,7 +204,7 @@ export async function GET(request: Request) {
                 continue;
             }
 
-            const result = await autoPair(site);
+            const result = await autoPair(site, spokenFor);
             if (result.matched) {
                 spokenFor
                     .add(site.id)
