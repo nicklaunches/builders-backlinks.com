@@ -150,9 +150,25 @@ export async function GET(request: Request) {
         }
 
         if (result.found) {
+            // Stamp `firstSeenAt` the first time a link is confirmed live, the
+            // same as `markLinkPlaced` does. A `promised` link whose first report
+            // was inconclusive — the client-rendered case this file keeps naming
+            // — only ever gets confirmed here, and leaving `firstSeenAt` null
+            // while moving it to `live` is a trap: `nextCheckAt` gives up on a
+            // link that has NEVER been confirmed live once it passes
+            // GIVE_UP_AFTER_CHECKS, so a genuinely live link would fall out of
+            // the schedule and stop being rechecked, which is the one thing this
+            // job exists never to do. A later miss must not move the timestamp,
+            // so it is only filled when unset.
             await db()
                 .update(exchangeLinks)
-                .set({ ...touched, status: "live", placement: result.placement, rel: [...result.rel] })
+                .set({
+                    ...touched,
+                    status: "live",
+                    placement: result.placement,
+                    rel: [...result.rel],
+                    ...(link.firstSeenAt ? {} : { firstSeenAt: now }),
+                })
                 .where(eq(exchangeLinks.id, link.id));
             continue;
         }
