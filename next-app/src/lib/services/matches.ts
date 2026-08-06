@@ -497,6 +497,19 @@ export async function respondToMatch(input: {
             throw new MatchError("bad_state", `This match is already ${from}.`);
         }
 
+        // A match both sides are already in does not reopen from here. Accepting
+        // again is the harmless retry an agent may send, and is a no-op below;
+        // declining is the transition that has to be refused. Letting
+        // `accept: false` through would move `agreed` or `placed` back to
+        // `declined`, and a revealed match can already have a live link behind
+        // it: the link row would stay live while its own match reads `declined`,
+        // both sites would go back into the pool, and `get_link_brief` /
+        // `mark_link_placed` would start refusing a trade that is really under
+        // way. The accept side keeps its own idempotent no-op just below.
+        if ((from === "agreed" || from === "placed") && !accept) {
+            throw new MatchError("bad_state", `This match is already ${from}.`);
+        }
+
         // Built as a patch rather than mutated in place: one UPDATE, and the
         // fields that do not change are not written at all.
         const patch: { state?: MatchState; declineReason?: string | null; agreedAt?: Date } = {};
