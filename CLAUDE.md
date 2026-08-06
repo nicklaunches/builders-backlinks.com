@@ -32,6 +32,7 @@ next-app/src/
 | `pnpm format` | Prettier. Do not hand-order imports, this does it. |
 | `pnpm test` | Node's built-in runner over `src/**/*.test.ts` |
 | `pnpm test:mcp` | Drives the server with the real MCP SDK client. Needs a running server and Postgres. |
+| `pnpm test:cron` | Drives the daily re-pair pass over a seeded pool. Localhost only. |
 | `pnpm emails:render` | Renders every template to `.render/` for eyeballing |
 | `pnpm assets:generate` | Redraws the favicon, OG image and logo from `scripts/assets/`. Hand-run; commit the output |
 | `pnpm preview` | Build for Workers and serve it locally |
@@ -44,8 +45,27 @@ next-app/src/
 `pnpm run deploy`, not `pnpm deploy`. In pnpm 10 `deploy` is a built-in
 workspace command and silently shadows the script.
 
-`pnpm test:mcp` is the meaningful test. It exercises the server exactly as an
-agent would, over the real protocol, and it writes and deletes one throwaway user.
+`pnpm test:mcp` and `pnpm test:cron` are the meaningful tests, and CI now runs
+both against a Postgres service container. The first exercises the server exactly
+as an agent would, over the real protocol. The second exercises the daily
+re-pair pass, which no tool can reach, by seeding three sites in one category and
+comparing what `?dry=1` predicts against what the live run actually writes. Both
+seed and delete their own rows.
+
+Two of their assertions are worth knowing about before you change anything they
+touch, because both were written after the thing they check had already gone
+wrong in production:
+
+- **`test:mcp` audits the server's prose for tool names that do not exist.** Every
+  snake_case token in a tool description or answer must be a registered tool or a
+  pgEnum value. This is what would have caught `propose_trade`. The enums are
+  subtracted by importing them, so adding one needs no edit here; a call to
+  action for a tool nobody built fails the run. Do not turn that into an
+  allowlist to make a failure go away.
+- **`test:cron` seeds an ODD number of sites**, because an even pool cannot
+  produce the bug it is there to catch: with three, the middle site is the best
+  remaining choice for two subjects at once, and that is how one member ended up
+  holding two matches and two emails from a single nightly run.
 
 ## Architecture, in three rules
 
@@ -240,7 +260,11 @@ Two things to know before touching `/app`:
 
 ## Known gaps
 
-- `MCP_SMOKE_BASE` is used by `scripts/mcp-smoke.ts` but is not in `.env.example`.
+- The two end-to-end suites run against `pnpm dev`, in CI and usually by hand.
+  That is the runtime CLAUDE.md warns cannot reproduce the workerd traps above —
+  the request-scoped database handle and the Hyperdrive binding are exactly what
+  `pnpm dev` gets right for the wrong reasons. Checking the real runtime before a
+  deploy is still manual, and still the step people skip.
 - **Nobody can propose a trade with a chosen partner** (issue #18). Matching is
   entirely server-initiated, by two triggers, both calling `autoPair`:
   `setSiteStatus` on approval (the fast path) and the daily re-pair pass in
@@ -295,5 +319,8 @@ Two things to know before touching `/app`:
   submission, and `dr_checked_at` is written once and read by nothing. If a
   scoring bug lands again, the repair is another one-off script.
 - CI runs `pnpm db:migrate`, which skips the `assert-prod-db.ts` guard that
-  `db:migrate:deploy` has. That is intentional: CI's `DATABASE_URL` comes from a
-  repository secret. Do not "fix" it.
+  `db:migrate:deploy` has. That is intentional, and now true in two places for
+  two different reasons: in `deploy.yml` the `DATABASE_URL` comes from a
+  repository secret, and in `ci.yml` it points at a Postgres service container
+  that the runner created seconds earlier and throws away with the job. Neither
+  can reach production. Do not "fix" either.

@@ -4,15 +4,31 @@
 # error at that point is finding it after the decision, and after the branch is
 # gone.
 #
-# Deliberately NOT a copy of the deploy job. There are no secrets here and no
-# database: `pull_request` from a fork gets a read-only token, and a workflow
-# that needs DATABASE_URL to pass is a workflow that fails for every outside
-# contributor. Migrations, the Workers build and the deploy stay in deploy.yml
-# where the credentials live.
+# Deliberately NOT a copy of the deploy job. There are still no SECRETS here:
+# `pull_request` from a fork gets a read-only token, and a workflow that needs
+# credentials to pass is a workflow that fails for every outside contributor.
+# The Workers build and the deploy stay in deploy.yml where the credentials are.
 #
-# `pnpm test:mcp` is the meaningful test in this repo and it is still not here,
-# because it wants a running server and a Postgres. That gap is real and worth
-# closing with a service container later; the cheap gates are worth having now.
+# There IS a database now, and that is the difference between this file and the
+# version that said there could not be. A service container is not a secret: it
+# is created by the runner, reachable only from the job, and thrown away with
+# it, so a fork PR gets one exactly as a branch PR does. The DATABASE_URL below
+# is a throwaway on localhost and is deliberately written in the open.
+#
+# That buys the two end-to-end suites, which are the meaningful tests in this
+# repo and used to be the ones nobody ran until they remembered to:
+#
+#   test:mcp   drives the MCP server with the real SDK client over the wire
+#   test:cron  drives the daily re-pair pass and compares its dry run to its
+#              live run, which is how both of the defects that pass shipped
+#              with were eventually found
+#
+# Both run against `pnpm dev`, NOT against workerd. That is a real limitation
+# and is worth saying plainly: the request-scoped database handle and the
+# Hyperdrive binding are exactly the things `pnpm dev` cannot get wrong, so this
+# job will never catch the class of bug CLAUDE.md warns about under "Runtime
+# traps". It catches everything else, which is most things. Verifying on the
+# real runtime stays a manual step before a deploy.
 name: CI
 
 on:
@@ -67,3 +83,81 @@ jobs:
       # holding locally. `pnpm format` is the fix, and it is one command.
       - name: Check formatting
         run: pnpm exec prettier --check .
+
+  # The end-to-end suites, in their own job so a type error reports as a type
+  # error rather than as a server that would not start.
+  e2e:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: next-app
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: builders_backlinks
+        ports:
+          - 5432:5432
+        # Without this the job races the container: Postgres accepts a TCP
+        # connection before it is ready to answer a query, so migrations fail
+        # intermittently and look like a flaky test rather than a startup order
+        # problem.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/builders_backlinks
+      # The cron routes fail closed without this, by design. Any value works;
+      # it authenticates the test to its own throwaway server.
+      CRON_SECRET: ci-cron-secret
+      MCP_SMOKE_BASE: http://localhost:3100
+      CRON_SMOKE_BASE: http://localhost:3100
+      NEXT_PUBLIC_SITE_URL: http://localhost:3100
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: next-app/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: next-app/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      # `db:migrate`, not `db:migrate:deploy`. The guard in `assert-prod-db.ts`
+      # exists to stop a developer pointing a migration at production, and this
+      # DATABASE_URL is a container that did not exist ten seconds ago.
+      - run: pnpm db:migrate
+
+      - name: Start the dev server
+        run: |
+          pnpm dev --port 3100 > /tmp/dev-server.log 2>&1 &
+          # Poll rather than sleep. A fixed sleep is either too short on a slow
+          # runner or wasted on a fast one, and the failure mode of too short is
+          # a connection refused that reads like a broken test.
+          for i in $(seq 1 60); do
+            curl -sf -o /dev/null "$MCP_SMOKE_BASE/api/mcp" && exit 0
+            sleep 2
+          done
+          echo "dev server never came up:"
+          cat /tmp/dev-server.log
+          exit 1
+
+      - run: pnpm test:mcp
+      - run: pnpm test:cron
+
+      # The server log is where a 500 explains itself. Without this the only
+      # evidence of why an end-to-end test failed dies with the runner.
+      - name: Show the server log on failure
+        if: failure()
+        run: cat /tmp/dev-server.log
