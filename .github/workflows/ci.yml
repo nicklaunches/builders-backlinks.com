@@ -158,8 +158,22 @@ jobs:
           # Poll rather than sleep. A fixed sleep is either too short on a slow
           # runner or wasted on a fast one, and the failure mode of too short is
           # a connection refused that reads like a broken test.
+          #
+          # NOT `curl -f`, and this is the whole trick. `/api/mcp` answers a GET
+          # with 405, because the Streamable HTTP transport is POST-only, and
+          # `-f` reports any 4xx as a failed request. The first time this job
+          # reached a real runner it spun all sixty attempts against a server
+          # that had been serving for two minutes, then printed a log whose
+          # first line was "Ready in 401ms" under the heading "dev server never
+          # came up". Any status code at all is the signal being waited on: it
+          # means Next is routing and the route module compiled. curl reports
+          # 000 when it could not connect, which is the case that must retry.
           for i in $(seq 1 60); do
-            curl -sf -o /dev/null "$MCP_SMOKE_BASE/api/mcp" && exit 0
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$MCP_SMOKE_BASE/api/mcp" || true)
+            if [ -n "$code" ] && [ "$code" != "000" ]; then
+              echo "dev server is answering (HTTP $code) after $((i * 2))s"
+              exit 0
+            fi
             sleep 2
           done
           echo "dev server never came up:"
