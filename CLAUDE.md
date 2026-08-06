@@ -231,10 +231,19 @@ Two things to know before touching `/app`:
 ## Known gaps
 
 - `MCP_SMOKE_BASE` is used by `scripts/mcp-smoke.ts` but is not in `.env.example`.
-- **Nobody can propose a trade with a chosen partner.** `search_partners` returns
-  `MaskedPartner.partnerId` and `mask.ts` says it exists to be passed to
-  `propose_trade`, which does not exist in any interface. Matching is entirely
-  server-initiated: `autoPair` on submit, on approval, and the weekly digest.
+- **Nobody can propose a trade with a chosen partner** (issue #18). Matching is
+  entirely server-initiated, and by exactly one trigger: `autoPair`, called only
+  by `setSiteStatus` on approval. It does **not** run on submit, and the weekly
+  digest does not pair anyone either — that cron writes nothing but
+  `lastDigestSentAt`. `search_partners` still returns `MaskedPartner.partnerId`,
+  which now has no consumer at all.
+  This used to be a documentation gap that had become a member-facing one:
+  `mask.ts` claimed the id was an argument to `propose_trade`, and `digest.tsx`
+  believed it and printed `propose_trade partnerId="…"` under every candidate
+  plus as the primary CTA. A member followed the instruction on 2026-08-03,
+  found no such tool, and said so publicly. The advertising is gone; the
+  capability is still missing. Do not re-add a call to action here without
+  building the thing behind it.
 - **A member cannot edit or pause their own listing.** `setSiteStatus` is
   admin-gated and there is no function to change a description, category or
   keywords after submission. A member who wants to fix a bad analysis has no path

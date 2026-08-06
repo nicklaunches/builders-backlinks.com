@@ -729,8 +729,9 @@ export default function McpDocsPage() {
                                     </li>
                                     <li>
                                         <strong>The partner id is opaque.</strong> The <Code>partnerId</Code> in a
-                                        search result is an internal site id. It is only useful as an argument to
-                                        another call, and it does not decode to anything.
+                                        search result is an internal site id. It does not decode to anything, and no
+                                        tool currently takes one: matching is server-initiated, so the id is there to
+                                        tell two results apart and nothing more.
                                     </li>
                                     <li>
                                         <strong>Descriptions are written not to identify you.</strong> The listing text
