@@ -23,17 +23,36 @@
 #              live run, which is how both of the defects that pass shipped
 #              with were eventually found
 #
-# Both run against `pnpm dev`, NOT against workerd. That is a real limitation
-# and is worth saying plainly: the request-scoped database handle and the
-# Hyperdrive binding are exactly the things `pnpm dev` cannot get wrong, so this
-# job will never catch the class of bug CLAUDE.md warns about under "Runtime
-# traps". It catches everything else, which is most things. Verifying on the
-# real runtime stays a manual step before a deploy.
+# ONE JOB, NOT TWO, and that is a reversal worth explaining. The suites started
+# out in a separate `e2e` job so that a type error would report as a type error
+# rather than as a server that would not start. Good reasoning, wrong trade: two
+# jobs means asking for two runners, and on 2026-08-06 a GitHub Actions incident
+# made runners the scarce thing. Across four runs the `e2e` job was acquired
+# exactly zero times -- "The job was not acquired by Runner of type hosted even
+# after multiple attempts", each attempt burning GitHub's own ~15 minute
+# acquisition timeout before giving up. Splitting the work had doubled the number
+# of lotteries CI needed to win, and the end-to-end suites became the half that
+# never ran.
+#
+# Merged, the diagnostic loss is smaller than it looked: the run summary shows
+# one job, but the failing STEP is still named in the UI and in the annotations,
+# so "typecheck" and "Start the dev server" remain one click apart. The static
+# gates run first so a type error still fails in about a minute without paying
+# for a migration and a server it will never use.
+#
+# Both suites run against `pnpm dev`, NOT against workerd. That is a real
+# limitation and is worth saying plainly: the request-scoped database handle and
+# the Hyperdrive binding are exactly the things `pnpm dev` cannot get wrong, so
+# this job will never catch the class of bug CLAUDE.md warns about under "Runtime
+# traps". It catches everything else, which is most things. Verifying on the real
+# runtime stays a manual step before a deploy.
 name: CI
 
 on:
   pull_request:
-  # So a branch can be checked before it is opened as a PR.
+  # So a branch can be checked before it is opened as a PR. Also the way to get a
+  # run at all when webhook delivery is degraded: a dispatch is a direct API
+  # call, where a push is a webhook that can be throttled and silently dropped.
   workflow_dispatch:
 
 # A new push to a PR makes the previous run's answer irrelevant, so cancel it.
@@ -46,48 +65,18 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: next-app
-
-    steps:
-      - uses: actions/checkout@v4
-
-      # package_json_file is required because the app is nested in next-app/ and
-      # there is no root package.json. `defaults.run.working-directory` only
-      # applies to `run` steps, not to action inputs, so without this the action
-      # looks for ./package.json and fails with "No pnpm version is specified".
-      - uses: pnpm/action-setup@v4
-        with:
-          package_json_file: next-app/package.json
-
-      # Node 22, not 20, for the same reason deploy.yml pins it: `pnpm test`
-      # runs `node --test "src/**/*.test.ts"`, and glob patterns in the test
-      # runner only landed in 22. On 20 the pattern is treated as a literal path
-      # and the run passes having executed nothing, which is the worst possible
-      # way for a test job to be green.
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: next-app/pnpm-lock.yaml
-
-      - run: pnpm install --frozen-lockfile
-
-      - run: pnpm typecheck
-      - run: pnpm lint
-      - run: pnpm test
-
-      # Formatting is checked, never applied. A workflow that pushes a format
-      # commit back onto a contributor's branch rewrites work they are still
-      # holding locally. `pnpm format` is the fix, and it is one command.
-      - name: Check formatting
-        run: pnpm exec prettier --check .
-
-  # The end-to-end suites, in their own job so a type error reports as a type
-  # error rather than as a server that would not start.
-  e2e:
-    runs-on: ubuntu-latest
+    # The default is 360 minutes, which is not a timeout so much as an absence of
+    # one. During the Actions incident on 2026-08-06 this job ran every step to
+    # success and then sat for a further hour before the runner was declared
+    # lost, reporting as a plain "failure" with nothing failing in it. Twenty-five
+    # sits well clear of the real runtime, which is about eight minutes.
+    #
+    # KNOW WHAT THIS DOES NOT COVER. It bounds a job that is EXECUTING. A job
+    # still waiting for a runner is not covered by it at all -- that is GitHub's
+    # own acquisition timeout, around fifteen minutes, and it is what actually
+    # killed the old `e2e` job three times over. No value here would have helped
+    # with that.
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: next-app
@@ -122,10 +111,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # package_json_file is required because the app is nested in next-app/ and
+      # there is no root package.json. `defaults.run.working-directory` only
+      # applies to `run` steps, not to action inputs, so without this the action
+      # looks for ./package.json and fails with "No pnpm version is specified".
       - uses: pnpm/action-setup@v4
         with:
           package_json_file: next-app/package.json
 
+      # Node 22, not 20, for the same reason deploy.yml pins it: `pnpm test`
+      # runs `node --test "src/**/*.test.ts"`, and glob patterns in the test
+      # runner only landed in 22. On 20 the pattern is treated as a literal path
+      # and the run passes having executed nothing, which is the worst possible
+      # way for a test job to be green.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -133,6 +131,18 @@ jobs:
           cache-dependency-path: next-app/pnpm-lock.yaml
 
       - run: pnpm install --frozen-lockfile
+
+      # The cheap gates first, deliberately. They need neither the database nor
+      # the server, and a type error should not wait on a migration to be told.
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+
+      # Formatting is checked, never applied. A workflow that pushes a format
+      # commit back onto a contributor's branch rewrites work they are still
+      # holding locally. `pnpm format` is the fix, and it is one command.
+      - name: Check formatting
+        run: pnpm exec prettier --check .
 
       # `db:migrate`, not `db:migrate:deploy`. The guard in `assert-prod-db.ts`
       # exists to stop a developer pointing a migration at production, and this
@@ -145,8 +155,22 @@ jobs:
           # Poll rather than sleep. A fixed sleep is either too short on a slow
           # runner or wasted on a fast one, and the failure mode of too short is
           # a connection refused that reads like a broken test.
+          #
+          # NOT `curl -f`, and this is the whole trick. `/api/mcp` answers a GET
+          # with 405, because the Streamable HTTP transport is POST-only, and
+          # `-f` reports any 4xx as a failed request. The first time this job
+          # reached a real runner it spun all sixty attempts against a server
+          # that had been serving for two minutes, then printed a log whose
+          # first line was "Ready in 401ms" under the heading "dev server never
+          # came up". Any status code at all is the signal being waited on: it
+          # means Next is routing and the route module compiled. curl reports
+          # 000 when it could not connect, which is the case that must retry.
           for i in $(seq 1 60); do
-            curl -sf -o /dev/null "$MCP_SMOKE_BASE/api/mcp" && exit 0
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$MCP_SMOKE_BASE/api/mcp" || true)
+            if [ -n "$code" ] && [ "$code" != "000" ]; then
+              echo "dev server is answering (HTTP $code) after $((i * 2))s"
+              exit 0
+            fi
             sleep 2
           done
           echo "dev server never came up:"
@@ -158,6 +182,11 @@ jobs:
 
       # The server log is where a 500 explains itself. Without this the only
       # evidence of why an end-to-end test failed dies with the runner.
+      #
+      # Tolerant of the log being absent, which it is whenever the run failed
+      # before the server started -- a lint error now reaches this step too, and
+      # a bare `cat` would fail on the missing file and add a second red step
+      # that has nothing to do with the real one.
       - name: Show the server log on failure
         if: failure()
-        run: cat /tmp/dev-server.log
+        run: cat /tmp/dev-server.log 2>/dev/null || echo "(no server log - the run failed before the server started)"

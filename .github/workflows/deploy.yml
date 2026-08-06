@@ -23,6 +23,14 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Bounded because of the concurrency group above, not in spite of it. This
+    # group deliberately QUEUES rather than cancels, so a job that hangs does not
+    # merely waste itself -- it holds the group and blocks every production
+    # deploy behind it. Without a timeout that block lasts the default 360
+    # minutes. The Actions incident on 2026-08-06 produced exactly this shape in
+    # the CI job: every step green, then an hour of silence before the runner was
+    # declared lost. Thirty minutes is roughly six times the real runtime.
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: next-app
