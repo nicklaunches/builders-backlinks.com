@@ -46,6 +46,14 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # The default is 360 minutes, which is not a timeout so much as an absence of
+    # one. During the Actions incident on 2026-08-06 this job ran every step to
+    # success and then sat for a further hour before the runner was declared
+    # lost, and the run reported as a plain "failure" with nothing failing in it.
+    # A bound near the real runtime -- normally about four minutes -- turns that
+    # into a fast, legible timeout instead of an hour of billed minutes and a
+    # misleading red cross.
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: next-app
@@ -88,6 +96,11 @@ jobs:
   # error rather than as a server that would not start.
   e2e:
     runs-on: ubuntu-latest
+    # Bounded for the same reason as `check`, and a little higher: this job also
+    # waits on a Postgres container and a dev server, so a hang here has two more
+    # places to happen. The server wait below is capped at two minutes of its
+    # own, so anything approaching this bound is the runner, not the app.
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: next-app
