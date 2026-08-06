@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { type ExchangeMember, type ExchangeSite, exchangeMembers, exchangeSites } from "@/lib/db/schema";
 import { notifySiteApproved, notifySiteRejected, notifySubmissionReceived } from "@/lib/email/notify";
 import { PLACEMENT_OFFERS, type PlacementOffer, SITE_STATUSES, type SiteStatus, normalizeDomain } from "@/lib/exchange";
+import { errorDetail } from "@/lib/log";
 import { autoPair } from "@/lib/services/matches";
 import { NO_LINKS, liveLinkCounts } from "@/lib/services/standing";
 
@@ -277,11 +278,17 @@ export async function listSitesForReview(status?: SiteStatus): Promise<SiteForRe
  * an approved site would wait a full day for the re-pair pass, at exactly the
  * moment the member has just been told they are live.
  *
- * This used to be the ONLY caller of `autoPair`, and that was the bug rather
- * than the design: a site that missed this instant was never reconsidered, which
- * had stranded 26 of 33 active sites by 2026-08-06. The daily re-pair pass in
- * `api/cron/recheck` is now the safety net. This call is the fast path, not the
- * guarantee — do not remove it, but do not rely on it as the only one either.
+ * This used to be the ONLY caller of `autoPair`, and pairing a member exactly
+ * once, inside a `try` that swallows, is how 26 of 33 active sites came to have
+ * no match by 2026-08-06: the insert was throwing on a fractional score and this
+ * branch approved them regardless. The daily re-pair pass in `api/cron/recheck`
+ * is now the safety net. This call is the fast path, not the guarantee — do not
+ * remove it, but do not rely on it as the only one either.
+ *
+ * KEEP THE CATCH, and keep it swallowing. The row is already committed by the
+ * time it runs, so throwing here would tell the reviewer the approval failed
+ * when it did not. What it must never again do is throw away the reason, which
+ * is what `errorDetail` is for.
  *
  * This is also the only writer of `status` in the app, which is what makes
  * `statusChangedAt` / `statusChangedBy` diagnostic rather than decorative.
@@ -346,7 +353,13 @@ export async function setSiteStatus(
                     : `setSiteStatus: approved ${updated.domain}, no match yet (${pair.reason} in ${pair.category})`,
             );
         } catch (err) {
-            console.error("setSiteStatus: autoPair failed after approving", updated.domain, err);
+            // `errorDetail`, not the raw error. Logging `err` directly is what
+            // let the integer-score bug run for a week: workerd printed a bare
+            // minified stack, so this line reported that pairing had failed
+            // without once mentioning that Postgres had rejected a fractional
+            // score for an integer column. The answer was on the error object
+            // the whole time and never made it into the log.
+            console.error(`setSiteStatus: autoPair failed after approving ${updated.domain}: ${errorDetail(err)}`);
         }
     } else if (status === "rejected") {
         void notifySiteRejected({ site: updated, reason: note ?? updated.reviewNote ?? null });

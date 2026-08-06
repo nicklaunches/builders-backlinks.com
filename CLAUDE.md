@@ -255,19 +255,25 @@ Two things to know before touching `/app`:
   found no such tool, and said so publicly. The advertising is gone; the
   capability is still missing. Do not re-add a call to action here without
   building the thing behind it.
-- **Nobody knows how 33 sites became `active`.** On 2026-08-06, every site was
-  `active`, 26 of them had never been matched, and the matcher would have paired
-  24 on the spot — the engine was fine, the trigger was the problem. `autoPair`
-  ran only at the approval instant, so a site that missed it was invisible to
-  matching forever. There was also no `POST /admin` anywhere in the six-day
-  Workers log window while ~22 sites went active, which points at activation
-  outside the app, but request logs may be sampled and `console.log` is not in
-  that view, so it was never proven. Two things came out of it: the daily
-  re-pair pass, which makes the cause moot operationally, and
-  `exchange_sites.status_changed_at` / `status_changed_by`, written only by
-  `setSiteStatus`. **An `active` row with a NULL `status_changed_by` did not
-  become active through this application.** The 33 original rows are all NULL
-  and are deliberately not backfilled, so the signal starts clean.
+- **Matching only ever worked by coincidence, and a swallowed error hid it.**
+  On 2026-08-06, 26 of 33 active sites had never been matched. `upsertMatch`
+  passed `scoreCandidate`'s total straight into `exchange_matches.score`, which
+  is `integer`, and the total ends on `round2` — so Postgres rejected almost
+  every insert with `invalid input syntax for type integer`. `autoPair` threw,
+  `setSiteStatus` caught it and approved the member anyway. Every match that
+  existed scored 48, 42, 90 or 55: whole numbers, all four, by luck. The score
+  is now rounded at the insert.
+  **The reason it took nine days to find is the more useful lesson.** The
+  `catch` logged `console.error("...", err)`, and workerd renders that as a bare
+  minified stack — the Postgres message naming the column and the value was one
+  property away and never printed. Use `errorDetail` from `lib/log.ts` when
+  logging a caught error; it walks `cause`, which is where Drizzle keeps the
+  driver's real explanation.
+  Two things guard the class of bug rather than the instance: the daily re-pair
+  pass, so a site that fails to pair once is reconsidered tomorrow instead of
+  never, and `exchange_sites.status_changed_at` / `status_changed_by`, written
+  only by `setSiteStatus`, so a status that moves outside the app is visible
+  rather than inferred. Existing rows are deliberately left NULL.
 - **A member cannot edit or pause their own listing.** `setSiteStatus` is
   admin-gated and there is no function to change a description, category or
   keywords after submission. A member who wants to fix a bad analysis has no path

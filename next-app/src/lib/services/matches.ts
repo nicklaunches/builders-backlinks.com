@@ -37,10 +37,12 @@ import { NO_LINKS, liveLinkCounts, liveLinkCountsFor } from "@/lib/services/stan
  * WHY THE DAILY PASS EXISTS. Approval used to be the only trigger, which meant a
  * site that missed that one instant was invisible to matching forever. That is
  * not hypothetical: 26 of 33 active sites had never been matched on 2026-08-06,
- * while the matcher itself would have paired 24 of them on the spot. Whatever
- * put them in that state — activation outside the app is the leading theory —
- * one instant was never enough, and a pass that reconsiders the whole idle pool
- * is the difference between a bug like that costing a day and costing a month.
+ * because `upsertMatch` was handing a fractional score to an `integer` column
+ * and throwing on almost every insert. The bug is fixed, but the shape of the
+ * damage is the point — one failed instant meant a member was approved, told
+ * they were live, and never matched with anyone. A pass that reconsiders the
+ * whole idle pool is the difference between the next such bug costing a day and
+ * costing a month.
  *
  * That pass is only safe because a repeat call is silent: `upsertMatch` reports
  * whether it actually inserted, and `autoPair` returns `already_matched` without
@@ -373,7 +375,26 @@ async function upsertMatch(input: {
             siteAId,
             siteBId,
             category: input.category,
-            score: input.score,
+            // ROUNDED BECAUSE THE COLUMN IS `integer`, and this one line is why
+            // matching had barely worked since it shipped. `scoreCandidate`
+            // finishes on `round2`, so a total carries two decimal places, and
+            // Postgres rejects `87.16` for an integer outright: `invalid input
+            // syntax for type integer`. The insert threw, `autoPair` threw with
+            // it, and `setSiteStatus` caught the lot and approved the site
+            // anyway — so a member was let in, told they were live, and never
+            // matched with anyone.
+            //
+            // It hid because a match was still created whenever the score
+            // happened to land on a whole number. Every match in production on
+            // 2026-08-06 scored 48, 42, 90 or 55: pairing had only ever
+            // succeeded by coincidence, four times in nine days.
+            //
+            // Rounding here rather than widening the column is the honest fix.
+            // `score.ts` says the total "is only ever a display number" —
+            // nothing reads it back to make a decision, and ordering happens in
+            // memory on the full float before this is ever called, so the
+            // hundredths were never load-bearing.
+            score: Math.round(input.score),
             widened: input.widened,
             state: "proposed",
             proposedById: null,

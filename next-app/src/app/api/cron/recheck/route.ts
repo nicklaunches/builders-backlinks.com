@@ -6,6 +6,7 @@ import { exchangeLinks, exchangeMatches, exchangeSites } from "@/lib/db/schema";
 import { isAuthorizedCron } from "@/lib/email/cron-auth";
 import { notifyLinkRemoved } from "@/lib/email/notify";
 import { GIVE_UP_AFTER_CHECKS, OPEN_MATCH_STATES, nextCheckAt } from "@/lib/exchange";
+import { errorDetail } from "@/lib/log";
 import { autoPair, previewPair } from "@/lib/services/matches";
 import { verifyLink } from "@/lib/verify";
 
@@ -102,10 +103,11 @@ export async function GET(request: Request) {
     //
     // Approval used to be the only thing that ever called `autoPair`, which
     // meant a site that missed that single instant was invisible to matching
-    // for good. On 2026-08-06 that was 26 of 33 active sites, while the matcher
-    // itself would have paired 24 of them immediately. One trigger was never
-    // enough, and no amount of fixing the approval path would have found the
-    // sites it had already passed over.
+    // for good. On 2026-08-06 that was 26 of 33 active sites: `upsertMatch` was
+    // handing a fractional score to an `integer` column, so the insert threw on
+    // almost every approval and the error was swallowed. Fixing that bug does
+    // not recover the sites it already passed over, and nothing else would have
+    // either. That is what this pass is for.
     //
     // Deliberately AFTER the expiry sweep above. That sweep is what returns a
     // stale match's two sites to the pool, and running in the other order would
@@ -153,32 +155,55 @@ export async function GET(request: Request) {
     // propose a second match to somebody who just got one.
     const spokenFor = new Set<string>();
     let paired = 0;
+    let failed = 0;
 
     for (const site of idle) {
         if (spokenFor.has(site.id)) continue;
 
-        if (dryRun) {
-            const preview = await previewPair(site);
-            console.log(
-                preview.ok
-                    ? `recheck: [dry] would pair ${site.domain} with ${preview.partnerSite.domain} (score ${preview.score})`
-                    : `recheck: [dry] no pair for ${site.domain} (${preview.reason})`,
-            );
-            if (preview.ok) {
-                spokenFor.add(site.id).add(preview.partnerSite.id);
-                paired++;
+        // One site cannot be allowed to end the run, and the cost of getting
+        // this wrong is worse here than at the approval that also wraps its
+        // `autoPair` call: everything below this loop is the link recheck, so a
+        // single failing pair would silently stop every link in the batch from
+        // being verified that day. Isolate, log, keep going.
+        //
+        // `errorDetail` rather than the raw error because the raw error is what
+        // made the integer-score bug take a week to find: workerd printed a
+        // bare minified stack for a `PostgresError`, so the log said pairing had
+        // failed without ever saying that Postgres had rejected `87.16` for an
+        // integer column.
+        try {
+            if (dryRun) {
+                const preview = await previewPair(site);
+                console.log(
+                    preview.ok
+                        ? `recheck: [dry] would pair ${site.domain} with ${preview.partnerSite.domain} (score ${preview.score})`
+                        : `recheck: [dry] no pair for ${site.domain} (${preview.reason})`,
+                );
+                if (preview.ok) {
+                    spokenFor.add(site.id).add(preview.partnerSite.id);
+                    paired++;
+                }
+                continue;
             }
-            continue;
-        }
 
-        const result = await autoPair(site);
-        if (result.matched) {
-            spokenFor.add(site.id).add(result.match.siteAId === site.id ? result.match.siteBId : result.match.siteAId);
-            paired++;
-            console.log(`recheck: paired ${site.domain} (match ${result.match.id})`);
-        } else {
-            console.log(`recheck: no pair for ${site.domain} (${result.reason})`);
+            const result = await autoPair(site);
+            if (result.matched) {
+                spokenFor
+                    .add(site.id)
+                    .add(result.match.siteAId === site.id ? result.match.siteBId : result.match.siteAId);
+                paired++;
+                console.log(`recheck: paired ${site.domain} (match ${result.match.id})`);
+            } else {
+                console.log(`recheck: no pair for ${site.domain} (${result.reason})`);
+            }
+        } catch (err) {
+            failed++;
+            console.error(`recheck: autoPair threw for ${site.domain}: ${errorDetail(err)}`);
         }
+    }
+
+    if (failed > 0) {
+        console.error(`recheck: re-pair pass had ${failed} failure(s), see the lines above`);
     }
 
     if (idle.length > 0) {
