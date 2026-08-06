@@ -182,6 +182,42 @@ they arrive rather than waiting to be noticed. Verified with a real drill
 against `bounce@simulator.amazonses.com`, which SES exempts from both reputation
 and the suppression list, so it is safe to repeat.
 
+## "It merged, but nothing deployed"
+
+A Deploy that *failed* is easy: it is red, it is in the list, you re-run it. The
+confusing case is a push to `main` that produced **no run at all** — nothing red,
+nothing queued, nothing to re-run, and a production Worker quietly serving the
+commit before yours. Establish which of the two you have before debugging the
+workflow, because the workflow is usually fine:
+
+```bash
+gh api repos/:owner/:repo/commits/$SHA/check-suites \
+  --jq '.check_suites[] | "\(.app.slug) \(.status)"'
+```
+
+A commit that reached Actions has a `github-actions` suite here whatever the
+outcome. If the list is only `vercel` and `cloudflare-workers-and-pages`, the push
+webhook was dropped and the workflow was never created. That is upstream, not
+here — confirm at githubstatus.com rather than editing anything. (Those two
+third-party suites read `queued` forever on every commit, including ones that
+deployed fine. They are not the signal; the absence of `github-actions` is.)
+
+Recover with a dispatch, which is a direct API call rather than a webhook and so
+keeps working while webhook delivery is throttled:
+
+```bash
+gh workflow run deploy.yml --ref main
+```
+
+`workflow_dispatch` is on both workflows for exactly this. Nothing in the repo
+needs changing when it happens.
+
+On 2026-08-06 a critical Actions incident throttled webhooks from 15:22 UTC, and
+#21, #22 and #23 all merged into that window: three commits stranded on `main`
+for hours, one of them carrying a migration and the nightly re-pair pass, with no
+failure anywhere to notice. `pull_request` runs kept working throughout, so CI
+being green is not evidence that a push would have triggered anything.
+
 ## Data invariants
 
 Encoded in `src/lib/db/schema.ts` as constraints, not just conventions:
