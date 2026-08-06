@@ -157,6 +157,12 @@ export async function GET(request: Request) {
     let paired = 0;
     let failed = 0;
 
+    // Returned in the response, not just logged. A dry run exists to be read
+    // before it is trusted, and an operator who has to go digging through
+    // Worker logs to find out what the rehearsal decided will skip the
+    // rehearsal. The live run reports the same shape so the two are comparable.
+    const pairs: { site: string; partner?: string; score?: number; matchId?: string; skipped?: string }[] = [];
+
     for (const site of idle) {
         if (spokenFor.has(site.id)) continue;
 
@@ -182,6 +188,9 @@ export async function GET(request: Request) {
                 if (preview.ok) {
                     spokenFor.add(site.id).add(preview.partnerSite.id);
                     paired++;
+                    pairs.push({ site: site.domain, partner: preview.partnerSite.domain, score: preview.score });
+                } else {
+                    pairs.push({ site: site.domain, skipped: preview.reason });
                 }
                 continue;
             }
@@ -192,13 +201,17 @@ export async function GET(request: Request) {
                     .add(site.id)
                     .add(result.match.siteAId === site.id ? result.match.siteBId : result.match.siteAId);
                 paired++;
+                pairs.push({ site: site.domain, matchId: result.match.id, score: result.match.score });
                 console.log(`recheck: paired ${site.domain} (match ${result.match.id})`);
             } else {
+                pairs.push({ site: site.domain, skipped: result.reason });
                 console.log(`recheck: no pair for ${site.domain} (${result.reason})`);
             }
         } catch (err) {
             failed++;
-            console.error(`recheck: autoPair threw for ${site.domain}: ${errorDetail(err)}`);
+            const detail = errorDetail(err);
+            pairs.push({ site: site.domain, skipped: `threw: ${detail}` });
+            console.error(`recheck: autoPair threw for ${site.domain}: ${detail}`);
         }
     }
 
@@ -325,5 +338,12 @@ export async function GET(request: Request) {
         }
     }
 
-    return NextResponse.json({ expired: expired.length, due: due.length, checked, removed, inconclusive });
+    return NextResponse.json({
+        expired: expired.length,
+        repair: { dryRun, idle: idle.length, paired, failed, pairs },
+        due: due.length,
+        checked,
+        removed,
+        inconclusive,
+    });
 }
