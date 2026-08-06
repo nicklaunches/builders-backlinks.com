@@ -35,6 +35,21 @@ export type Placement = (typeof PLACEMENTS)[number];
 // ---------------------------------------------------------------------------
 
 /**
+ * The match states that still want a decision from somebody.
+ *
+ * "Open" is the question two different jobs ask, and they must ask it the same
+ * way: the weekly digest skips a member holding one of these, and the daily
+ * re-pair pass skips a site holding one. Declared here rather than in either
+ * route because a copy that drifts turns into a member who is either matched
+ * twice over or never nudged again, and neither surface would look wrong on its
+ * own.
+ *
+ * `placed` is absent deliberately. It is settled, not open: both links are live
+ * and nobody owes anybody an answer. `declined` and `expired` are terminal.
+ */
+export const OPEN_MATCH_STATES = ["proposed", "a_accepted", "b_accepted", "agreed"] as const satisfies MatchState[];
+
+/**
  * Normalizes a hostname or URL into the canonical `domain` form.
  *
  * Lowercase, no scheme, no `www.`, no port, no path. Must be used on every

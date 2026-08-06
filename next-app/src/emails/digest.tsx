@@ -4,7 +4,7 @@ import type { Category } from "@/lib/categories";
 import type { MaskedPartner } from "@/lib/contracts";
 
 import { getSiteOrigin } from "./_context";
-import { CodeBlock, EmailLayout, drLabel, palette, placementOfferLabel, styles } from "./_layout";
+import { EmailLayout, drLabel, palette, placementOfferLabel, styles } from "./_layout";
 
 /**
  * @file The weekly digest: who is available to trade with right now.
@@ -19,8 +19,21 @@ import { CodeBlock, EmailLayout, drLabel, palette, placementOfferLabel, styles }
  * change is "pass the docs and pick the safe fields off them", which works
  * exactly until the day someone adds a favicon to the row.
  *
- * `partnerId` is safe to print: it is an opaque site id whose only use is as an
- * argument to `propose_trade`, and it reveals nothing on its own.
+ * `partnerId` IS NOT PRINTED, and that is a correction rather than a style
+ * choice. Every row used to end with `propose_trade partnerId="<uuid>"`, and the
+ * primary call to action was the same string in a code block. No such tool has
+ * ever existed: the only writer of `exchange_matches` is `upsertMatch`, called
+ * only by `autoPair`, which is reached only from `setSiteStatus` on approval and
+ * from the daily re-pair pass in `api/cron/recheck`. Both are server-initiated,
+ * so there was nothing a member could do with a candidate, and this email spent
+ * its most prominent line telling them to do it anyway. A member reported it
+ * publicly on 2026-08-03 after pasting the line into an agent and getting
+ * nowhere.
+ *
+ * The id itself is still safe to print — it is opaque and decodes to nothing —
+ * but an argument to a call that does not exist is worse than no argument at
+ * all, so a row now ends at the anchors. See issue #18: if `propose_trade` is
+ * ever built, this is where the id goes back.
  *
  * The empty case is a real case, not an error. Matching reports "you are first
  * in this category" honestly rather than sending a blank list, because an
@@ -52,15 +65,16 @@ function CandidateRow({ partner, index }: { partner: MaskedPartner; index: numbe
                 </span>
             </Text>
             <Text style={{ ...styles.listItem, margin: "0 0 6px" }}>{partner.description}</Text>
-            <Text style={{ ...styles.muted, margin: "0 0 4px" }}>
+            {/* The row used to end in a mono `propose_trade` line, so every
+                block above it carried a bottom margin. Now that whichever of
+                these lands last IS the last thing in the card, the final one
+                has to drop its margin or the card gains 4px of dead space. */}
+            <Text style={{ ...styles.muted, margin: anchors.length > 0 ? "0 0 4px" : 0 }}>
                 Can offer: {placementOfferLabel(partner.placementOffered)}
             </Text>
             {anchors.length > 0 ? (
-                <Text style={{ ...styles.muted, margin: "0 0 8px" }}>Wants anchors: {anchors.join(", ")}</Text>
+                <Text style={{ ...styles.muted, margin: 0 }}>Wants anchors: {anchors.join(", ")}</Text>
             ) : null}
-            <Text style={{ ...styles.mono, color: palette.muted, margin: 0 }}>
-                propose_trade partnerId=&quot;{partner.partnerId}&quot;
-            </Text>
         </Section>
     );
 }
@@ -107,14 +121,22 @@ export function DigestEmail({ category, candidates, widenedCount = 0, standingNo
                 <CandidateRow key={partner.partnerId} partner={partner} index={index} />
             ))}
 
-            <Text style={styles.subheading}>To start one</Text>
-            <Text style={styles.paragraph}>Ask your agent, using the id under any row above:</Text>
-            <CodeBlock>{`propose_trade partnerId="${candidates[0].partnerId}"`}</CodeBlock>
+            <Text style={styles.subheading}>How a match starts</Text>
+            <Text style={styles.paragraph}>
+                We pair you, you do not pick. We look for the best partner for a site the moment it is approved, and
+                again every day for anyone not currently in a match, so the sites above are the pool you are being
+                matched against right now. When one of them becomes your match you get a separate email with a match id,
+                and you accept or decline it from your agent or the dashboard.
+            </Text>
+            <Text style={styles.paragraph}>
+                So there is nothing to answer here. This is the pool, sent so you can see it is not empty.
+            </Text>
             <Section style={styles.btnWrap}>
                 <Button href={`${origin}/app`} style={styles.button}>
-                    Browse in the dashboard
+                    Open your dashboard
                 </Button>
             </Section>
+            <Text style={styles.muted}>Your sites, the links you have placed, and what is owed back to you.</Text>
 
             {standingNote ? (
                 <>

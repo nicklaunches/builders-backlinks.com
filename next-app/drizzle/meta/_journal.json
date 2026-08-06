@@ -15,6 +15,13 @@
       "when": 1785784422225,
       "tag": "0001_polite_arachne",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786031712612,
+      "tag": "0002_uneven_gauntlet",
+      "breakpoints": true
     }
   ]
 }

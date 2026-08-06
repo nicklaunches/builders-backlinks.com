@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { type ExchangeMember, type ExchangeSite, exchangeMembers, exchangeSites } from "@/lib/db/schema";
 import { notifySiteApproved, notifySiteRejected, notifySubmissionReceived } from "@/lib/email/notify";
 import { PLACEMENT_OFFERS, type PlacementOffer, SITE_STATUSES, type SiteStatus, normalizeDomain } from "@/lib/exchange";
+import { errorDetail } from "@/lib/log";
 import { autoPair } from "@/lib/services/matches";
 import { NO_LINKS, liveLinkCounts } from "@/lib/services/standing";
 
@@ -270,13 +271,27 @@ export async function listSitesForReview(status?: SiteStatus): Promise<SiteForRe
  * The reviewer's note is written to `review_note`, a column that has existed
  * since the first migration and had no reader or writer until now.
  *
- * Approving MATCHES IMMEDIATELY, and this is the ONLY place `autoPair` is
- * called from. A site is `pending_review` from the moment it is submitted until
- * a human clears it, and `autoPair` refuses to pair anything that is not
- * `active` (that is the review promise in /terms), so approval is the first
- * moment the site can pair with anyone at all. Without the call here an approved
- * site would sit idle until the Tuesday cron, which is a week of silence at
- * exactly the moment the member has just been told they are live.
+ * Approving MATCHES IMMEDIATELY. A site is `pending_review` from the moment it
+ * is submitted until a human clears it, and `autoPair` refuses to pair anything
+ * that is not `active` (that is the review promise in /terms), so approval is
+ * the first moment the site can pair with anyone at all. Without the call here
+ * an approved site would wait a full day for the re-pair pass, at exactly the
+ * moment the member has just been told they are live.
+ *
+ * This used to be the ONLY caller of `autoPair`, and pairing a member exactly
+ * once, inside a `try` that swallows, is how 26 of 33 active sites came to have
+ * no match by 2026-08-06: the insert was throwing on a fractional score and this
+ * branch approved them regardless. The daily re-pair pass in `api/cron/recheck`
+ * is now the safety net. This call is the fast path, not the guarantee — do not
+ * remove it, but do not rely on it as the only one either.
+ *
+ * KEEP THE CATCH, and keep it swallowing. The row is already committed by the
+ * time it runs, so throwing here would tell the reviewer the approval failed
+ * when it did not. What it must never again do is throw away the reason, which
+ * is what `errorDetail` is for.
+ *
+ * This is also the only writer of `status` in the app, which is what makes
+ * `statusChangedAt` / `statusChangedBy` diagnostic rather than decorative.
  *
  * Pairing is awaited rather than fired and forgotten, because its own
  * `match-proposed` email should land after the approval email rather than
@@ -288,17 +303,30 @@ export async function listSitesForReview(status?: SiteStatus): Promise<SiteForRe
  * @returns The updated row.
  * @throws `SiteError` when the id matches nothing.
  */
-export async function setSiteStatus(siteId: string, status: SiteStatus, reviewNote?: string): Promise<ExchangeSite> {
+export async function setSiteStatus(
+    siteId: string,
+    status: SiteStatus,
+    reviewNote?: string,
+    actorUserId?: string,
+): Promise<ExchangeSite> {
     if (!(SITE_STATUSES as readonly string[]).includes(status)) {
         throw new SiteError("invalid", `"${status}" is not a site status.`);
     }
 
     const note = reviewNote?.trim();
+    const now = new Date();
     const [updated] = await db()
         .update(exchangeSites)
         .set({
             status,
-            updatedAt: new Date(),
+            updatedAt: now,
+            // The attribution pair. Written on every status move, including the
+            // ones with no actor, because "changed at this time by nobody
+            // identifiable" is itself the finding: this is the only writer of
+            // `status` in the app, so a status that moves without leaving a
+            // `status_changed_at` behind did not move through here at all.
+            statusChangedAt: now,
+            statusChangedBy: actorUserId ?? null,
             // Only overwrite the note when one was given. Approving a site does
             // not erase the note explaining why it was rejected last month.
             ...(note ? { reviewNote: note } : {}),
@@ -325,7 +353,13 @@ export async function setSiteStatus(siteId: string, status: SiteStatus, reviewNo
                     : `setSiteStatus: approved ${updated.domain}, no match yet (${pair.reason} in ${pair.category})`,
             );
         } catch (err) {
-            console.error("setSiteStatus: autoPair failed after approving", updated.domain, err);
+            // `errorDetail`, not the raw error. Logging `err` directly is what
+            // let the integer-score bug run for a week: workerd printed a bare
+            // minified stack, so this line reported that pairing had failed
+            // without once mentioning that Postgres had rejected a fractional
+            // score for an integer column. The answer was on the error object
+            // the whole time and never made it into the log.
+            console.error(`setSiteStatus: autoPair failed after approving ${updated.domain}: ${errorDetail(err)}`);
         }
     } else if (status === "rejected") {
         void notifySiteRejected({ site: updated, reason: note ?? updated.reviewNote ?? null });

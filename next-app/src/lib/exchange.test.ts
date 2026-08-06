@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { GIVE_UP_AFTER_CHECKS, nextCheckAt } from "@/lib/exchange";
+import { GIVE_UP_AFTER_CHECKS, MATCH_STATES, type MatchState, OPEN_MATCH_STATES, nextCheckAt } from "@/lib/exchange";
 
 /**
  * @file The recheck schedule.
@@ -115,5 +115,36 @@ describe("nextCheckAt", () => {
             nextCheckAt({ status: "removed", firstSeenAt: T0, createdAt: T0, lastCheckedAt: T0, checkCount: 3 }),
             null,
         );
+    });
+});
+
+describe("OPEN_MATCH_STATES", () => {
+    // Two jobs read this list: the weekly digest skips a member holding an open
+    // match, and the daily re-pair pass skips a site holding one. It used to be
+    // declared privately in the digest route, and the cost of a second copy is
+    // not a compile error, it is a member matched twice over or never nudged
+    // again. These cases pin the membership so a well-meaning edit to either
+    // consumer has to come through here.
+    it("covers every state that still wants a decision", () => {
+        assert.deepEqual([...OPEN_MATCH_STATES], ["proposed", "a_accepted", "b_accepted", "agreed"]);
+    });
+
+    it("excludes the settled and terminal states", () => {
+        // `placed` is the subtle one. Both links are live and nobody owes anybody
+        // an answer, so treating it as open would keep re-pairing a finished
+        // trade; treating it as terminal is what makes the pass idempotent.
+        for (const state of ["placed", "declined", "expired"] as const) {
+            assert.equal(
+                (OPEN_MATCH_STATES as readonly MatchState[]).includes(state),
+                false,
+                `${state} must not count as open`,
+            );
+        }
+    });
+
+    it("names only real match states", () => {
+        for (const state of OPEN_MATCH_STATES) {
+            assert.ok(MATCH_STATES.includes(state), `${state} is not in the pgEnum`);
+        }
     });
 });

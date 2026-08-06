@@ -110,8 +110,10 @@ export default async function DashboardPage() {
             <Section title="Matches" count={open.length}>
                 {open.length === 0 ? (
                     <Empty>
-                        No open matches. We look as soon as a site of yours goes active, then sweep the pool every
-                        Tuesday. How fast that lands depends on how many builders are listed in your category.
+                        No open matches. We pair a site the moment it is approved, and yours is in the pool from then
+                        on, so the next site approved near your category can be matched with you. Every Tuesday we email
+                        you who is in that pool. How fast a match lands depends on how many builders are listed near
+                        you.
                     </Empty>
                 ) : (
                     <ul className="space-y-4">

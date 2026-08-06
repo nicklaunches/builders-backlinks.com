@@ -207,16 +207,22 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
                 );
             }
             return text(
-                partners
-                    .map((p) =>
-                        [
-                            `${p.partnerId}  ${p.category}  DR ${p.domainRating ?? "unrated"}`,
-                            `  ${p.description}`,
-                            `  wants anchors: ${p.wantedAnchors.join(", ") || "none given"}`,
-                            `  can offer: ${p.placementOffered}   given ${p.linksGiven} / received ${p.linksGot}`,
-                        ].join("\n"),
-                    )
-                    .join("\n\n"),
+                [
+                    partners
+                        .map((p) =>
+                            [
+                                `${p.partnerId}  ${p.category}  DR ${p.domainRating ?? "unrated"}`,
+                                `  ${p.description}`,
+                                `  wants anchors: ${p.wantedAnchors.join(", ") || "none given"}`,
+                                `  can offer: ${p.placementOffered}   given ${p.linksGiven} / received ${p.linksGot}`,
+                            ].join("\n"),
+                        )
+                        .join("\n\n"),
+                    // Said out loud because the id leading each row invites the
+                    // obvious next move, and there is no tool to make it. This
+                    // is browsing, not a shortlist. See issue #18.
+                    "This is a browse: no tool takes a partner id, and picking one of these is not something the exchange supports yet. Matching is automatic. Submit a site with submit_site and you are paired when a partner is approved near your category, then told by email and in list_matches.",
+                ].join("\n\n"),
             );
         }),
     );

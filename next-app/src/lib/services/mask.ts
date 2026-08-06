@@ -22,6 +22,14 @@ import { type MatchState, isRevealed } from "@/lib/exchange";
  * state, and keeping it there means this file imports nothing from the service
  * layer: no service can end up in an import cycle with the one module that
  * decides what may be revealed.
+ *
+ * ON `partnerId`, WHICH THIS FILE USED TO OVERSELL. It said the id existed to
+ * be passed to `propose_trade`. There is no such tool and there never was, so
+ * the weekly digest — reading that comment in good faith — printed the id under
+ * every candidate with a call nobody could make, and a member said so in public
+ * on 2026-08-03. The id is still handed out, and is still safe to hand out: it
+ * is opaque and decodes to nothing. It simply has no consumer yet. Tracked in
+ * issue #18; whatever eventually consumes it should be named here.
  */
 
 /**
@@ -47,8 +55,9 @@ type SiteLike = Pick<
 /**
  * Builds the pre-accept view of a partner.
  *
- * `partnerId` is the site id. It is opaque to the caller and only useful as an
- * argument to `propose_trade`, so handing it out does not reveal anything.
+ * `partnerId` is the site id. It is opaque to the caller and decodes to nothing,
+ * so handing it out does not reveal anything. What it is FOR is a different
+ * question, and the honest answer today is: nothing. See the `@file` block.
  *
  * @param site - The candidate site row.
  * @param counts - Live link counts for this site, from `services/standing.ts`.
