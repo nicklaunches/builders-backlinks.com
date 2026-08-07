@@ -35,6 +35,7 @@ const MIN_COUNT_TO_PRINT = 1;
 const BUILDERS = [
     { handle: "nicklaunches", initials: "NL", src: "/founders/nicklaunches.png" },
     { handle: "hakimuddinkika", initials: "HK", src: "/founders/hakimuddinkika.jpg" },
+    { handle: "vibecodinglist", initials: "VCL", src: "/founders/vibecodinglist.png" },
 ] as const;
 
 type FoundersRowProps = {
