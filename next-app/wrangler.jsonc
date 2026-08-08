@@ -55,11 +55,20 @@
     // RFC 5322 mailbox form is deliberate and `bareAddress` in lib/email/send.ts
     // exists to strip it back to an address for the `mailto:` unsubscribe URI,
     // which cannot carry a display name.
+    //
+    // OPENROUTER_ANALYZE_MODEL is a var and not a secret: a model slug is not a
+    // credential, and keeping it here means the deployed value is readable in
+    // the repo instead of only from `wrangler secret list`, which cannot show
+    // it. It must stay equal to DEFAULT_MODEL in lib/analyze/describe.ts. That
+    // file reads this var FIRST and only falls back to its constant, so a stale
+    // value here silently overrides the code — which is how a reasoning model
+    // stayed in the submit path long enough for a member to report it.
     "vars": {
         "AUTH_URL": "https://builders-backlinks.com",
         "AUTH_TRUST_HOST": "true",
         "AWS_REGION": "us-west-2",
         "EMAIL_FROM": "Builders Backlinks <hello@builders-backlinks.com>",
+        "OPENROUTER_ANALYZE_MODEL": "deepseek/deepseek-v4-flash",
     },
     // Neon Postgres, pooled at the edge. A Hyperdrive binding is NOT an
     // environment variable: the connection string arrives on the Cloudflare

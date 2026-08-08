@@ -1,4 +1,5 @@
 import { CATEGORIES, type Category, isCategory } from "@/lib/categories";
+import { errorDetail } from "@/lib/log";
 
 import type { PageExtract } from "./extract";
 
@@ -35,11 +36,46 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
  * because the whole prompt depends on getting strict JSON back. If you swap it,
  * confirm the replacement supports `response_format` first, or the parse below
  * fails on every single call.
+ *
+ * This was `deepseek-v4-pro` until a member could not list their site at all: a
+ * reasoning model, asked for four sentences of prose, thought its way past the
+ * request budget. Flash is the same family, same 1M context, same
+ * `response_format` and `structured_outputs` support, and roughly a fifth of the
+ * price. The job here is extraction and rephrasing, not reasoning.
+ *
+ * `wrangler.jsonc` sets `OPENROUTER_ANALYZE_MODEL` to this same value, and a var
+ * WINS over this constant. Change the two together or production will quietly
+ * run whatever the var says.
  */
-const DEFAULT_MODEL = "deepseek/deepseek-v4-pro";
+const DEFAULT_MODEL = "deepseek/deepseek-v4-flash";
 
-/** Request budget. Generous: this call is the slow leg of the submit flow and retrying costs more. */
-const LLM_TIMEOUT_MS = 30_000;
+/**
+ * Request budget, PER ATTEMPT rather than per call.
+ *
+ * This used to be a single 30s shot, on the reasoning that "retrying costs
+ * more". It cost more than that: one slow response was a failed submission, and
+ * the member's only recovery was to start over and spend another of their 20
+ * hourly `submit_site` budget. Two attempts at 12s finish sooner than the one
+ * they replace, and only the transient failures are retried (see
+ * {@link isRetryable}) so a bad key or a bad model slug still fails immediately.
+ */
+const LLM_TIMEOUT_MS = 12_000;
+
+/** Attempts per call, including the first. */
+const LLM_ATTEMPTS = 2;
+
+/** Breathing room between attempts. Long enough to clear a blip, short enough that nobody notices. */
+const RETRY_DELAY_MS = 500;
+
+/**
+ * Ceiling on the completion.
+ *
+ * A description caps at {@link MAX_DESCRIPTION} characters and there are at most
+ * {@link MAX_KEYWORDS} short phrases, so this is generous for a well-behaved
+ * response and a hard stop for a runaway one. Without it, the only thing ending a
+ * degenerate generation is the deadline, which is the failure being fixed.
+ */
+const MAX_COMPLETION_TOKENS = 700;
 
 /** Hard cap from the `ExchangeSite.description` schema. */
 const MAX_DESCRIPTION = 2_000;
@@ -301,6 +337,138 @@ function fallbackKeywords(extract: PageExtract, category: Category, tokens: read
 }
 
 /**
+ * A failure that a second attempt might not hit: a timeout, a rate limit, or the
+ * provider's own 5xx.
+ *
+ * The distinction is the whole point of retrying. A 401, a 404 on the model slug
+ * or a malformed body will fail identically forever, and trying again only
+ * spends money and doubles how long the member waits to be told the same thing.
+ */
+class TransientError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "TransientError";
+    }
+}
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * One attempt at the completion. Returns the model's raw message content.
+ *
+ * The `try` wraps the body read as well as the fetch, and that is deliberate:
+ * the same `AbortSignal` covers `res.text()`, so a slow body produces the very
+ * same `DOMException` from a line that looks like it cannot time out.
+ *
+ * @throws `TransientError` when another attempt is worth making, plain `Error` otherwise.
+ */
+async function requestContent(apiKey: string, model: string, system: string, user: string): Promise<string> {
+    let res: Response;
+    let raw: string;
+
+    try {
+        res = await fetch(OPENROUTER_URL, {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${apiKey}`,
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://builders-backlinks.com",
+                "X-Title": "Builders Backlinks Site Analysis",
+            },
+            body: JSON.stringify({
+                model,
+                // These models reason by default, and this job is extraction and
+                // rephrasing. Thinking tokens here buy nothing and cost the
+                // budget that a member is sitting and watching.
+                reasoning: { enabled: false },
+                max_tokens: MAX_COMPLETION_TOKENS,
+                // Default routing is cheapest-first across a dozen providers, and
+                // OpenRouter's failover between them runs inside OUR deadline, so
+                // one slow provider spends the whole budget before the fast one
+                // is ever tried.
+                provider: { sort: "throughput" },
+                response_format: { type: "json_object" },
+                // Low but not zero: the description is prose a human reads, and greedy
+                // decoding on these models produces noticeably more template-y copy.
+                temperature: 0.2,
+                messages: [
+                    { role: "system", content: system },
+                    { role: "user", content: user },
+                ],
+            }),
+            signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+        });
+
+        raw = await res.text();
+    } catch (err) {
+        // Same translation the page fetcher does in `fetch-html.ts`. Without it
+        // workerd's raw "The operation was aborted due to timeout" is what the
+        // caller concatenates into member-facing copy.
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes("aborted") || message.includes("timeout")) {
+            throw new TransientError("the description service took too long");
+        }
+        throw new TransientError(`the description service could not be reached: ${message}`);
+    }
+
+    if (!res.ok) {
+        // OpenRouter's request id is the only handle their support has on a
+        // specific call, and it is gone the moment this response is discarded.
+        const requestId = res.headers.get("x-request-id");
+        const detail = [`OpenRouter ${res.status}`, requestId ? `(req ${requestId})` : "", raw.slice(0, 300)]
+            .filter(Boolean)
+            .join(" ");
+        if (res.status === 429 || res.status >= 500) throw new TransientError(detail);
+        throw new Error(detail);
+    }
+
+    let envelope: { choices?: { message?: { content?: string } }[] };
+    try {
+        envelope = JSON.parse(raw) as typeof envelope;
+    } catch {
+        throw new Error("OpenRouter returned an unreadable response");
+    }
+
+    const content = envelope.choices?.[0]?.message?.content;
+    if (!content) throw new Error("OpenRouter returned no content");
+    return content;
+}
+
+/**
+ * {@link requestContent}, retried once on a transient failure.
+ *
+ * Every attempt that fails is logged, because until now this failure was
+ * completely invisible: nothing on this path wrote to the console, so a member
+ * report was the only way to learn it had happened at all. `errorDetail` rather
+ * than a bare `err`, for the reason `lib/log.ts` documents at length.
+ */
+async function completeWithRetry(
+    apiKey: string,
+    model: string,
+    domain: string,
+    system: string,
+    user: string,
+): Promise<string> {
+    for (let attempt = 1; ; attempt++) {
+        const startedAt = Date.now();
+        try {
+            const content = await requestContent(apiKey, model, system, user);
+            if (attempt > 1) {
+                // A rising retry rate is the early warning for the failure this
+                // was written for. It is only visible if the recovery is logged.
+                console.warn("describe: recovered on retry", { model, domain, attempt });
+            }
+            return content;
+        } catch (err) {
+            const elapsedMs = Date.now() - startedAt;
+            console.error("describe: attempt failed", { model, domain, attempt, elapsedMs }, errorDetail(err));
+            if (!(err instanceof TransientError) || attempt >= LLM_ATTEMPTS) throw err;
+            await delay(RETRY_DELAY_MS);
+        }
+    }
+}
+
+/**
  * Generates the category, identity-scrubbed description, and anchor keywords.
  *
  * The API key is read here rather than at module load so a missing key surfaces
@@ -317,37 +485,7 @@ export async function describeSite(extract: PageExtract, domain: string): Promis
     const model = process.env.OPENROUTER_ANALYZE_MODEL || DEFAULT_MODEL;
 
     const { system, user } = buildPrompt(extract);
-
-    const res = await fetch(OPENROUTER_URL, {
-        method: "POST",
-        headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://builders-backlinks.com",
-            "X-Title": "Builders Backlinks Site Analysis",
-        },
-        body: JSON.stringify({
-            model,
-            response_format: { type: "json_object" },
-            // Low but not zero: the description is prose a human reads, and greedy
-            // decoding on these models produces noticeably more template-y copy.
-            temperature: 0.2,
-            messages: [
-                { role: "system", content: system },
-                { role: "user", content: user },
-            ],
-        }),
-        signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
-    });
-
-    if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(`OpenRouter ${res.status}: ${text.slice(0, 300)}`);
-    }
-
-    const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-    const content = json.choices?.[0]?.message?.content;
-    if (!content) throw new Error("OpenRouter returned no content");
+    const content = await completeWithRetry(apiKey, model, domain, system, user);
 
     let parsed: unknown;
     try {

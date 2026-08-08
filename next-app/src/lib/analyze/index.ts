@@ -154,8 +154,11 @@ export const analyzeSite: AnalyzeSite = async (rawUrl: string): Promise<SiteAnal
     const [authority, described] = await Promise.all([
         getAuthorityScores(domain),
         describeSite(extract, domain).catch((err: unknown) => {
+            // The full stop is load-bearing. Both callers append a hint sentence
+            // to this message with a single space, so without it the member
+            // reads two sentences run together.
             const message = err instanceof Error ? err.message : String(err);
-            throw new AnalyzeError("llm_failed", `Could not generate a site description: ${message}`);
+            throw new AnalyzeError("llm_failed", `Could not generate a site description: ${message}.`);
         }),
     ]);
 

@@ -2,7 +2,7 @@
 
 import { signDraft, verifyDraft } from "@/app/submit/draft-signature";
 import type { Category } from "@/lib/categories";
-import { AnalyzeError } from "@/lib/contracts";
+import { AnalyzeError, analyzeFailureHint } from "@/lib/contracts";
 import { RateLimited, enforceToolLimit, memberCaller, rateLimitedMessage } from "@/lib/limits";
 import { SiteError, commitSite, draftSite } from "@/lib/services/sites";
 import { getSessionMember } from "@/lib/session";
@@ -14,10 +14,12 @@ import { getSessionMember } from "@/lib/session";
  * `draftSiteAction` first and nothing is written, call `commitSiteAction` only
  * after a human has read the drafted words. Both call the exact same service
  * functions (`draftSite`, `commitSite`) in the exact same order as
- * `src/lib/mcp/tools.ts`, and the error text is copied from `explain()` there.
- * If the two ever say different things about the same failure, one of the two
- * interfaces has started to drift and the agent one is supposed to be
- * first-class.
+ * `src/lib/mcp/tools.ts`, and the error text comes from `analyzeFailureHint()`
+ * in `@/lib/contracts`, which `explain()` there calls too. It used to be copied,
+ * with a comment here promising the copy stayed word for word; it did not, and
+ * the agent path lost four of the six hints. If the two ever say different
+ * things about the same failure, one of the two interfaces has started to drift
+ * and the agent one is supposed to be first-class.
  *
  * Neither surface pairs on submit. `autoPair` refuses anything that is not
  * `active` and a listing is `pending_review` until review clears it, so both
@@ -108,25 +110,15 @@ export async function draftSiteAction(_previous: DraftState, formData: FormData)
     }
 }
 
-/** Mirrors `explain()` in `src/lib/mcp/tools.ts`, word for word where it applies. */
+/**
+ * Says the same thing as `explain()` in `src/lib/mcp/tools.ts`, by calling the
+ * same function rather than by promising to. This used to be a second copy of
+ * the hints, and the two drifted.
+ */
 function explainAnalyzeFailure(err: unknown): string {
     if (err instanceof RateLimited) return rateLimitedMessage(err);
     if (err instanceof AnalyzeError) {
-        const hint =
-            err.code === "too_thin"
-                ? "The exchange only lists real sites with real content. If this is a live product page, tell us and a human will look."
-                : err.code === "unreachable"
-                  ? "Check the URL is right and the site is publicly reachable."
-                  : err.code === "invalid_url"
-                    ? "Include the full address, starting with https://."
-                    : err.code === "not_html"
-                      ? "That address did not return a web page we could read."
-                      : err.code === "blocked"
-                        ? "The site refused our request. If it sits behind a bot wall, tell us and a human will look."
-                        : err.code === "llm_failed"
-                          ? "We could not draft a description just now. Try again in a moment."
-                          : "";
-        return [`Could not analyze that site: ${err.message}`, hint].filter(Boolean).join(" ");
+        return [`Could not analyze that site: ${err.message}`, analyzeFailureHint(err.code)].filter(Boolean).join(" ");
     }
     console.error("submit: draft failed", err);
     return "Something went wrong on our side. Nothing was changed. Try again in a moment.";

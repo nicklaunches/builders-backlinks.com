@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 import { CATEGORIES } from "@/lib/categories";
-import { AnalyzeError } from "@/lib/contracts";
+import { AnalyzeError, analyzeFailureHint } from "@/lib/contracts";
 import type { ExchangeMember } from "@/lib/db/schema";
 import { PLACEMENT_OFFERS } from "@/lib/exchange";
 import { RateLimited, enforceToolLimit } from "@/lib/limits";
@@ -88,13 +88,12 @@ function explain(err: unknown): TextResult {
         );
     }
     if (err instanceof AnalyzeError) {
-        const hint =
-            err.code === "too_thin"
-                ? "The exchange only lists real sites with real content. If this is a live product page, tell us and a human will look."
-                : err.code === "unreachable"
-                  ? "Check the URL is right and the site is publicly reachable."
-                  : "";
-        return failure([`Could not analyze that site: ${err.message}`, hint].filter(Boolean).join(" "));
+        // Shared with the web path rather than copied from it. The copy here was
+        // missing four of the six codes, which is exactly the drift the comment
+        // in `src/app/submit/actions.ts` promised would not happen.
+        return failure(
+            [`Could not analyze that site: ${err.message}`, analyzeFailureHint(err.code)].filter(Boolean).join(" "),
+        );
     }
     if (err instanceof SiteError || err instanceof MatchError || err instanceof LinkError) {
         return failure(err.message);

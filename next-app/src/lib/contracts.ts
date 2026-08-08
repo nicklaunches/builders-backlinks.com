@@ -53,13 +53,51 @@ export type SiteAnalysis = {
     title: string | null;
 };
 
+export type AnalyzeErrorCode = "invalid_url" | "unreachable" | "not_html" | "blocked" | "too_thin" | "llm_failed";
+
 export class AnalyzeError extends Error {
     constructor(
-        public readonly code: "invalid_url" | "unreachable" | "not_html" | "blocked" | "too_thin" | "llm_failed",
+        public readonly code: AnalyzeErrorCode,
         message: string,
     ) {
         super(message);
         this.name = "AnalyzeError";
+    }
+}
+
+/**
+ * What to tell a member after each analysis failure, beyond what went wrong.
+ *
+ * One copy, deliberately, and it lives here rather than in `src/lib/analyze`
+ * because the MCP layer is not allowed to import that leaf. There were two
+ * copies: `explain()` in `src/lib/mcp/tools.ts` and `explainAnalyzeFailure()` in
+ * `src/app/submit/actions.ts`, the second of which claimed in a comment to
+ * mirror the first "word for word". It did not. The agent path was missing four
+ * of the six branches, including `llm_failed`, so when a slow LLM broke a
+ * submission the browser said "try again in a moment" and the agent — the path
+ * this product treats as first-class — was told nothing and had no reason to
+ * retry.
+ *
+ * The switch is exhaustive on {@link AnalyzeErrorCode} on purpose: adding a
+ * seventh code is then a compile error here rather than a silently empty hint.
+ *
+ * @param code - The failure code from an `AnalyzeError`.
+ * @returns A sentence to append, or "" where the message already says enough.
+ */
+export function analyzeFailureHint(code: AnalyzeErrorCode): string {
+    switch (code) {
+        case "too_thin":
+            return "The exchange only lists real sites with real content. If this is a live product page, tell us and a human will look.";
+        case "unreachable":
+            return "Check the URL is right and the site is publicly reachable.";
+        case "invalid_url":
+            return "Include the full address, starting with https://.";
+        case "not_html":
+            return "That address did not return a web page we could read.";
+        case "blocked":
+            return "The site refused our request. If it sits behind a bot wall, tell us and a human will look.";
+        case "llm_failed":
+            return "We could not draft a description just now. Try again in a moment.";
     }
 }
 
