@@ -31,10 +31,17 @@ import { FounderModal } from "@/components/web/founder-modal";
  */
 const MIN_COUNT_TO_PRINT = 1;
 
-/** Avatars are local files, not hotlinked profile pictures that can vanish. */
+/**
+ * Avatars are local files, not hotlinked profile pictures that can vanish.
+ *
+ * `handle` is load-bearing twice over: it names the link for a screen reader and
+ * it is the path of the X profile the avatar points at. Write it exactly as X
+ * spells it, trailing underscore and all, or the link lands on a stranger.
+ */
 const BUILDERS = [
     { handle: "nicklaunches", initials: "NL", src: "/founders/nicklaunches.png" },
     { handle: "hakimuddinkika", initials: "HK", src: "/founders/hakimuddinkika.jpg" },
+    { handle: "josefandre_", initials: "JA", src: "/founders/josefandre.jpg" },
 ] as const;
 
 type FoundersRowProps = {
@@ -43,13 +50,18 @@ type FoundersRowProps = {
 };
 
 /**
- * One avatar: a monogram with the photo laid over it.
+ * One avatar: a monogram with the photo laid over it, linking to X.
  *
  * The monogram is always rendered rather than swapped in when the photo fails.
  * The slot is then never empty: not before the file exists, not while a lazy
  * image has yet to start loading, and not in the gap between the request and its
  * error. Swapping instead of layering left a hole exactly the size of an avatar,
  * which reads as a broken page.
+ *
+ * The link is named on the anchor rather than by the image, for the same reason.
+ * `alt` would be the only accessible name here, and the image unmounts when it
+ * fails, leaving a link with no name at all. Naming the anchor makes what a
+ * screen reader announces independent of whether the file loaded.
  */
 function Avatar({ handle, initials, src }: (typeof BUILDERS)[number]) {
     const [failed, setFailed] = useState(false);
@@ -58,7 +70,23 @@ function Avatar({ handle, initials, src }: (typeof BUILDERS)[number]) {
         // ring-bg, not a border: the ring is drawn outside the circle, so the
         // avatars keep their full size while still reading as separated where
         // they overlap.
-        <span className="ring-bg relative inline-flex rounded-full ring-2">
+        //
+        // Two details follow from that overlap and from how the ring is drawn.
+        // `transition-shadow`, because a ring IS a box-shadow, and
+        // `transition-colors` does not cover it — the hover would otherwise
+        // snap. And `z-10` while hovered or focused, because the next avatar is
+        // pulled over this one by -space-x-2 and would clip both the accent ring
+        // and the global :focus-visible outline.
+        <a
+            href={`https://x.com/${handle}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={`@${handle}`}
+            aria-label={`@${handle} on X`}
+            className={cn(
+                "ring-bg hover:ring-accent relative inline-flex rounded-full ring-2",
+                "transition-shadow hover:z-10 focus-visible:z-10",
+            )}>
             <span
                 aria-hidden="true"
                 className="bg-accent-soft text-accent-text flex size-9 items-center justify-center rounded-full font-mono text-[11px] font-semibold tracking-tight">
@@ -80,7 +108,7 @@ function Avatar({ handle, initials, src }: (typeof BUILDERS)[number]) {
                 */
                 <Image
                     src={src}
-                    alt={`@${handle}`}
+                    alt=""
                     width={72}
                     height={72}
                     unoptimized
@@ -89,7 +117,7 @@ function Avatar({ handle, initials, src }: (typeof BUILDERS)[number]) {
                     className="absolute inset-0 size-9 rounded-full object-cover"
                 />
             )}
-        </span>
+        </a>
     );
 }
 
