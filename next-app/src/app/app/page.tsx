@@ -88,6 +88,21 @@ export default async function DashboardPage() {
             // on. Deriving it from `state` here is impossible without that.
             waitingOnMe: match.waitingOnMe,
             waitingOnThem: !match.waitingOnMe && (match.state === "a_accepted" || match.state === "b_accepted"),
+            // Straight through from the service. The ledger below is NOT the
+            // source for these: it is capped at 100 rows and truncates, and the
+            // MCP surface needs the same facts anyway.
+            myLink: match.myLink && {
+                pageUrl: match.myLink.pageUrl,
+                anchorText: match.myLink.anchorText,
+                status: match.myLink.status,
+                placement: match.myLink.placement,
+                // Named for what the member is told, not for the raw `rel` array.
+                dofollow: !match.myLink.rel.includes("nofollow"),
+                // Formatted here, like `expires` above, so the client renders a
+                // string and cannot drift between server and hydration.
+                checked: match.myLink.lastCheckedAt ? DATE.format(match.myLink.lastCheckedAt) : null,
+            },
+            theirLinkStatus: match.theirLink?.status ?? null,
         };
     });
 

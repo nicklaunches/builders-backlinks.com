@@ -11,7 +11,9 @@ import { DigestEmail } from "../src/emails/digest";
 import { LinkRemovedEmail } from "../src/emails/link-removed";
 import { LinkVerifiedEmail } from "../src/emails/link-verified";
 import { MatchAgreedEmail } from "../src/emails/match-agreed";
+import { MatchExpiredEmail } from "../src/emails/match-expired";
 import { MatchProposedEmail } from "../src/emails/match-proposed";
+import { PlacementPendingEmail } from "../src/emails/placement-pending";
 import { SiteApprovedEmail } from "../src/emails/site-approved";
 import { SiteRejectedEmail } from "../src/emails/site-rejected";
 import { SubmissionReceivedEmail } from "../src/emails/submission-received";
@@ -155,6 +157,32 @@ const fixtures: Fixture[] = [
             matchId: "6650f0c4a1b2c3d4e5f6aaaa",
             partner: revealedPartner,
             brief,
+        }),
+    },
+    {
+        name: "placement-pending",
+        subject: "They placed their link, yours is still outstanding",
+        masked: false,
+        element: createElement(PlacementPendingEmail, {
+            matchId: "6650f0c4a1b2c3d4e5f6aaaa",
+            partner: revealedPartner,
+            targetUrl: PARTNER_URL,
+            anchorOptions: brief.anchorOptions,
+            partnerPlaced: true,
+            expires: "20 Aug 2026",
+        }),
+    },
+    {
+        // `masked: true` is the point of this fixture, not an oversight. A match
+        // can expire from `proposed`, where the two sides were never revealed,
+        // so this template takes no partner at all and the assertion below is
+        // what keeps it that way if someone later tries to make it warmer.
+        name: "match-expired",
+        subject: "A match expired, and you are back in the pool",
+        masked: true,
+        element: createElement(MatchExpiredEmail, {
+            category: "Developer Tools",
+            wasAgreed: true,
         }),
     },
     {

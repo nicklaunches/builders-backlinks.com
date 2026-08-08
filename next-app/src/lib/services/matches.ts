@@ -4,15 +4,24 @@ import { type Category, candidateCategories, isCategory } from "@/lib/categories
 import type { LiveLinkCounts, MaskedPartner, MatchableSite, RevealedPartner, ScoreContext } from "@/lib/contracts";
 import { db } from "@/lib/db";
 import {
+    type ExchangeLink,
     type ExchangeMatch,
     type ExchangeMember,
     type ExchangeSite,
+    exchangeLinks,
     exchangeMatches,
     exchangeMembers,
     exchangeSites,
 } from "@/lib/db/schema";
 import { notifyMatchAgreed, notifyMatchProposed } from "@/lib/email/notify";
-import { type MatchState, OPEN_MATCH_STATES, isRevealed, orderPair } from "@/lib/exchange";
+import {
+    type LinkStatus,
+    type MatchState,
+    OPEN_MATCH_STATES,
+    type Placement,
+    isRevealed,
+    orderPair,
+} from "@/lib/exchange";
 import { findBestPartner } from "@/lib/matching";
 import { briefFor } from "@/lib/services/links";
 import { toMaskedPartner, toRevealedPartner } from "@/lib/services/mask";
@@ -510,6 +519,23 @@ async function upsertMatch(input: {
     return { match: existing, created: false };
 }
 
+/**
+ * One direction of a trade, as much of it as a match view needs.
+ *
+ * Deliberately NOT `LinkLedgerRow`. That type is the ledger's contract and
+ * carries `direction`, which here is already said by the field name (`myLink`
+ * vs `theirLink`); reusing it would mean two callers pinning one shape for
+ * unrelated reasons.
+ */
+export type MatchLinkSummary = {
+    pageUrl: string | null;
+    anchorText: string | null;
+    status: LinkStatus;
+    placement: Placement;
+    rel: string[];
+    lastCheckedAt: Date | null;
+};
+
 export type MatchView = {
     matchId: string;
     state: MatchState;
@@ -554,18 +580,49 @@ export type MatchView = {
      */
     waitingOnMe: boolean;
     expiresAt: Date;
+    /**
+     * The viewer's own placement, once they have reported one. Null until then.
+     *
+     * Without this both surfaces are blind to work that is already done: the
+     * dashboard re-renders an empty "where did you put it" form on every reload,
+     * and `nextStep` keeps asking for a placement that exists. Neither could tell,
+     * because a match stays `agreed` until BOTH directions are live, so `state`
+     * alone cannot distinguish "you have not placed" from "they have not".
+     *
+     * Safe against the masking boundary: `markLinkPlaced` refuses unless the
+     * match is revealed, so a link row cannot exist before agreement.
+     */
+    myLink: MatchLinkSummary | null;
+    /** The partner's placement back. Null until they report one. */
+    theirLink: MatchLinkSummary | null;
 };
+
+/** The columns a match view needs, from the row the database already handed us. */
+function toLinkSummary(link: ExchangeLink): MatchLinkSummary {
+    return {
+        pageUrl: link.pageUrl,
+        anchorText: link.anchorText,
+        status: link.status,
+        placement: link.placement,
+        rel: link.rel,
+        lastCheckedAt: link.lastCheckedAt,
+    };
+}
 
 /**
  * @param partnerCounts - Live link counts for every partner in the batch, when
  *   the caller is building more than one view. `listMatches` renders up to 50,
  *   and resolving standing per view would be 50 round trips for one page.
  *   Omitted by the single-view callers, which then pay one query.
+ * @param linksByMatch - Same bargain for the links on each match, keyed by match
+ *   id. Built once by `listMatches`; omitted by the single-view callers, which
+ *   then pay one query each.
  */
 async function buildMatchView(
     match: ExchangeMatch,
     viewerSiteIds: Set<string>,
     partnerCounts?: Map<string, LiveLinkCounts>,
+    linksByMatch?: Map<string, ExchangeLink[]>,
 ): Promise<MatchView | null> {
     const mineIsA = viewerSiteIds.has(match.siteAId);
     const mySiteId = mineIsA ? match.siteAId : match.siteBId;
@@ -592,8 +649,28 @@ async function buildMatchView(
         partner = toMaskedPartner(partnerSite, counts);
     }
 
+    const links = linksByMatch
+        ? (linksByMatch.get(match.id) ?? [])
+        : await db().select().from(exchangeLinks).where(eq(exchangeLinks.matchId, match.id));
+    const myLinkRow = links.find((l) => l.fromSiteId === mySiteId) ?? null;
+    const theirLinkRow = links.find((l) => l.fromSiteId === partnerSiteId) ?? null;
+    const myLink = myLinkRow ? toLinkSummary(myLinkRow) : null;
+    const theirLink = theirLinkRow ? toLinkSummary(theirLinkRow) : null;
+
     const myAcceptState = mineIsA ? "a_accepted" : "b_accepted";
     const theirAcceptState = mineIsA ? "b_accepted" : "a_accepted";
+
+    // `agreed` covers three different situations for the viewer, and telling all
+    // three to go place a link is wrong for two of them. The state cannot
+    // separate them on its own: it only leaves `agreed` when BOTH directions are
+    // live, so it says nothing about which side is the holdup.
+    const agreedStep =
+        myLink === null
+            ? "Agreed. Call get_link_brief for this match, place their link on your site, then call mark_link_placed."
+            : myLink.status === "live"
+              ? "Your link is live. Waiting on them to place theirs. Nothing to do."
+              : "We recorded your page but could not confirm the link yet. Call mark_link_placed again if you have since fixed it.";
+
     const nextStep =
         state === "proposed"
             ? "They have not responded yet either. Accept to signal you are in, and if they accept too you are both revealed to each other."
@@ -602,7 +679,7 @@ async function buildMatchView(
               : state === theirAcceptState
                 ? "They have accepted and are waiting on you. Accept to reveal both sides and get the link brief."
                 : state === "agreed"
-                  ? "Agreed. Call get_link_brief for this match, place their link on your site, then call mark_link_placed."
+                  ? agreedStep
                   : state === "placed"
                     ? "Both links are placed. We recheck at day 7, day 30, then monthly."
                     : state === "declined"
@@ -620,6 +697,8 @@ async function buildMatchView(
         nextStep,
         waitingOnMe: state === theirAcceptState,
         expiresAt: match.expiresAt,
+        myLink,
+        theirLink,
     };
 }
 
@@ -655,7 +734,28 @@ export async function listMatches(member: ExchangeMember, state?: MatchState): P
     // Which side is the partner is known from the row alone, so every partner's
     // standing comes back in one query rather than one per rendered match.
     const partnerCounts = await liveLinkCounts(matches.map((m) => (idSet.has(m.siteAId) ? m.siteBId : m.siteAId)));
-    const views = await Promise.all(matches.map((m) => buildMatchView(m, idSet, partnerCounts)));
+
+    // Same bargain as `partnerCounts` above: one query for the whole page rather
+    // than one per rendered match.
+    const linksByMatch = new Map<string, ExchangeLink[]>();
+    if (matches.length > 0) {
+        const rows = await db()
+            .select()
+            .from(exchangeLinks)
+            .where(
+                inArray(
+                    exchangeLinks.matchId,
+                    matches.map((m) => m.id),
+                ),
+            );
+        for (const row of rows) {
+            const bucket = linksByMatch.get(row.matchId);
+            if (bucket) bucket.push(row);
+            else linksByMatch.set(row.matchId, [row]);
+        }
+    }
+
+    const views = await Promise.all(matches.map((m) => buildMatchView(m, idSet, partnerCounts, linksByMatch)));
     return views.filter((v): v is MatchView => v !== null);
 }
 

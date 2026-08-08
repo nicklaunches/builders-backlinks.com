@@ -62,6 +62,26 @@ export type MatchRow = {
     waitingOnThem: boolean;
     /** True when the other side accepted first and the ball is here. */
     waitingOnMe: boolean;
+    /**
+     * The viewer's own placement, once reported. Null until then.
+     *
+     * Before this existed the only evidence a placement had happened was the
+     * `useActionState` report from a submit made in THIS browser session, so a
+     * reload — or a placement made through the MCP server, which is the path
+     * this product prefers — re-rendered an empty form as if nothing had been
+     * done. Dates arrive preformatted, like `expires`, so the client never
+     * formats one and cannot drift on hydration.
+     */
+    myLink: {
+        pageUrl: string | null;
+        anchorText: string | null;
+        status: string;
+        placement: string;
+        dofollow: boolean;
+        checked: string | null;
+    } | null;
+    /** The partner's side, reduced to the one word this card reports. */
+    theirLinkStatus: string | null;
 };
 
 /** The agent-facing `nextStep`, restated for someone looking at a screen. */
@@ -70,7 +90,14 @@ function uiNextStep(row: MatchRow): string {
         case "proposed":
             return "Neither of you has responded yet. Accept to signal you are in. If they accept too, you are revealed to each other.";
         case "agreed":
-            return "Agreed. Get the snippet below, put it on your site, then paste the page URL back here so we can verify it.";
+            // Three situations wear one state. See the matching branch in
+            // `buildMatchView`: `agreed` only ends when BOTH links are live, so
+            // it cannot say on its own which side is the holdup.
+            return row.myLink === null
+                ? "Agreed. Get the snippet below, put it on your site, then paste the page URL back here so we can verify it."
+                : row.myLink.status === "live"
+                  ? "Your link is live. Waiting on them to place theirs. Nothing to do."
+                  : "We have your page on file but could not confirm the link yet. Update the URL below if you have since fixed it.";
         case "placed":
             return "Both links are live. We recheck at day 7, day 30, then monthly, and tell you both if either comes down.";
         case "declined":
@@ -245,8 +272,11 @@ function AgreedTools({ row }: { row: MatchRow }) {
     const [brief, briefAction, loadingBrief] = useActionState(getLinkBriefAction, BRIEF_INITIAL);
     const [place, placeAction, placing] = useActionState(markLinkPlacedAction, PLACE_INITIAL);
     const [format, setFormat] = useState<(typeof FORMATS)[number]["id"]>("html");
-    const [pageUrl, setPageUrl] = useState("");
-    const [anchor, setAnchor] = useState("");
+    // Seeded from what is already recorded, so "update the URL" starts from the
+    // current answer rather than making someone retype it.
+    const [pageUrl, setPageUrl] = useState(row.myLink?.pageUrl ?? "");
+    const [anchor, setAnchor] = useState(row.myLink?.anchorText ?? "");
+    const [editing, setEditing] = useState(false);
     const urlId = useId();
     const anchorId = useId();
 
@@ -317,9 +347,14 @@ function AgreedTools({ row }: { row: MatchRow }) {
                 </div>
             ) : null}
 
-            {/* Step two: report where it went, and verify it for real. */}
+            {/* Step two: report where it went, and verify it for real. Once
+                something IS recorded, show it instead of an empty form: the form
+                on its own reads as "you have not done this", which was wrong for
+                anyone who placed through the MCP server or simply reloaded. */}
             {report ? (
                 <PlacementResult report={report} />
+            ) : row.myLink && !editing ? (
+                <PlacedSummary link={row.myLink} onEdit={() => setEditing(true)} />
             ) : (
                 <form action={placeAction} className="mt-6">
                     <input type="hidden" name="matchId" value={row.matchId} />
@@ -370,8 +405,81 @@ function AgreedTools({ row }: { row: MatchRow }) {
                             dofollow. A few seconds.
                         </p>
                     ) : null}
+
+                    {row.myLink && editing ? (
+                        <button
+                            type="button"
+                            onClick={() => setEditing(false)}
+                            className="text-muted mt-3 block text-[13.5px] underline underline-offset-4">
+                            Keep what we already have
+                        </button>
+                    ) : null}
                 </form>
             )}
+
+            <TheirSide status={row.theirLinkStatus} />
+        </div>
+    );
+}
+
+/**
+ * What we already hold for the viewer's own half of the trade.
+ *
+ * Reports and does not referee, per the placement rule: a footer link or a
+ * nofollow is stated plainly and never marked as wrong. Where the link goes was
+ * promised to be the member's call.
+ */
+function PlacedSummary({ link, onEdit }: { link: NonNullable<MatchRow["myLink"]>; onEdit: () => void }) {
+    const live = link.status === "live";
+    return (
+        <div
+            className={cn(
+                "mt-6 rounded-sm border p-5",
+                live ? "border-term-ok/40 bg-term-ok/10" : "border-line bg-surface-2/60",
+            )}>
+            <p className="flex items-start gap-2.5 text-[14px] leading-relaxed">
+                {live ? (
+                    <Check aria-hidden="true" className="text-term-ok mt-0.5 size-4 shrink-0" />
+                ) : (
+                    <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+                )}
+                <span>
+                    {live
+                        ? `Live, in ${link.placement === "unknown" ? "an unclassified spot" : link.placement}, ${link.dofollow ? "dofollow" : "nofollow"}.`
+                        : "Recorded, but we have not been able to confirm the link on that page yet."}
+                </span>
+            </p>
+
+            <dl className="border-line mt-4 grid gap-px overflow-hidden rounded-sm border sm:grid-cols-2">
+                <Fact label="Page" value={link.pageUrl ?? "No page recorded"} />
+                <Fact label="Anchor" value={link.anchorText || "Not recorded"} />
+            </dl>
+
+            {link.checked ? <p className="text-muted mt-3 text-[13px]">Last checked {link.checked}.</p> : null}
+
+            <button
+                type="button"
+                onClick={onEdit}
+                className="text-accent-text mt-4 text-[13.5px] underline underline-offset-4">
+                Wrong page? Update the URL
+            </button>
+        </div>
+    );
+}
+
+/** The other half, so the card answers "am I waiting on them or are they on me". */
+function TheirSide({ status }: { status: string | null }) {
+    const message =
+        status === "live"
+            ? "Their link is live too."
+            : status === null
+              ? "They have not placed yours yet. We will email you when they do."
+              : "They have reported a page, and we have not been able to confirm it yet.";
+
+    return (
+        <div className="border-line mt-6 border-t pt-6">
+            <h4 className="text-muted font-mono text-[11px] tracking-[0.14em] uppercase">Their side</h4>
+            <p className="text-muted mt-2 text-[14px] leading-relaxed">{message}</p>
         </div>
     );
 }

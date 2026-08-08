@@ -1,12 +1,13 @@
-import { and, eq, inArray, isNotNull, lt, notExists, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, lt, notExists, or, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
 import { exchangeLinks, exchangeMatches, exchangeSites } from "@/lib/db/schema";
 import { isAuthorizedCron } from "@/lib/email/cron-auth";
-import { notifyLinkRemoved } from "@/lib/email/notify";
+import { notifyLinkRemoved, notifyMatchExpired, notifyPlacementPending } from "@/lib/email/notify";
 import { GIVE_UP_AFTER_CHECKS, OPEN_MATCH_STATES, nextCheckAt } from "@/lib/exchange";
 import { errorDetail } from "@/lib/log";
+import { briefFor } from "@/lib/services/links";
 import { autoPair, previewPair } from "@/lib/services/matches";
 import { verifyLink } from "@/lib/verify";
 
@@ -88,14 +89,49 @@ export async function GET(request: Request) {
     // `declined` and `placed` are terminal and deliberately excluded: a placed
     // match has real links behind it and must never be reopened by a clock.
     // ---------------------------------------------------------------------
+    // Returns both site ids and the state it expired FROM, because expiry used
+    // to be silent: a member watched a partner disappear off the dashboard with
+    // no message before it or after. The prior state decides the wording, since a
+    // match can lapse from `proposed`, where the two were never revealed.
     const expired = await db()
         .update(exchangeMatches)
         .set({ state: "expired", updatedAt: now })
         .where(and(inArray(exchangeMatches.state, [...OPEN_MATCH_STATES]), lt(exchangeMatches.expiresAt, now)))
-        .returning({ id: exchangeMatches.id });
+        .returning({
+            id: exchangeMatches.id,
+            siteAId: exchangeMatches.siteAId,
+            siteBId: exchangeMatches.siteBId,
+            category: exchangeMatches.category,
+            agreedAt: exchangeMatches.agreedAt,
+        });
 
     if (expired.length > 0) {
         console.log(`recheck: expired ${expired.length} match(es) past their deadline`);
+
+        // One member's missing row must not abort the sweep, and the sweep is
+        // what frees sites back into the pool for the re-pair pass below.
+        try {
+            const siteIds = [...new Set(expired.flatMap((m) => [m.siteAId, m.siteBId]))];
+            const sites = await db().select().from(exchangeSites).where(inArray(exchangeSites.id, siteIds));
+            const byId = new Map(sites.map((s) => [s.id, s]));
+
+            for (const match of expired) {
+                for (const id of [match.siteAId, match.siteBId]) {
+                    const site = byId.get(id);
+                    if (!site) continue;
+                    void notifyMatchExpired({
+                        site,
+                        category: match.category,
+                        wasAgreed: match.agreedAt !== null,
+                    });
+                }
+            }
+        } catch (err) {
+            // `errorDetail`, not a bare `console.error`: workerd renders a raw
+            // caught error as a minified stack, which is how the matching bug
+            // stayed invisible for nine days.
+            console.error(`recheck: expiry notifications failed: ${errorDetail(err)}`);
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -239,6 +275,28 @@ export async function GET(request: Request) {
         console.log(`recheck: re-pair batch was full at ${PAIR_BATCH}, more idle sites remain for tomorrow`);
     }
 
+    // ---------------------------------------------------------------------
+    // Nudge agreed matches where a link is still missing.
+    //
+    // Nothing used to be sent between `match-agreed` and expiry, and the weekly
+    // digest SKIPS anyone holding an open match, so a member who agreed and then
+    // forgot heard from us not at all until the match vanished. Both halves of a
+    // trade could stall forever with neither side told.
+    //
+    // Only the side that owes something is mailed. `lastNudgedAt` is the
+    // high-water mark that stops a nightly pass from mailing nightly; with the
+    // two windows below it lands on roughly day 3 and day 10 of an agreed match.
+    // ---------------------------------------------------------------------
+    let nudged = 0;
+    if (!dryRun) {
+        try {
+            nudged = await nudgePendingPlacements(now);
+            if (nudged > 0) console.log(`recheck: nudged ${nudged} member(s) sitting on an unplaced link`);
+        } catch (err) {
+            console.error(`recheck: placement nudge pass failed: ${errorDetail(err)}`);
+        }
+    }
+
     // Oldest checked first, so a backlog drains fairly rather than starving the
     // links that have waited longest. NULLS FIRST is explicit: a link that has
     // never been checked has waited longest of all, and an ascending sort in
@@ -366,9 +424,107 @@ export async function GET(request: Request) {
     return NextResponse.json({
         expired: expired.length,
         repair: { dryRun, idle: idle.length, paired, failed, pairs },
+        nudged,
         due: due.length,
         checked,
         removed,
         inconclusive,
     });
 }
+
+/** Wait this long after agreement before the first nudge. */
+const NUDGE_AFTER_DAYS = 3;
+/** And this long between nudges, so the second lands around day 10. */
+const NUDGE_EVERY_DAYS = 7;
+/** Matches considered per run, matching the restraint of {@link PAIR_BATCH}. */
+const NUDGE_BATCH = 25;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Mails whoever owes a link on an agreed match, and stamps the match.
+ *
+ * A match leaves `agreed` only when BOTH directions are live, so every row this
+ * finds has at least one side outstanding. Which side is decided per match from
+ * the links actually recorded, and only that side hears about it: a nudge that
+ * reaches the member who already placed reads as an accusation.
+ *
+ * @returns how many members were mailed.
+ */
+async function nudgePendingPlacements(now: Date): Promise<number> {
+    const agreedBefore = new Date(now.getTime() - NUDGE_AFTER_DAYS * DAY_MS);
+    const nudgedBefore = new Date(now.getTime() - NUDGE_EVERY_DAYS * DAY_MS);
+
+    const due = await db()
+        .select()
+        .from(exchangeMatches)
+        .where(
+            and(
+                eq(exchangeMatches.state, "agreed"),
+                lt(exchangeMatches.agreedAt, agreedBefore),
+                or(isNull(exchangeMatches.lastNudgedAt), lt(exchangeMatches.lastNudgedAt, nudgedBefore)),
+            ),
+        )
+        .limit(NUDGE_BATCH);
+
+    if (due.length === 0) return 0;
+
+    const siteIds = [...new Set(due.flatMap((m) => [m.siteAId, m.siteBId]))];
+    const [sites, links] = await Promise.all([
+        db().select().from(exchangeSites).where(inArray(exchangeSites.id, siteIds)),
+        db()
+            .select()
+            .from(exchangeLinks)
+            .where(
+                inArray(
+                    exchangeLinks.matchId,
+                    due.map((m) => m.id),
+                ),
+            ),
+    ]);
+    const siteById = new Map(sites.map((s) => [s.id, s]));
+
+    let sent = 0;
+    for (const match of due) {
+        const mine = links.filter((l) => l.matchId === match.id);
+        const liveFrom = new Set(mine.filter((l) => l.status === "live").map((l) => l.fromSiteId));
+
+        for (const [debtorId, creditorId] of [
+            [match.siteAId, match.siteBId],
+            [match.siteBId, match.siteAId],
+        ]) {
+            if (liveFrom.has(debtorId)) continue;
+
+            const debtorSite = siteById.get(debtorId);
+            const creditorSite = siteById.get(creditorId);
+            if (!debtorSite || !creditorSite) continue;
+
+            // The brief is built from the CREDITOR's site: the debtor links to
+            // them, not to themselves. Same rule as `notifyMatchAgreed`.
+            const brief = briefFor(creditorSite, { matchId: match.id });
+
+            void notifyPlacementPending({
+                matchId: match.id,
+                debtorSite,
+                creditorSite,
+                targetUrl: brief.targetUrl,
+                anchorOptions: brief.anchorOptions,
+                partnerPlaced: liveFrom.has(creditorId),
+                expires: EXPIRES_FORMAT.format(match.expiresAt),
+            });
+            sent++;
+        }
+
+        await db().update(exchangeMatches).set({ lastNudgedAt: now }).where(eq(exchangeMatches.id, match.id));
+    }
+
+    return sent;
+}
+
+/** Fixed locale and zone, matching the dashboard, so a date reads the same everywhere. */
+const EXPIRES_FORMAT = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "UTC",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+});

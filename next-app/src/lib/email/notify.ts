@@ -5,7 +5,9 @@ import { DigestEmail } from "@/emails/digest";
 import { LinkRemovedEmail } from "@/emails/link-removed";
 import { LinkVerifiedEmail } from "@/emails/link-verified";
 import { MatchAgreedEmail } from "@/emails/match-agreed";
+import { MatchExpiredEmail } from "@/emails/match-expired";
 import { MatchProposedEmail } from "@/emails/match-proposed";
+import { PlacementPendingEmail } from "@/emails/placement-pending";
 import { SiteApprovedEmail } from "@/emails/site-approved";
 import { SiteRejectedEmail } from "@/emails/site-rejected";
 import { SubmissionReceivedEmail } from "@/emails/submission-received";
@@ -307,6 +309,83 @@ export async function notifyLinkRemoved(input: {
             );
         }
         await Promise.all(sends);
+    });
+}
+
+/**
+ * Nudges the side of an agreed match that has not placed its link.
+ *
+ * Sent to ONE member: the one who owes something. The partner hears nothing,
+ * because they have nothing to do, and a nudge that reaches the person who
+ * already acted reads as an accusation.
+ *
+ * `partnerPlaced` is disclosed on purpose. See the file header on the template.
+ */
+export async function notifyPlacementPending(input: {
+    matchId: string;
+    /** The site that owes the link, and whose owner is mailed. */
+    debtorSite: ExchangeSite;
+    /** The site the link is owed to. */
+    creditorSite: ExchangeSite;
+    targetUrl: string;
+    anchorOptions: readonly string[];
+    partnerPlaced: boolean;
+    expires: string;
+}): Promise<void> {
+    const { matchId, debtorSite, creditorSite, targetUrl, anchorOptions, partnerPlaced, expires } = input;
+
+    await safely("placement-pending", async () => {
+        const [to, creditorEmail, counts] = await Promise.all([
+            emailForSite(debtorSite),
+            emailForSite(creditorSite),
+            liveLinkCounts([creditorSite.id]),
+        ]);
+        if (!to || !creditorEmail) return;
+
+        await sendEmail({
+            to,
+            subject: partnerPlaced ? "They placed their link, yours is still outstanding" : "One link still to place",
+            react: PlacementPendingEmail({
+                matchId,
+                // Refuses to build unless the match reached `agreed`, which is
+                // the guarantee that this mail cannot leak an unrevealed partner.
+                partner: toRevealedPartner(
+                    creditorSite,
+                    counts.get(creditorSite.id) ?? NO_LINKS,
+                    creditorEmail,
+                    "agreed",
+                ),
+                targetUrl,
+                anchorOptions,
+                partnerPlaced,
+                expires,
+            }),
+            emailType: "placement-pending",
+        });
+    });
+}
+
+/**
+ * Tells one member a match ran out of time.
+ *
+ * Called once per side by the expiry sweep. No partner identity is passed: a
+ * match can expire from `proposed`, where the two were never revealed.
+ */
+export async function notifyMatchExpired(input: {
+    site: ExchangeSite;
+    category: string;
+    wasAgreed: boolean;
+}): Promise<void> {
+    await safely("match-expired", async () => {
+        const to = await emailForSite(input.site);
+        if (!to) return;
+
+        await sendEmail({
+            to,
+            subject: "A match expired, and you are back in the pool",
+            react: MatchExpiredEmail({ category: input.category, wasAgreed: input.wasAgreed }),
+            emailType: "match-expired",
+        });
     });
 }
 

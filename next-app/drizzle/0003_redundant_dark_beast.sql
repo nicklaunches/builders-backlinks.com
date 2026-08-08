@@ -1,0 +1,1 @@
+ALTER TABLE "exchange_matches" ADD COLUMN "last_nudged_at" timestamp with time zone;

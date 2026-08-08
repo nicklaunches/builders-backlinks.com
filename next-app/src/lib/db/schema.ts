@@ -273,6 +273,14 @@ export const exchangeMatches = pgTable(
         /** The reveal moment: domains and emails unlock here and not before. */
         agreedAt: timestamp("agreed_at", { withTimezone: true }),
         expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+        /**
+         * When the placement nudge last went out for this match.
+         *
+         * The nudge is decided by a pass that runs every night, so without a
+         * high-water mark here every agreed match with a missing link would mail
+         * someone daily until it expired. NULL means never nudged.
+         */
+        lastNudgedAt: timestamp("last_nudged_at", { withTimezone: true }),
 
         createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
         updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

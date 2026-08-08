@@ -14,6 +14,7 @@
         "test": "node --import tsx --test \"src/**/*.test.ts\"",
         "test:mcp": "node --import tsx scripts/mcp-smoke.ts",
         "test:cron": "node --import tsx scripts/cron-smoke.ts",
+        "test:nudge": "node --import tsx scripts/nudge-check.ts",
         "emails:render": "node --import tsx scripts/render-emails.ts",
         "assets:generate": "node --import tsx scripts/assets/generate.ts",
         "assets:post": "node --import tsx scripts/assets/post-card.ts",
