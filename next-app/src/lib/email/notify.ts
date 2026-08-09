@@ -218,12 +218,20 @@ export async function notifyMatchAgreed(input: {
     });
 }
 
-/** Reports a placement check to one member. */
+/**
+ * Reports a placement check to one member.
+ *
+ * `targetDomain` and `hostDomain` are both required and are NOT interchangeable.
+ * The receiver's copy names the host in its heading and the target in its facts,
+ * so passing one value for both is silently wrong rather than a type error, and
+ * was: the beneficiary used to be told their link was live on their own domain.
+ */
 export async function notifyLinkVerified(input: {
     site: ExchangeSite;
     direction: "given" | "received";
     pageUrl: string;
     targetDomain: string;
+    hostDomain: string;
     found: boolean;
     inconclusive: boolean;
     placement: Placement;
@@ -231,6 +239,7 @@ export async function notifyLinkVerified(input: {
     anchorText: string | null;
     sitewide: boolean;
     message: string;
+    confirmedLate?: { firstSeenAt: Date };
 }): Promise<void> {
     await safely("link-verified", async () => {
         const to = await emailForSite(input.site);

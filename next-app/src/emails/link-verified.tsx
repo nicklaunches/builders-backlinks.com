@@ -35,6 +35,16 @@ export type LinkVerifiedProps = {
     pageUrl: string;
     /** The domain the link points at. */
     targetDomain: string;
+    /**
+     * The domain hosting the link, which is the other party on a `received`.
+     *
+     * Separate from {@link targetDomain} for the same reason `link-removed` keeps
+     * the two apart. One prop cannot serve both headings: the receiver's heading
+     * names the site the link sits ON, the fact row names the site it points AT,
+     * and those are opposite sites. Collapsing them told the beneficiary their
+     * link was live on their own domain.
+     */
+    hostDomain: string;
     found: boolean;
     /** True when the crawl failed, so this is not a miss. */
     inconclusive: boolean;
@@ -46,12 +56,33 @@ export type LinkVerifiedProps = {
     /** Verifier's own plain-language message, shown verbatim. */
     message: string;
     checkedAt: Date;
+    /**
+     * Set only when this confirmation is overdue, carrying the day it was
+     * actually verified.
+     *
+     * The normal path never sets it, including a cron confirmation, which is at
+     * most a day behind the report and is the schedule working rather than a
+     * failure. It exists for the backfill of confirmations the recheck cron
+     * swallowed, where the same email would otherwise read as a same-day receipt
+     * for something verified weeks ago.
+     */
+    confirmedLate?: { firstSeenAt: Date };
 };
+
+/** Fixed zone, matching `EXPIRES_FORMAT` in the recheck cron: a backfilled date
+ * is read months later and must not shift with whoever renders it. */
+const LATE_DATE_FORMAT = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "UTC",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+});
 
 export function LinkVerifiedEmail({
     direction,
     pageUrl,
     targetDomain,
+    hostDomain,
     found,
     inconclusive,
     placement,
@@ -60,12 +91,13 @@ export function LinkVerifiedEmail({
     sitewide,
     message,
     checkedAt,
+    confirmedLate,
 }: LinkVerifiedProps) {
     const origin = getSiteOrigin();
     const heading = found
         ? direction === "given"
             ? "Your link is live"
-            : `Your link is live on ${targetDomain}`
+            : `Your link is live on ${hostDomain}`
         : inconclusive
           ? "We could not read that page"
           : "We did not find the link yet";
@@ -97,6 +129,15 @@ export function LinkVerifiedEmail({
                     page renders client side, a build has not deployed yet, or the link went on a different URL.
                 </Text>
             )}
+
+            {confirmedLate ? (
+                <Text style={styles.paragraph}>
+                    {`This confirmation is late, and that is our fault rather than anything you did. We verified this ` +
+                        `link on ${LATE_DATE_FORMAT.format(confirmedLate.firstSeenAt)}, and a gap in how the recheck ` +
+                        `job reported its results meant neither of you was told at the time. The facts below are not ` +
+                        `from that day: we refetched the page just now, so this is the current state.`}
+                </Text>
+            ) : null}
 
             <Facts
                 rows={[

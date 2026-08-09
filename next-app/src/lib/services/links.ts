@@ -371,7 +371,10 @@ export async function markLinkPlaced(input: {
     const report = {
         direction: "given" as const,
         pageUrl: input.pageUrl,
+        // The link points AT the partner and sits ON this member's site. Both are
+        // passed because the receiver's copy needs each in a different sentence.
         targetDomain: partner.domain,
+        hostDomain: mine.domain,
         found: result.found,
         inconclusive,
         placement: result.placement,

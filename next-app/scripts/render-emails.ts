@@ -193,6 +193,7 @@ const fixtures: Fixture[] = [
             direction: "given",
             pageUrl: "https://your-site.com/blog/shipping-faster",
             targetDomain: PARTNER_DOMAIN,
+            hostDomain: "your-site.com",
             found: true,
             inconclusive: false,
             placement: "content",
@@ -201,6 +202,51 @@ const fixtures: Fixture[] = [
             sitewide: false,
             message: "Found in the page content, dofollow, anchor “feature flags”.",
             checkedAt: new Date("2026-07-27T09:14:00Z"),
+        }),
+    },
+    {
+        // The other direction, rendered separately because it is the one that
+        // was wrong: the heading names the site the link sits ON, which for the
+        // beneficiary is the partner, while the fact row names the site it
+        // points AT, which is their own. A render where both read the same
+        // domain is the bug back.
+        name: "link-verified-received",
+        subject: "Your partner's link to you is live",
+        masked: false,
+        element: createElement(LinkVerifiedEmail, {
+            direction: "received",
+            pageUrl: PARTNER_URL,
+            targetDomain: "your-site.com",
+            hostDomain: PARTNER_DOMAIN,
+            found: true,
+            inconclusive: false,
+            placement: "content",
+            rel: [],
+            anchorText: "feature flags",
+            sitewide: false,
+            message: "Found in the page content, dofollow, anchor “feature flags”.",
+            checkedAt: new Date("2026-07-27T09:14:00Z"),
+        }),
+    },
+    {
+        /** The backfill's copy. Nothing in the live app renders this variant. */
+        name: "link-verified-late",
+        subject: "Your partner's link to you is live",
+        masked: false,
+        element: createElement(LinkVerifiedEmail, {
+            direction: "received",
+            pageUrl: PARTNER_URL,
+            targetDomain: "your-site.com",
+            hostDomain: PARTNER_DOMAIN,
+            found: true,
+            inconclusive: false,
+            placement: "content",
+            rel: [],
+            anchorText: "feature flags",
+            sitewide: false,
+            message: "Found in the page content, dofollow, anchor “feature flags”.",
+            checkedAt: new Date("2026-08-09T11:00:00Z"),
+            confirmedLate: { firstSeenAt: new Date("2026-07-12T04:02:00Z") },
         }),
     },
     {

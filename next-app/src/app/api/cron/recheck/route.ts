@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { exchangeLinks, exchangeMatches, exchangeSites } from "@/lib/db/schema";
 import { isAuthorizedCron } from "@/lib/email/cron-auth";
-import { notifyLinkRemoved, notifyMatchExpired, notifyPlacementPending } from "@/lib/email/notify";
+import { notifyLinkRemoved, notifyLinkVerified, notifyMatchExpired, notifyPlacementPending } from "@/lib/email/notify";
 import { GIVE_UP_AFTER_CHECKS, OPEN_MATCH_STATES, nextCheckAt } from "@/lib/exchange";
 import { errorDetail } from "@/lib/log";
 import { briefFor } from "@/lib/services/links";
@@ -37,6 +37,13 @@ import { verifyLink } from "@/lib/verify";
  * a link the day it goes in is easy and most competitors do some version of it.
  * Noticing six weeks later that it quietly came down is the part that makes the
  * record worth anything, and it only works if this actually runs.
+ *
+ * BOTH OUTCOMES ARE REPORTED, and for a long time only one of them was. A link
+ * confirmed live here is a link whose first report came back inconclusive, so
+ * the last thing its two members heard was that we could not find it. Writing
+ * `live` and staying quiet left that standing indefinitely. Confirmation is
+ * mailed to both sides once, on the transition, and never again on the day 7 /
+ * day 30 / monthly rechecks that follow.
  *
  * A REMOVAL IS NOT AN ACCUSATION. Links come down for ordinary reasons: a
  * redesign, a moved page, a CMS migration. Both sides are told, in those terms.
@@ -331,6 +338,7 @@ export async function GET(request: Request) {
         .slice(0, BATCH);
 
     let checked = 0;
+    let confirmed = 0;
     let removed = 0;
     let inconclusive = 0;
 
@@ -367,6 +375,11 @@ export async function GET(request: Request) {
         }
 
         if (result.found) {
+            // Whether this run is the first confirmation, read BEFORE the write
+            // below overwrites the answer. It decides two things at once: whether
+            // to stamp `firstSeenAt`, and whether anyone hears about this.
+            const firstConfirmation = !link.firstSeenAt;
+
             // Stamp `firstSeenAt` the first time a link is confirmed live, the
             // same as `markLinkPlaced` does. A `promised` link whose first report
             // was inconclusive — the client-rendered case this file keeps naming
@@ -384,9 +397,41 @@ export async function GET(request: Request) {
                     status: "live",
                     placement: result.placement,
                     rel: [...result.rel],
-                    ...(link.firstSeenAt ? {} : { firstSeenAt: now }),
+                    ...(firstConfirmation ? { firstSeenAt: now } : {}),
                 })
                 .where(eq(exchangeLinks.id, link.id));
+
+            // Tell both sides, once, on the transition to live. This branch used
+            // to write the row and say nothing, which meant the good news never
+            // reached anyone: a link whose FIRST report was inconclusive lands
+            // `promised`, gets confirmed here days later, and the only email
+            // either party had ever received was "we could not confirm that link
+            // yet". Nothing corrected it. Verifying a link and then not saying so
+            // is the one failure this job cannot afford, since being told what is
+            // actually there is the entire product.
+            //
+            // Guarded on the first confirmation rather than sent every run: a
+            // live link is rechecked at day 7, day 30 and monthly forever, and
+            // mailing both members on every one of those would be a subscription
+            // to noise. No `confirmedLate` here: a cron confirmation is at most a
+            // day behind the report, which is the schedule working.
+            if (firstConfirmation) {
+                const report = {
+                    pageUrl: link.pageUrl,
+                    targetDomain: beneficiarySite.domain,
+                    hostDomain: hostSite.domain,
+                    found: true,
+                    inconclusive: false,
+                    placement: result.placement,
+                    rel: result.rel,
+                    anchorText: result.anchorText,
+                    sitewide: result.sitewide,
+                    message: result.message,
+                };
+                void notifyLinkVerified({ ...report, site: hostSite, direction: "given" });
+                void notifyLinkVerified({ ...report, site: beneficiarySite, direction: "received" });
+                confirmed++;
+            }
             continue;
         }
 
@@ -427,6 +472,7 @@ export async function GET(request: Request) {
         nudged,
         due: due.length,
         checked,
+        confirmed,
         removed,
         inconclusive,
     });
