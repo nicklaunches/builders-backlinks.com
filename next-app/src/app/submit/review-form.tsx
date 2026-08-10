@@ -329,10 +329,14 @@ export function ReviewForm({ draft, onStartOver }: ReviewFormProps) {
 
 const SIGNED_OUT = "Your session expired before we could save this. Sign in again and resubmit, nothing was written.";
 
-// One icon, not two. This used to celebrate with a PartyPopper when the submit
-// call came back already matched, which cannot happen any more: nothing is
-// matched until review clears the listing. The celebration belongs on whatever
-// surface tells a member they have a match, not on the one that says "received".
+/**
+ * The "received, pending review" confirmation.
+ *
+ * One icon, not two. This used to celebrate with a PartyPopper when the submit
+ * call came back already matched, which cannot happen any more: nothing is
+ * matched until review clears the listing. The celebration belongs on whatever
+ * surface tells a member they have a match, not on the one that says "received".
+ */
 function SubmittedPanel({ state }: { state: Extract<CommitState, { status: "done" }> }) {
     return (
         <section className="border-accent/35 bg-accent-soft rounded-sm border p-6 sm:p-8" aria-live="polite">

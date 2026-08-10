@@ -126,10 +126,6 @@ function guard<A>(
 }
 
 export function registerTools(server: McpServer, ctx: ToolContext): void {
-    // -----------------------------------------------------------------------
-    // Anonymous reads
-    // -----------------------------------------------------------------------
-
     server.registerTool(
         "get_rules",
         {
@@ -226,10 +222,9 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
         }),
     );
 
-    // -----------------------------------------------------------------------
-    // Authenticated writes
-    // -----------------------------------------------------------------------
-
+    // Everything above this line answers an anonymous caller, by design: the
+    // server has to be useful before anyone signs in. Everything below it calls
+    // `requireMember` first.
     server.registerTool(
         "submit_site",
         {

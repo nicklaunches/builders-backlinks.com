@@ -49,11 +49,12 @@ const SECTIONS = [
     { href: "#errors", label: "Errors" },
 ] as const;
 
-// ---------------------------------------------------------------------------
-// Install snippets. Kept in step with `install-tabs.tsx` by hand: that
-// component is the hero, this is the reference, and both get copied verbatim.
-// ---------------------------------------------------------------------------
-
+/**
+ * One agent's install snippet.
+ *
+ * Kept in step with `install-tabs.tsx` by hand: that component is the hero, this
+ * is the reference, and both get copied verbatim.
+ */
 type InstallDef = {
     id: string;
     label: string;
@@ -133,10 +134,7 @@ bearer_token_env_var = "BUILDERS_BACKLINKS_TOKEN"`,
     },
 ];
 
-// ---------------------------------------------------------------------------
-// Tool reference. Transcribed from registerTools() in src/lib/mcp/tools.ts.
-// ---------------------------------------------------------------------------
-
+/** One argument in the tool reference below, transcribed from `registerTools()` in `src/lib/mcp/tools.ts`. */
 type ToolArg = {
     name: string;
     /** The schema, written the way a caller has to satisfy it. */
@@ -345,12 +343,15 @@ const WRITE_TOOLS: readonly ToolDef[] = [
     },
 ];
 
-// ---------------------------------------------------------------------------
-// The worked example. The most valuable block on the page, so it is a real
-// sequence with real argument names, not a shape.
-// ---------------------------------------------------------------------------
-
+/** One beat of the worked example. */
 type Step = { n: string; title: string; body: string; call: string; result?: string };
+
+/**
+ * The worked example, and the most valuable block on the page.
+ *
+ * A real sequence with real argument names rather than a shape: readers paste
+ * from here, so a placeholder would be the page lying about the product.
+ */
 
 const WALKTHROUGH: readonly Step[] = [
     {
@@ -424,10 +425,6 @@ const WALKTHROUGH: readonly Step[] = [
         call: `check_links()`,
     },
 ];
-
-// ---------------------------------------------------------------------------
-// Rendering
-// ---------------------------------------------------------------------------
 
 const PILL = "rounded-full border px-2 py-0.5 font-mono text-[10.5px] tracking-[0.1em] whitespace-nowrap uppercase";
 const PILL_ACCENT = `${PILL} border-accent/40 bg-accent-soft text-accent`;

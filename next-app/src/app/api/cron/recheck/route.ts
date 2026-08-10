@@ -80,7 +80,6 @@ export async function GET(request: Request) {
 
     const now = new Date();
 
-    // ---------------------------------------------------------------------
     // Expire stale matches first.
     //
     // `expiresAt` was written on every match from the day matching shipped and
@@ -95,7 +94,6 @@ export async function GET(request: Request) {
     // partners with a live match, and lets the digest reach the member again.
     // `declined` and `placed` are terminal and deliberately excluded: a placed
     // match has real links behind it and must never be reopened by a clock.
-    // ---------------------------------------------------------------------
     // Returns both site ids and the state it expired FROM, because expiry used
     // to be silent: a member watched a partner disappear off the dashboard with
     // no message before it or after. The prior state decides the wording, since a
@@ -141,7 +139,6 @@ export async function GET(request: Request) {
         }
     }
 
-    // ---------------------------------------------------------------------
     // Re-pair the idle pool.
     //
     // Approval used to be the only thing that ever called `autoPair`, which
@@ -161,7 +158,6 @@ export async function GET(request: Request) {
     // one this site already has a match row with. Sites already holding an open
     // match are excluded before that, so the pass is idempotent over an
     // unchanged pool.
-    // ---------------------------------------------------------------------
     const dryRun = new URL(request.url).searchParams.get("dry") === "1";
 
     const idle = await db()
@@ -282,7 +278,6 @@ export async function GET(request: Request) {
         console.log(`recheck: re-pair batch was full at ${PAIR_BATCH}, more idle sites remain for tomorrow`);
     }
 
-    // ---------------------------------------------------------------------
     // Nudge agreed matches where a link is still missing.
     //
     // Nothing used to be sent between `match-agreed` and expiry, and the weekly
@@ -293,7 +288,6 @@ export async function GET(request: Request) {
     // Only the side that owes something is mailed. `lastNudgedAt` is the
     // high-water mark that stops a nightly pass from mailing nightly; with the
     // two windows below it lands on roughly day 3 and day 10 of an agreed match.
-    // ---------------------------------------------------------------------
     let nudged = 0;
     if (!dryRun) {
         try {

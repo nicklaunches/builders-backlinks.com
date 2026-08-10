@@ -64,12 +64,8 @@ export const linkStatusEnum = pgEnum("link_status", ["promised", "live", "missin
 export const placementEnum = pgEnum("placement", ["content", "footer", "nav", "sidebar", "unknown"]);
 export const digestCadenceEnum = pgEnum("digest_cadence", ["weekly", "biweekly", "paused"]);
 
-// ---------------------------------------------------------------------------
-// Auth. Standard Auth.js tables.
-// ---------------------------------------------------------------------------
-
 /**
- * Users. Standard Auth.js columns, owned entirely by this app.
+ * Users. First of the standard Auth.js tables, owned entirely by this app.
  *
  * The adapter manages every column here, so there is nothing for application
  * code to write. Email is uniquely indexed, which is what makes
@@ -126,10 +122,7 @@ export const verificationTokens = pgTable(
     (table) => [primaryKey({ columns: [table.identifier, table.token] })],
 );
 
-// ---------------------------------------------------------------------------
-// The exchange
-// ---------------------------------------------------------------------------
-
+/** A member: the exchange-side identity attached to an Auth.js user. */
 export const exchangeMembers = pgTable(
     "exchange_members",
     {
@@ -374,10 +367,7 @@ export const rateLimits = pgTable(
     ],
 );
 
-// ---------------------------------------------------------------------------
-// Relations, for the query builder's `with` joins
-// ---------------------------------------------------------------------------
-
+/** Relations, declared for the query builder's `with` joins. */
 export const usersRelations = relations(users, ({ many, one }) => ({
     accounts: many(accounts),
     sites: many(exchangeSites),
@@ -400,10 +390,7 @@ export const exchangeLinksRelations = relations(exchangeLinks, ({ one }) => ({
     toSite: one(exchangeSites, { fields: [exchangeLinks.toSiteId], references: [exchangeSites.id] }),
 }));
 
-// ---------------------------------------------------------------------------
-// Inferred types. These replace the `*Hydrated` Mongoose aliases.
-// ---------------------------------------------------------------------------
-
+/** Row types, inferred rather than declared, so a column change is a compile error. */
 export type User = typeof users.$inferSelect;
 export type ExchangeMember = typeof exchangeMembers.$inferSelect;
 export type ExchangeSite = typeof exchangeSites.$inferSelect;

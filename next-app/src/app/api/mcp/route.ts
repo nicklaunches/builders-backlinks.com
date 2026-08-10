@@ -157,9 +157,13 @@ const handler = createMcpHandler(createServer, {
     onerror: (err) => console.error("mcp transport error", err),
 });
 
-// Every method goes to the same handler: POST carries the JSON-RPC exchange,
-// GET opens a subscription stream, DELETE and OPTIONS are answered by the
-// transport itself. Next needs each one exported by name to route it here.
+/**
+ * The one handler behind all four HTTP methods.
+ *
+ * POST carries the JSON-RPC exchange, GET opens a subscription stream, and
+ * DELETE and OPTIONS are answered by the transport itself. Next needs each one
+ * exported by name to route it here.
+ */
 const serve = (request: Request): Promise<Response> => handler.fetch(request);
 
 export { serve as GET, serve as POST, serve as DELETE, serve as OPTIONS };

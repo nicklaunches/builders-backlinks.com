@@ -14,10 +14,7 @@ import { linkStatusEnum, matchStateEnum, placementEnum, placementOfferEnum, site
  * one becomes a compile error at every use site rather than a runtime surprise.
  */
 
-// ---------------------------------------------------------------------------
-// Enum values and types, single-sourced from the schema
-// ---------------------------------------------------------------------------
-
+/** Enum values single-sourced from the pgEnums, so the column and the union cannot drift. */
 export const SITE_STATUSES = siteStatusEnum.enumValues;
 export const PLACEMENT_OFFERS = placementOfferEnum.enumValues;
 export const MATCH_STATES = matchStateEnum.enumValues;
@@ -29,10 +26,6 @@ export type PlacementOffer = (typeof PLACEMENT_OFFERS)[number];
 export type MatchState = (typeof MATCH_STATES)[number];
 export type LinkStatus = (typeof LINK_STATUSES)[number];
 export type Placement = (typeof PLACEMENTS)[number];
-
-// ---------------------------------------------------------------------------
-// Domain rules
-// ---------------------------------------------------------------------------
 
 /**
  * The match states that still want a decision from somebody.

@@ -14,12 +14,8 @@
 import type { Category } from "@/lib/categories";
 import type { Placement, PlacementOffer } from "@/lib/exchange";
 
-// ---------------------------------------------------------------------------
-// src/lib/analyze  ->  analyzeSite()
-// ---------------------------------------------------------------------------
-
 /**
- * Everything derived from a URL at submit time.
+ * Everything derived from a URL at submit time. Produced by `analyzeSite()` in `src/lib/analyze`.
  *
  * `description` must be identity-scrubbed: it is shown to potential partners
  * before either side knows who the other is, so it has to say what the site
@@ -103,12 +99,9 @@ export function analyzeFailureHint(code: AnalyzeErrorCode): string {
 
 export type AnalyzeSite = (rawUrl: string) => Promise<SiteAnalysis>;
 
-// ---------------------------------------------------------------------------
-// src/lib/verify  ->  verifyLink()
-// ---------------------------------------------------------------------------
-
 /**
- * Result of crawling one page looking for a link to one domain.
+ * Result of crawling one page looking for a link to one domain. Produced by `verifyLink()` in
+ * `src/lib/verify`.
  *
  * POLICY REMINDER: this classifies, it does not judge. A `footer` placement or
  * a `nofollow` rel is reported plainly to both parties and still counts as a
@@ -146,11 +139,10 @@ export type VerifyLink = (input: {
     detectSitewide?: boolean;
 }) => Promise<LinkVerification>;
 
-// ---------------------------------------------------------------------------
-// src/lib/matching  ->  scoreCandidate() / findBestPartner()
-// ---------------------------------------------------------------------------
-
-/** The subset of a site the matching engine needs. Keeps it testable without Mongo. */
+/**
+ * The subset of a site `scoreCandidate()` and `findBestPartner()` in `src/lib/matching` need.
+ * Deliberately a plain object, so the matcher stays testable without a database.
+ */
 export type MatchableSite = {
     id: string;
     ownerId: string;
@@ -202,12 +194,11 @@ export type FindBestPartner = (
     ctx: ScoreContext,
 ) => { candidate: MatchableSite; score: ScoreBreakdown } | null;
 
-// ---------------------------------------------------------------------------
-// Shared view models returned to MCP tools and web routes
-// ---------------------------------------------------------------------------
-
 /**
  * A site's give/get standing, counted from the links that are live right now.
+ *
+ * First of the shared view models: everything from here down is returned to MCP
+ * tools and web routes alike, which is what stops the two surfaces drifting.
  *
  * Every view that shows these numbers takes them as a value rather than reading
  * them off a site row, because they are not a property of the site: they are a

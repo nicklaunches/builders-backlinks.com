@@ -222,21 +222,6 @@ export async function listMySites(member: ExchangeMember): Promise<(ExchangeSite
     return sites.map((site) => ({ ...site, ...(counts.get(site.id) ?? NO_LINKS) }));
 }
 
-// ---------------------------------------------------------------------------
-// Review
-//
-// Until these existed, `status` was written exactly once, by the insert above,
-// and never again by any code anywhere. Every consumer filters on `active`, so
-// a submission was permanently invisible and the only way to approve one was to
-// UPDATE the row by hand in the SQL console. These two functions are what make
-// `active`, `paused`, `rejected` and `banned` mean anything.
-//
-// They live here, in the service layer, because that is the seam the whole
-// architecture rests on: the admin page and any future MCP tool both call the
-// same function, so approving cannot come to mean two different things. The
-// ESLint layering rule enforces the MCP half of that.
-// ---------------------------------------------------------------------------
-
 /** A site plus the email of the member who submitted it. Admin views only. */
 export type SiteForReview = ExchangeSite & { ownerEmail: string | null };
 
@@ -267,6 +252,17 @@ export async function listSitesForReview(status?: SiteStatus): Promise<SiteForRe
 
 /**
  * Moves a site to a new status and tells its owner.
+ *
+ * This function is what makes `active`, `paused`, `rejected` and `banned` mean
+ * anything. Until it existed, `status` was written exactly once, by the insert
+ * in `commitSite`, and never again by any code anywhere — and since every
+ * consumer filters on `active`, a submission was permanently invisible and the
+ * only way to approve one was to UPDATE the row by hand in the SQL console.
+ *
+ * It lives in the service layer because that is the seam the whole architecture
+ * rests on: the admin page and any future MCP tool call this same function, so
+ * approving cannot come to mean two different things. The ESLint layering rule
+ * enforces the MCP half of that.
  *
  * The reviewer's note is written to `review_note`, a column that has existed
  * since the first migration and had no reader or writer until now.

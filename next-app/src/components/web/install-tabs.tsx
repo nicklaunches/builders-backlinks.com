@@ -44,10 +44,7 @@ import { type TabItem, TabList, panelId, tabId } from "@/components/web/tab-list
 
 const MCP_URL = "https://builders-backlinks.com/api/mcp";
 
-// ---------------------------------------------------------------------------
-// Install snippets
-// ---------------------------------------------------------------------------
-
+/** The agents an install snippet exists for. */
 type ClientId = "claude" | "cursor" | "codex" | "gemini";
 
 type ClientDef = {
@@ -138,10 +135,7 @@ const CLIENT_TABS: readonly TabItem<ClientId>[] = CLIENTS.map((client) => ({
     label: client.label,
 }));
 
-// ---------------------------------------------------------------------------
-// Transcripts
-// ---------------------------------------------------------------------------
-
+/** How one span of transcript text is coloured. Maps to the `--term-*` custom properties. */
 type Tone = "plain" | "dim" | "bright" | "prompt" | "tool" | "key" | "ok" | "add" | "mask" | "warn";
 
 type Segment = { text: string; tone?: Tone };
@@ -304,10 +298,6 @@ const VIEW_CAPTION: Record<ViewId, string> = {
     place: "This is the step every other exchange leaves to you, and the step where most trades die.",
 };
 
-// ---------------------------------------------------------------------------
-// Remembering whether the demo is collapsed
-// ---------------------------------------------------------------------------
-
 /**
  * Where the collapsed/expanded choice is kept.
  *
@@ -365,10 +355,7 @@ function writeDemoPreference(open: boolean): void {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Rendering
-// ---------------------------------------------------------------------------
-
+/** Renders one transcript as terminal lines, tone by tone. */
 function TranscriptBody({ lines }: { lines: readonly Line[] }) {
     return (
         <pre className="min-w-max font-mono text-[12px] leading-[1.75] sm:text-[12.5px]">

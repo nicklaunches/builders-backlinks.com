@@ -35,11 +35,7 @@ import { getSessionMember } from "@/lib/session";
  * server never fetched, while the tool analyzes every single one.
  */
 
-// ---------------------------------------------------------------------------
-// Step one: draft
-// ---------------------------------------------------------------------------
-
-/** Everything the confirmation screen needs, plus the signature tying DR to this server. */
+/** Step one. Everything the confirmation screen needs, plus the signature tying DR to this server. */
 export type DraftPayload = {
     domain: string;
     /** Final URL after redirects. This, not the typed one, is what gets listed. */
@@ -124,10 +120,7 @@ function explainAnalyzeFailure(err: unknown): string {
     return "Something went wrong on our side. Nothing was changed. Try again in a moment.";
 }
 
-// ---------------------------------------------------------------------------
-// Step two: commit
-// ---------------------------------------------------------------------------
-
+/** Step two. What the confirmation screen shows once the listing is written. */
 export type CommitState =
     | { status: "idle" }
     | { status: "signed_out" }

@@ -3,7 +3,7 @@ import type { Category } from "@/lib/categories";
 import type { MatchableSite, ScoreBreakdown, ScoreCandidate } from "@/lib/contracts";
 
 /**
- * @file Pair scoring for the exchange. Pure: no Mongo, no network, no mongoose.
+ * @file Pair scoring for the exchange. Pure: no database, no network.
  *
  * The reference implementation this replaces sorted candidates by Domain Rating
  * descending and took the first one. That single line is its biggest quality
@@ -21,10 +21,6 @@ import type { MatchableSite, ScoreBreakdown, ScoreCandidate } from "@/lib/contra
  * cron. Two callers, one code path. If matching needed a database connection
  * the instant path would have quietly grown its own cheaper variant by now.
  */
-
-// ---------------------------------------------------------------------------
-// Category
-// ---------------------------------------------------------------------------
 
 /**
  * Same category on both sides.
@@ -48,10 +44,6 @@ export const CATEGORY_EXACT = 40;
  * out-competes a genuine same-category partner that actually exists.
  */
 export const CATEGORY_ADJACENT = 15;
-
-// ---------------------------------------------------------------------------
-// DR band fit
-// ---------------------------------------------------------------------------
 
 /**
  * Maximum awarded for a tight DR band.
@@ -108,10 +100,6 @@ export const ASSUMED_DR_FOR_UNRATED = 15;
  */
 export const DR_BAND_ASSUMED_CEILING = 18;
 
-// ---------------------------------------------------------------------------
-// Keyword overlap
-// ---------------------------------------------------------------------------
-
 /**
  * Maximum awarded for shared anchor keywords.
  *
@@ -122,10 +110,6 @@ export const DR_BAND_ASSUMED_CEILING = 18;
  * keyword stuffing to buy a match on its own.
  */
 export const KEYWORD_MAX = 15;
-
-// ---------------------------------------------------------------------------
-// Placement fit
-// ---------------------------------------------------------------------------
 
 /**
  * Both sides named a concrete placement.
@@ -155,10 +139,6 @@ export const PLACEMENT_ONE_UNSURE = 4;
  * honest answer from someone new and we asked the question optionally.
  */
 export const PLACEMENT_BOTH_UNSURE = 0;
-
-// ---------------------------------------------------------------------------
-// Reciprocity health
-// ---------------------------------------------------------------------------
 
 /**
  * Maximum for a candidate who reliably gives links back.
@@ -199,10 +179,6 @@ export const RECIPROCITY_BALANCED = 7;
  */
 export const RECIPROCITY_GENEROUS_RATIO = 2;
 
-// ---------------------------------------------------------------------------
-// Staleness
-// ---------------------------------------------------------------------------
-
 /**
  * Maximum for a member who has been waiting a long time (or forever).
  *
@@ -221,10 +197,6 @@ export const STALENESS_MAX = 10;
  * cycles has waited long enough to be pushed to the front of the queue.
  */
 export const STALENESS_FULL_DAYS = 30;
-
-// ---------------------------------------------------------------------------
-// Penalties
-// ---------------------------------------------------------------------------
 
 /**
  * The pair has been matched before.

@@ -93,10 +93,7 @@ export function KeyPanel({ initial }: KeyPanelProps) {
     );
 }
 
-// ---------------------------------------------------------------------------
-// No key yet
-// ---------------------------------------------------------------------------
-
+/** The state before a member has any key: what one is for, and the button that mints it. */
 function Generate({ formAction, pending }: { formAction: () => void; pending: boolean }) {
     return (
         <section aria-labelledby="generate-heading" className="border-line bg-surface rounded-sm border p-6 sm:p-8">
@@ -140,10 +137,12 @@ function Generate({ formAction, pending }: { formAction: () => void; pending: bo
     );
 }
 
-// ---------------------------------------------------------------------------
-// One-time reveal
-// ---------------------------------------------------------------------------
-
+/**
+ * The one screen the plaintext key is ever readable on.
+ *
+ * Only a hash is stored, so there is no second chance and the warning is a
+ * `role="alert"` that cannot be scrolled past.
+ */
 function Reveal({ state, onDismiss }: { state: Extract<IssueKeyState, { status: "issued" }>; onDismiss: () => void }) {
     const command = claudeCommand(state.plaintext);
     const cursor = cursorConfig(state.plaintext);
@@ -258,10 +257,7 @@ function Snippet({
     );
 }
 
-// ---------------------------------------------------------------------------
-// Key already exists
-// ---------------------------------------------------------------------------
-
+/** The returning state: when the key was issued and last used, and a confirmed regenerate. */
 function ExistingKey({
     issuedAt,
     lastUsedAt,

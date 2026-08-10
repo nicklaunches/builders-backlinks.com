@@ -26,16 +26,19 @@ import { getSessionMember } from "@/lib/session";
  * `revalidatePath` anywhere. The client holds enough state to update itself.
  */
 
-// ---------------------------------------------------------------------------
-// Accept or decline
-// ---------------------------------------------------------------------------
-
 export type RespondState =
     | { status: "idle" }
     | { status: "signed_out" }
     | { status: "error"; matchId: string; message: string }
     | { status: "done"; matchId: string; accepted: boolean; revealed: boolean };
 
+/**
+ * Accepts or declines a proposed match.
+ *
+ * `revealed` comes back on the done arm because accepting is only half of a
+ * reveal: identities appear when BOTH sides have accepted, so the client cannot
+ * infer it from its own click.
+ */
 export async function respondToMatchAction(_previous: RespondState, formData: FormData): Promise<RespondState> {
     const member = await getSessionMember();
     if (!member) return { status: "signed_out" };
@@ -58,10 +61,6 @@ export async function respondToMatchAction(_previous: RespondState, formData: Fo
         return { status: "error", matchId, message: "Could not record that. The error was logged." };
     }
 }
-
-// ---------------------------------------------------------------------------
-// Link brief
-// ---------------------------------------------------------------------------
 
 export type BriefState =
     | { status: "idle" }
@@ -101,10 +100,6 @@ export async function getLinkBriefAction(_previous: BriefState, formData: FormDa
         return { status: "error", matchId, message: "Could not build that brief. The error was logged." };
     }
 }
-
-// ---------------------------------------------------------------------------
-// Mark placed
-// ---------------------------------------------------------------------------
 
 export type PlaceState =
     | { status: "idle" }

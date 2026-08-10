@@ -67,10 +67,9 @@ import { NO_LINKS, liveLinkCounts, liveLinkCountsFor } from "@/lib/services/stan
  *
  * ON SORTING BY `lastMatchedAt`: every query that orders by it asks for NULLS
  * FIRST explicitly. A site that has never been matched is the stalest thing in
- * the pool and must surface first, which is what Mongo did for free by sorting
- * nulls low. Postgres puts NULLs last on an ascending sort, so leaving it
- * implicit would silently bury exactly the members this product cannot afford
- * to ignore.
+ * the pool and must surface first, and Postgres puts NULLs LAST on an ascending
+ * sort, so leaving it implicit would silently bury exactly the members this
+ * product cannot afford to ignore.
  */
 
 /** How long a proposed match stays open before it expires back into the pool. */
