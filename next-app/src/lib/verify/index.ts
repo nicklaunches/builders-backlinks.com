@@ -212,19 +212,15 @@ function pickBest(matches: readonly MatchedAnchor[]): MatchedAnchor {
  * sitewide (a footer or nav placement repeated on every page) rather than a
  * one-off.
  *
- * Deliberately cheap and deliberately conservative: at most
- * {@link SITEWIDE_SAMPLE_SIZE} extra fetches, all in parallel, all failures
- * swallowed. A sitewide flag is a nice-to-have detail on the disclosure, so it
- * must never be able to turn a successful verification into a failed one. When
- * sampling fails or finds nothing, we report `false`, which reads as "not
- * confirmed sitewide" rather than "confirmed not sitewide".
+ * Cheap and conservative: at most {@link SITEWIDE_SAMPLE_SIZE} extra fetches, in
+ * parallel, all failures swallowed. A sitewide flag is a nice-to-have on the
+ * disclosure and must never turn a successful verification into a failed one, so
+ * failure reports `false` — "not confirmed sitewide", not "confirmed not".
  *
- * The comparison is on the target URL's path, not just its domain, so a footer
- * link to the homepage is not counted as evidence that a deep content link is
- * sitewide.
+ * Compares the target URL's PATH, not just its domain, so a footer link to the
+ * homepage is not evidence that a deep content link is sitewide.
  *
- * @returns True when the link was seen on at least {@link SITEWIDE_MIN_HITS}
- *   other pages.
+ * @returns True when seen on at least {@link SITEWIDE_MIN_HITS} other pages.
  */
 async function detectSitewidePlacement(args: {
     anchors: readonly ParsedAnchor[];

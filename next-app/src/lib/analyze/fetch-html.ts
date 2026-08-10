@@ -215,26 +215,16 @@ export function isPrivateIPv6(ip: string): boolean {
 /**
  * Resolves a hostname and rejects local/private destinations.
  *
- * This is the main SSRF guard and is called before the initial fetch and again
- * after redirects when the final host changes.
+ * The main SSRF guard: called before the initial fetch and again after redirects
+ * when the final host changes.
  *
- * NOT EVERY ENTRY IS AN IP. In workerd, `node:dns`'s `lookup` can hand back a
- * CNAME target hostname in `address` rather than the address it resolves to.
- * Local Node never does this, so `pnpm dev` cannot reproduce it. The old loop
- * passed that hostname to `isPrivateIPv4`, which split it on dots, got three
- * parts instead of four, and failed closed, so in production every domain whose
- * DNS goes through a CNAME was rejected as a private address. Vercel-hosted
- * sites, which is a large share of the people this exchange is for, could not be
- * submitted at all: `growstartup.uk.com` was refused as "private address
- * 4fb3bcdf0a1db88b.vercel-dns-016.com", a string that is plainly not an address.
+ * NOT EVERY ENTRY IS AN IP. In workerd, `node:dns`'s `lookup` can return a CNAME
+ * target hostname in `address` — local Node never does, so `pnpm dev` cannot
+ * reproduce it — and treating that string as an address rejects every
+ * CNAME-fronted domain as "private". Non-literals are therefore skipped rather
+ * than trusted, at least one real public IP is required, and a CNAME whose own
+ * address is private is still caught from the same result set.
  *
- * The invariant enforced here is unchanged: every IP this host resolves to must
- * be public. Non-literals are skipped rather than trusted, at least one real
- * public IP is required, and a CNAME whose own address is private is still
- * caught, because that address is in the same result set. What we finally
- * connect to is re-resolved by `fetch` regardless.
- *
- * @param hostname - Hostname from the target URL.
  * @throws `FetchError` when DNS fails or resolves to a blocked address.
  */
 async function assertPublicHost(hostname: string): Promise<void> {

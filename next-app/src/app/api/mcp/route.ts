@@ -86,22 +86,13 @@ preloadSchemas();
 /**
  * Resolves the caller for one request.
  *
- * Two sources, in priority order:
+ * `getMcpAuthContext()` first, so landing OAuth 2.1 is a change to this function
+ * and nothing else, then the Authorization header, which is the live path today.
+ * Nothing from either is logged or returned: the token is a credential.
  *
- * 1. `getMcpAuthContext()`. Populated when an OAuth provider has already
- *    verified the caller in front of this handler. It is checked first so that
- *    landing OAuth 2.1 is a change to this function and nothing else.
- * 2. The Authorization header, which is the live path today: `bb_live_` tokens
- *    minted at /app/key.
- *
- * Nothing from either source is logged or returned. The token is a credential,
- * and the auth context's props are the caller's, not ours to echo back.
- *
- * A failure to resolve is treated as anonymous rather than as an error. That
- * fails CLOSED on privilege (an unresolved caller gets the sign-in hint from
- * the write tools, never someone else's member) while keeping the anonymous
- * reads answering, which is the only part of the surface that has to work
- * before anyone has signed in.
+ * A failure to resolve is anonymous rather than an error. That fails CLOSED on
+ * privilege — an unresolved caller gets the sign-in hint, never someone else's
+ * member — while keeping the anonymous reads answering.
  */
 async function resolveCaller(request: Request | undefined): Promise<ToolContext> {
     const headers = request?.headers ?? new Headers();

@@ -48,12 +48,10 @@ export function FounderModal({ open, onClose }: FounderModalProps) {
         <dialog
             ref={ref}
             aria-labelledby={titleId}
-            // Esc closes a native dialog by itself, which would leave the
-            // element shut while React still believed it was open. The next
-            // click on the trigger would then set `open` to a value it already
-            // held, re-render nothing, and the button would look broken. So the
-            // platform's dismissal is cancelled and re-routed through state:
-            // React closes the element, never the other way round.
+            // Esc closes a native dialog by itself, leaving the element shut
+            // while React still believes it is open — the next trigger click
+            // then re-renders nothing and the button looks broken. Cancel the
+            // platform dismissal and route it through state instead.
             onCancel={(event) => {
                 event.preventDefault();
                 onClose();

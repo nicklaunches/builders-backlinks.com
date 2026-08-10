@@ -31,13 +31,10 @@ export type CategoryDepth = {
 /**
  * Counts active sites and median DR per category.
  *
- * One query for the whole catalog, grouped in memory rather than in SQL. A
- * `GROUP BY` with `percentile_cont` would be the obvious translation of the old
- * aggregation, but it interpolates between the two middle values on an even
- * count where the previous implementation picked the upper one, so identical
- * data would start reporting a different median. The grouping is over active
- * sites only and returns two small columns, so doing it here costs nothing and
- * keeps the number stable across the storage change.
+ * One query, grouped in memory rather than in SQL. `percentile_cont` is the
+ * obvious translation but interpolates between the two middle values on an even
+ * count, where this picks the upper one — identical data would report a
+ * different median.
  *
  * Categories with no sites are still returned, with zeroes, so the caller can
  * render the full taxonomy without a second source of truth.
@@ -73,14 +70,13 @@ export async function getCategoryDepths(): Promise<CategoryDepth[]> {
 /**
  * How many people have actually joined.
  *
- * The one number the landing page is allowed to print, and it is read live on
- * every revalidation rather than stored anywhere, so it cannot drift away from
- * the truth the way a hardcoded figure does. Unsubscribed members are excluded
- * because they are out of matching entirely (see `exchange_members`), so
- * counting them would inflate the figure with people who are not participating.
+ * The one number the landing page may print, read live on every revalidation so
+ * it cannot drift. Unsubscribed members are excluded because they are out of
+ * matching entirely, and counting them would inflate the figure with people who
+ * are not participating.
  *
  * The caller decides how to present a small number, and is expected to print
- * nothing rather than a zero. See the header of the landing page.
+ * nothing rather than a zero.
  */
 export async function getFounderCount(): Promise<number> {
     const [row] = await db().select({ n: count() }).from(exchangeMembers).where(isNull(exchangeMembers.unsubscribedAt));

@@ -80,24 +80,11 @@ export async function GET(request: Request) {
 
     const now = new Date();
 
-    // Expire stale matches first.
-    //
-    // `expiresAt` was written on every match from the day matching shipped and
-    // then never compared against anything, so no match had ever actually
-    // expired and the state was decoration. That is worse than cosmetic: the
-    // weekly digest SKIPS any member holding an open match
-    // (`OPEN_MATCH_STATES`), so a single proposal nobody ever answered silently
-    // ended that member's digest permanently. They stopped hearing from us and
-    // there was no way for them to find out why.
-    //
-    // Expiring returns both sites to the pool, since matching only excludes
-    // partners with a live match, and lets the digest reach the member again.
-    // `declined` and `placed` are terminal and deliberately excluded: a placed
-    // match has real links behind it and must never be reopened by a clock.
-    // Returns both site ids and the state it expired FROM, because expiry used
-    // to be silent: a member watched a partner disappear off the dashboard with
-    // no message before it or after. The prior state decides the wording, since a
-    // match can lapse from `proposed`, where the two were never revealed.
+    // Expire first. The weekly digest SKIPS anyone holding an open match, so an
+    // unanswered proposal that never expires ends that member's digest for good.
+    // `declined` and `placed` are terminal: a placed match has real links behind
+    // it and must never be reopened by a clock. The state expired FROM comes back
+    // because it decides the notification wording.
     const expired = await db()
         .update(exchangeMatches)
         .set({ state: "expired", updatedAt: now })
@@ -132,32 +119,14 @@ export async function GET(request: Request) {
                 }
             }
         } catch (err) {
-            // `errorDetail`, not a bare `console.error`: workerd renders a raw
-            // caught error as a minified stack, which is how the matching bug
-            // stayed invisible for nine days.
             console.error(`recheck: expiry notifications failed: ${errorDetail(err)}`);
         }
     }
 
-    // Re-pair the idle pool.
-    //
-    // Approval used to be the only thing that ever called `autoPair`, which
-    // meant a site that missed that single instant was invisible to matching
-    // for good. On 2026-08-06 that was 26 of 33 active sites: `upsertMatch` was
-    // handing a fractional score to an `integer` column, so the insert threw on
-    // almost every approval and the error was swallowed. Fixing that bug does
-    // not recover the sites it already passed over, and nothing else would have
-    // either. That is what this pass is for.
-    //
-    // Deliberately AFTER the expiry sweep above. That sweep is what returns a
-    // stale match's two sites to the pool, and running in the other order would
-    // make every freshly expired site wait a further day for no reason.
-    //
-    // Safe to run daily because a repeat call is silent: `autoPair` returns
-    // `already_matched` without writing or sending when the only partner left is
-    // one this site already has a match row with. Sites already holding an open
-    // match are excluded before that, so the pass is idempotent over an
-    // unchanged pool.
+    // Re-pair the idle pool: the safety net for a site that failed to pair on
+    // approval. Deliberately AFTER the expiry sweep, which returns a stale
+    // match's two sites to the pool; the other order makes every freshly expired
+    // site wait another day. Safe daily because a repeat call is silent.
     const dryRun = new URL(request.url).searchParams.get("dry") === "1";
 
     const idle = await db()
@@ -188,43 +157,26 @@ export async function GET(request: Request) {
         .orderBy(sql`${exchangeSites.lastMatchedAt} asc nulls first`)
         .limit(PAIR_BATCH);
 
-    // Pairing consumes two sites, so a site matched earlier in this loop is no
-    // longer idle even though the query above said it was. Skipping it here is
-    // cheaper than re-querying, and without it the partner's own turn would
-    // propose a second match to somebody who just got one.
-    //
-    // PASSED DOWN AS WELL AS CHECKED HERE, and it has to be both. Checking it
-    // only at the top of the loop guards a site from being the SUBJECT twice
-    // while leaving it free to be CHOSEN twice: three idle sites in one category
-    // reliably produced two matches both pointing at the middle one. The live
-    // path no longer needs the hint — `selectPartner` now excludes anyone
-    // holding an open match, which a just-paired site does — but the dry run
-    // does, because it writes nothing for that query to see. Handing the same
-    // set to both is what keeps the rehearsal honest.
+    // A site paired earlier in this loop is no longer idle, whatever the query
+    // said. PASSED DOWN AS WELL AS CHECKED HERE, and it must be both: checking
+    // only at the top stops a site being the SUBJECT twice while leaving it free
+    // to be CHOSEN twice. The dry run needs the hint — it writes nothing for
+    // `selectPartner`'s own query to see.
     const spokenFor = new Set<string>();
     let paired = 0;
     let failed = 0;
 
-    // Returned in the response, not just logged. A dry run exists to be read
-    // before it is trusted, and an operator who has to go digging through
-    // Worker logs to find out what the rehearsal decided will skip the
-    // rehearsal. The live run reports the same shape so the two are comparable.
+    // Returned in the response, not just logged: an operator who has to dig
+    // through Worker logs to read the rehearsal will skip the rehearsal. The
+    // live run reports the same shape so the two are comparable.
     const pairs: { site: string; partner?: string; score?: number; matchId?: string; skipped?: string }[] = [];
 
     for (const site of idle) {
         if (spokenFor.has(site.id)) continue;
 
-        // One site cannot be allowed to end the run, and the cost of getting
-        // this wrong is worse here than at the approval that also wraps its
-        // `autoPair` call: everything below this loop is the link recheck, so a
-        // single failing pair would silently stop every link in the batch from
-        // being verified that day. Isolate, log, keep going.
-        //
-        // `errorDetail` rather than the raw error because the raw error is what
-        // made the integer-score bug take a week to find: workerd printed a
-        // bare minified stack for a `PostgresError`, so the log said pairing had
-        // failed without ever saying that Postgres had rejected `87.16` for an
-        // integer column.
+        // One site must not end the run: everything below this loop is the link
+        // recheck, so a single failing pair would silently stop every link in
+        // the batch from being verified that day. Isolate, log, keep going.
         try {
             if (dryRun) {
                 const preview = await previewPair(site, spokenFor);
@@ -278,16 +230,10 @@ export async function GET(request: Request) {
         console.log(`recheck: re-pair batch was full at ${PAIR_BATCH}, more idle sites remain for tomorrow`);
     }
 
-    // Nudge agreed matches where a link is still missing.
-    //
-    // Nothing used to be sent between `match-agreed` and expiry, and the weekly
-    // digest SKIPS anyone holding an open match, so a member who agreed and then
-    // forgot heard from us not at all until the match vanished. Both halves of a
-    // trade could stall forever with neither side told.
-    //
-    // Only the side that owes something is mailed. `lastNudgedAt` is the
-    // high-water mark that stops a nightly pass from mailing nightly; with the
-    // two windows below it lands on roughly day 3 and day 10 of an agreed match.
+    // Nudge agreed matches still missing a link — without this a member who
+    // agreed and forgot hears nothing until the match vanishes. Only the side
+    // that owes something is mailed, and `lastNudgedAt` is the high-water mark
+    // stopping a nightly pass from mailing nightly.
     let nudged = 0;
     if (!dryRun) {
         try {
@@ -298,20 +244,11 @@ export async function GET(request: Request) {
         }
     }
 
-    // Oldest checked first, so a backlog drains fairly rather than starving the
-    // links that have waited longest. NULLS FIRST is explicit: a link that has
-    // never been checked has waited longest of all, and an ascending sort in
-    // Postgres would otherwise put it at the very back of the queue.
-    //
-    // `promised` is in the set because a first report whose crawl was
-    // inconclusive lands there, and nothing else ever looks at it again.
-    //
-    // The second clause drops links `nextCheckAt` has given up on. It is the
-    // same predicate, expressed here rather than left to the filter below, and
-    // it has to be: this ordering puts the never-confirmable links at the very
-    // front of the queue forever, so filtering them in JavaScript would still
-    // spend the whole window fetching them. Written as the negation of "never
-    // live AND out of attempts" so it reads next to the rule it mirrors.
+    // Oldest checked first, NULLS FIRST explicitly, or Postgres sorts the
+    // never-checked links to the back. `promised` is in the set because an
+    // inconclusive first report lands there. The second clause drops links
+    // `nextCheckAt` gave up on and must be in the query: this ordering keeps
+    // them at the front forever, so a JavaScript filter would still fetch them.
     const candidates = await db()
         .select()
         .from(exchangeLinks)
@@ -374,16 +311,11 @@ export async function GET(request: Request) {
             // to stamp `firstSeenAt`, and whether anyone hears about this.
             const firstConfirmation = !link.firstSeenAt;
 
-            // Stamp `firstSeenAt` the first time a link is confirmed live, the
-            // same as `markLinkPlaced` does. A `promised` link whose first report
-            // was inconclusive — the client-rendered case this file keeps naming
-            // — only ever gets confirmed here, and leaving `firstSeenAt` null
-            // while moving it to `live` is a trap: `nextCheckAt` gives up on a
-            // link that has NEVER been confirmed live once it passes
-            // GIVE_UP_AFTER_CHECKS, so a genuinely live link would fall out of
-            // the schedule and stop being rechecked, which is the one thing this
-            // job exists never to do. A later miss must not move the timestamp,
-            // so it is only filled when unset.
+            // Stamp `firstSeenAt` on first confirmation, as `markLinkPlaced`
+            // does. Leaving it null while moving to `live` is a trap:
+            // `nextCheckAt` gives up on a link never confirmed live, so a
+            // genuinely live one would drop out of the schedule. Filled only
+            // when unset, so a later miss cannot move it.
             await db()
                 .update(exchangeLinks)
                 .set({
@@ -395,20 +327,11 @@ export async function GET(request: Request) {
                 })
                 .where(eq(exchangeLinks.id, link.id));
 
-            // Tell both sides, once, on the transition to live. This branch used
-            // to write the row and say nothing, which meant the good news never
-            // reached anyone: a link whose FIRST report was inconclusive lands
-            // `promised`, gets confirmed here days later, and the only email
-            // either party had ever received was "we could not confirm that link
-            // yet". Nothing corrected it. Verifying a link and then not saying so
-            // is the one failure this job cannot afford, since being told what is
-            // actually there is the entire product.
-            //
-            // Guarded on the first confirmation rather than sent every run: a
-            // live link is rechecked at day 7, day 30 and monthly forever, and
-            // mailing both members on every one of those would be a subscription
-            // to noise. No `confirmedLate` here: a cron confirmation is at most a
-            // day behind the report, which is the schedule working.
+            // Tell both sides on the transition to live: a link whose first
+            // report was inconclusive lands `promised` and is confirmed here
+            // days later, and without this the only email either party got was
+            // "we could not confirm that link yet". Guarded on the FIRST
+            // confirmation, since a live link is rechecked monthly forever.
             if (firstConfirmation) {
                 const report = {
                     pageUrl: link.pageUrl,
@@ -430,12 +353,9 @@ export async function GET(request: Request) {
         }
 
         // Confirmed absent. `removed` is reserved for a link that WAS live and
-        // then went away: it is the word the ledger and the email both use, and
-        // it carries a `removedAt`. A link that has never been confirmed live
-        // has nothing to have been removed, so it goes to `missing` instead and
-        // stays in the retry schedule until it runs out of attempts. Before
-        // `promised` and `missing` were rechecked at all, only live links could
-        // reach this branch and the distinction could not come up.
+        // went away — the word the ledger and the email use, carrying a
+        // `removedAt`. One never confirmed live has nothing to have been removed,
+        // so it goes to `missing` and stays in the retry schedule.
         const wasLive = link.status === "live";
         await db()
             .update(exchangeLinks)

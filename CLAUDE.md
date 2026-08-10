@@ -22,11 +22,38 @@ Path alias `@/*` maps to `next-app/src/*`.
 
 ## Comments and JSDoc
 
-- Document the symbol, not the line above it. Anything that explains an export, a type, or a constant belongs in a `/** */` block attached to it, so it surfaces on hover.
-- Keep the `@file` block on every module. It records *why* a decision was made and what was tried first — the neon-http driver Hyperdrive rejected, the workerd hang, the accent-colour contrast math. Extend it when you change the reasoning.
-- Inline `//` is for a non-obvious *why* at a specific line: a rejected alternative, a runtime trap, an incident that produced the code as written. Never to restate what the statement already says.
-- No ASCII banner separators. A file that needs section headers to be navigable is either too long or wants JSDoc on each section's first symbol.
-- `@param` / `@returns` only when the name does not already say it.
+Document the symbol, not the line above it: anything explaining an export, a type
+or a constant belongs in a `/** */` attached to it, where it surfaces on hover.
+
+**Shape.** A symbol's JSDoc is a summary line plus at most two short paragraphs.
+An inline `//` run is at most three lines — anything longer either compresses or
+belongs on the enclosing symbol. No ASCII banner separators.
+
+**Keep** the summary line, constraints on future edits ("keep the catch
+swallowing", "NULLS FIRST or the query buries new members"), non-obvious
+mechanism, and every `@throws`.
+
+**Cut:**
+
+- **Archaeology.** "This used to be", "previously", "the reference implementation
+  did". A past failure survives only as the constraint it imposes now, not as its
+  own account. The incident narratives live in `@file` blocks — the integer-score
+  bug in `matching/score-integer.test.ts`, the minified-stack lesson in
+  `lib/log.ts` — and are told there once.
+- **Anything this file already says.** The service-layer seam, "use
+  `errorDetail`", the masking boundary in general terms. Restating a project rule
+  at each site is how it drifts.
+- **Signature restatement.** `@param siteId - The site to move.` Keep a tag only
+  where it carries something the type does not.
+- **Narration of the adjacent line.** "Pairing is awaited rather than fired and
+  forgotten" sitting above `await autoPair(site)`.
+- **A fact already in this module's `@file` block.** State it once, up top, and
+  point at it from below.
+
+**Keep the `@file` block on every module.** It is the canonical home for
+module-level reasoning and what was tried first — the neon-http driver Hyperdrive
+rejected, the workerd hang, the accent-colour contrast math — and it is the reason
+the blocks below it can stay short. Extend it when you change the reasoning.
 
 ## Testing
 

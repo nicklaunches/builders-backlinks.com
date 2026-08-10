@@ -55,24 +55,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth(() => ({
         verificationTokensTable: schema.verificationTokens,
     }),
 
-    // Credentials come from `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` and
-    // `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET` by Auth.js env inference.
-    //
-    // `allowDangerousEmailAccountLinking` lets someone who first signed up with
-    // Google sign in later with GitHub on the same verified email, instead of
-    // dead-ending on `OAuthAccountNotLinked` with no way forward. Members here
-    // arrive months apart from an agent, a digest email or a match notification,
-    // and will not reliably remember which button they pressed the first time.
-    //
-    // On the security tradeoff: the flag is dangerous when a provider does not
-    // verify email ownership, since someone could register that email at a
-    // second provider and attach themselves to an existing row. Google and
-    // GitHub both verify, which is why these two are the only providers here.
-    // Adding one that does not verify email means revisiting this flag.
-    //
-    // The `?error=OAuthAccountNotLinked` copy on /signin is kept: the code is
-    // still reachable (a provider can decline to release a verified email), and
-    // the message is correct when it happens.
+    // Credentials arrive from `AUTH_{GOOGLE,GITHUB}_{ID,SECRET}` by env
+    // inference. `allowDangerousEmailAccountLinking` lets someone who signed up
+    // with Google return via GitHub on the same verified email rather than
+    // dead-ending on `OAuthAccountNotLinked`, and is only safe because BOTH
+    // providers verify email ownership. Adding one that does not revisits it.
     providers: [
         Google({ allowDangerousEmailAccountLinking: true }),
         GitHub({ allowDangerousEmailAccountLinking: true }),

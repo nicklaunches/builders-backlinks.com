@@ -129,27 +129,17 @@ function intervalDays(schedule: readonly number[], checkCount: number): number {
 /**
  * When a link is next due to be verified, or null when it should not be.
  *
- * THE ANCHOR IS THE LAST CHECK, NOT THE FIRST SIGHTING. `firstSeenAt` is the
- * tempting anchor and it is a trap: it never moves, so any schedule counted
- * from it stops advancing the moment the interval stops growing, and the due
- * date is then permanently in the past. That was the real behaviour here —
- * `firstSeenAt + 30 days` from the second check onward, i.e. every live link
- * due on every run, "day 7, day 30, then daily forever". Anchoring on
- * `lastCheckedAt` means the schedule advances by construction: it cannot fall
- * behind a clock it is measured from.
+ * THE ANCHOR IS THE LAST CHECK, NOT THE FIRST SIGHTING. `firstSeenAt` never
+ * moves, so a schedule counted from it stops advancing once the interval stops
+ * growing and the due date sits permanently in the past. Anchored on
+ * `lastCheckedAt` it advances by construction; `firstSeenAt` is the fallback for
+ * a live link never checked since, `createdAt` for one never checked at all.
  *
- * `firstSeenAt` remains the fallback for a live link that has somehow never
- * been checked since, and `createdAt` for a link that has never been checked at
- * all, which is what makes a freshly reported link due rather than unschedulable.
- *
- * Three statuses are scheduled, not one. `missing` used to be selected by the
- * cron and then never be due, so those rows were fetched on every run and
- * checked on none; `promised` was never selected at all, so a first report whose
- * crawl failed was never looked at again. Both are links the record is currently
- * wrong about, which makes them the ones most worth re-crawling.
+ * `promised` and `missing` are scheduled alongside `live`: the record is wrong
+ * about them, which makes them the most worth re-crawling.
  *
  * @returns The next due date, or null for a terminal `removed` link and for one
- *   that has never been confirmed live within {@link GIVE_UP_AFTER_CHECKS}.
+ *   never confirmed live within {@link GIVE_UP_AFTER_CHECKS}.
  */
 export function nextCheckAt(link: {
     status: LinkStatus;

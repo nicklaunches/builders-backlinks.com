@@ -119,12 +119,10 @@ describe("nextCheckAt", () => {
 });
 
 describe("OPEN_MATCH_STATES", () => {
-    // Two jobs read this list: the weekly digest skips a member holding an open
-    // match, and the daily re-pair pass skips a site holding one. It used to be
-    // declared privately in the digest route, and the cost of a second copy is
-    // not a compile error, it is a member matched twice over or never nudged
-    // again. These cases pin the membership so a well-meaning edit to either
-    // consumer has to come through here.
+    // Two jobs read this list: the digest skips a member holding an open match,
+    // the re-pair pass skips a site holding one. The cost of a second copy is not
+    // a compile error, it is a member matched twice over or never nudged again,
+    // so these cases pin the membership.
     it("covers every state that still wants a decision", () => {
         assert.deepEqual([...OPEN_MATCH_STATES], ["proposed", "a_accepted", "b_accepted", "agreed"]);
     });

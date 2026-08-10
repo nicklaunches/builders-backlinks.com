@@ -149,23 +149,16 @@ export type AutoPairResult =
 /**
  * Finds and proposes the best available partner for a site, right now.
  *
- * Called from `setSiteStatus` the moment a site is approved, and from the daily
- * re-pair pass for every active site still holding no open match. NOT from the
- * submit flow: a freshly listed site is `pending_review` and the guard below
- * turns the call into a no-op, so both submit surfaces stopped making it rather
- * than carrying copy for a branch that could not be reached.
+ * Called from `setSiteStatus` on approval and from the daily re-pair pass, never
+ * from submit — a freshly listed site is `pending_review`, which the guard below
+ * turns into a no-op. SAFE TO CALL REPEATEDLY, and the daily pass depends on it:
+ * a call finding only a partner this site already has a row with returns
+ * `already_matched` having written and sent nothing.
  *
- * SAFE TO CALL REPEATEDLY, and the daily pass depends on that. A call that finds
- * only a partner this site already has a match row with returns
- * `already_matched` having written and sent nothing, so re-running it over an
- * unchanged pool is free and silent.
- *
- * @param site - The site needing a partner. Ignored unless it is `active`.
- * @param exclude - Sites already paired earlier in the same batch. Optional, and
- *   redundant on the live path — a site paired a moment ago now holds an open
- *   match and {@link selectPartner} filters it out on that basis alone. Passed
- *   anyway so the live pass and its dry run are driven identically.
- * @returns The created match and a masked view of the partner, or a reason why not.
+ * @param site - Ignored unless it is `active`.
+ * @param exclude - Sites paired earlier in the same batch. Redundant on the live
+ *   path, where {@link selectPartner} already filters them; passed anyway so the
+ *   live pass and its dry run are driven identically.
  */
 export async function autoPair(site: ExchangeSite, exclude?: ReadonlySet<string>): Promise<AutoPairResult> {
     const choice = await selectPartner(site, exclude);
@@ -181,18 +174,10 @@ export async function autoPair(site: ExchangeSite, exclude?: ReadonlySet<string>
         widened: choice.widened,
     });
 
-    // The pair already had a match row, so nothing was proposed just now and
-    // there is nothing to announce. Stamping `lastMatchedAt` or sending
-    // `match-proposed` here would describe an event that did not happen: the
-    // email would carry the OLD match id and the OLD expiry, and for a pair that
-    // already declined each other it would read as a proposal they had settled.
-    //
-    // Only reachable when the best candidate is one this site has been matched
-    // with before. `scoreCandidate` deprioritises those but keeps them eligible,
-    // deliberately, so a thin category re-offers a known partner rather than
-    // nothing. When approval was the only caller this branch could not come up
-    // twice for the same site; the daily re-pair pass makes it routine, and it
-    // has to stay silent to stay idempotent.
+    // The pair already had a row, so nothing was proposed and there is nothing to
+    // announce. Stamping or emailing here would describe an event that did not
+    // happen, and this branch has to stay silent for the daily pass to stay
+    // idempotent.
     if (!created) {
         return { matched: false, reason: "already_matched", category };
     }
@@ -203,8 +188,7 @@ export async function autoPair(site: ExchangeSite, exclude?: ReadonlySet<string>
         .set({ lastMatchedAt: stamp, updatedAt: stamp })
         .where(inArray(exchangeSites.id, [site.id, partnerSite.id]));
 
-    // Fire and forget. A member who is matched and never told is the same as
-    // not being matched, but email must never be able to fail a submission.
+    // Fire and forget: email must never be able to fail a pairing.
     void notifyMatchProposed({
         matchId: match.id,
         siteA: site,
@@ -219,32 +203,15 @@ export async function autoPair(site: ExchangeSite, exclude?: ReadonlySet<string>
 /**
  * What {@link autoPair} would do, without doing any of it.
  *
- * Exists so the daily re-pair pass can be dry-run against production before it
- * is allowed to write and send. It shares {@link selectPartner} with `autoPair`
- * rather than reimplementing the query-and-score sequence, which is the only
- * thing that makes the preview worth trusting: a rehearsal that picked partners
- * by its own logic would answer a different question than the one being asked.
+ * Lets the daily re-pair pass be dry-run against production before it is allowed
+ * to write. Shares {@link selectPartner} with `autoPair` and must also repeat the
+ * pair lookup below: selection is only half of `autoPair`, the other half being
+ * `upsertMatch` finding an existing row. A preview skipping that half reports
+ * `paired: 1` where the live run pairs none. The score is rounded for the same
+ * reason `upsertMatch` rounds it — the column is `integer`.
  *
- * Returns the partner ROW, not a `MaskedPartner`. This is operator output bound
- * for a log, not a member-facing read, and a preview that hid the domain would
- * be unreviewable. It is not exported to any route that renders to a member.
- *
- * SHARING `selectPartner` IS NOT ENOUGH ON ITS OWN, which is the correction this
- * function needed. Selection is only half of what `autoPair` does; the other
- * half is `upsertMatch` discovering the pair already has a row and reporting
- * `already_matched`. A preview that skipped that half claimed a pairing in
- * exactly the state where the live run writes nothing, so the rehearsal
- * overcounted precisely where it was most load-bearing — the operator reads
- * `paired: 1`, then the live run pairs none. The pair lookup below is the same
- * question `upsertMatch` answers by conflicting, asked without writing.
- *
- * It is a check, not a reservation: two runs racing could both preview the same
- * pair. That is fine, because a dry run is a rehearsal, and the live path still
- * settles it with a unique index rather than a read.
- *
- * The score is rounded here for the same reason `upsertMatch` rounds it — the
- * column is `integer`. A preview reporting 79.9 for a match that would be stored
- * as 80 is a third way for the two to disagree.
+ * Returns the partner ROW rather than a `MaskedPartner`: operator output for a
+ * log, exported to no route that renders to a member.
  */
 export async function previewPair(
     site: ExchangeSite,
@@ -295,27 +262,21 @@ type PartnerChoice =
 /**
  * Chooses the best partner for a site, and writes nothing.
  *
- * Split out of `autoPair` so that committing a match and rehearsing one cannot
- * drift apart. Every rule that decides WHO a site pairs with lives here; the
- * caller decides what to do about it.
+ * Split out of `autoPair` so committing a match and rehearsing one cannot drift.
+ * Every rule deciding WHO a site pairs with lives here; the caller decides what
+ * to do about it.
  *
- * @param site - The site needing a partner.
- * @param exclude - Sites the CALLER knows are taken but the database does not
- *   show as taken yet, which in practice means a dry run: it writes nothing, so
- *   nothing it decided earlier in the batch is visible to the query here.
+ * @param exclude - Sites the CALLER knows are taken but the database does not,
+ *   which in practice means a dry run: it writes nothing, so nothing it decided
+ *   earlier in the batch is visible to the query here.
  */
 async function selectPartner(site: ExchangeSite, exclude: ReadonlySet<string> = EMPTY_EXCLUDE): Promise<PartnerChoice> {
     const category = site.category;
 
-    // Only an active site may be proposed to anyone. Every filter below checks
-    // the status of the CANDIDATES, so without this guard the subject slips
-    // through and an unreviewed listing gets proposed to a real member, with
-    // both match-proposed emails, before a human has looked at it. /terms
-    // promises that never happens.
-    //
-    // `not_active` rather than `pending_review`: `paused`, `rejected` and
-    // `banned` take this branch too, and naming it after only the first one
-    // would be wrong three ways out of four.
+    // Every filter below checks the CANDIDATES' status, so without this guard the
+    // subject slips through and an unreviewed listing is proposed to a real
+    // member. `not_active` rather than `pending_review` because `paused`,
+    // `rejected` and `banned` take this branch too.
     if (site.status !== "active") {
         return { ok: false, reason: "not_active", category };
     }
@@ -349,24 +310,11 @@ async function selectPartner(site: ExchangeSite, exclude: ReadonlySet<string> = 
         return { ok: false, reason: "first_in_category", category };
     }
 
-    // A SITE HOLDING AN OPEN MATCH IS NOT AVAILABLE, and leaving that out is how
-    // one member could collect several. `spokenFor` in the re-pair pass only
-    // ever guarded the OUTER loop — it stopped a site being processed twice, not
-    // a site being CHOSEN twice — so three idle sites in one category reliably
-    // produced two matches both pointing at the middle one, with two
-    // `match-proposed` emails to somebody who had answered neither.
-    //
-    // One open match at a time is the model the rest of the codebase already
-    // assumes: the weekly digest skips a member holding one, and the re-pair
-    // pass treats "no open match" as the definition of idle. This is the same
-    // question asked from the other side, so it reads `OPEN_MATCH_STATES` too.
-    //
-    // Filtered in memory rather than as a `notExists` on the query above so that
-    // an empty result can still be reported honestly. A pool that is empty
-    // because nobody else joined is `first_in_category`; a pool that is empty
-    // because everyone is busy is `no_eligible_partner`, and answering the
-    // second with the first would tell a member in a thriving category that they
-    // are alone in it.
+    // A SITE HOLDING AN OPEN MATCH IS NOT AVAILABLE. Without this, three idle
+    // sites in one category produce two matches both pointing at the middle one.
+    // Filtered in memory rather than as a `notExists` above so an empty pool can
+    // be reported honestly: nobody joined is `first_in_category`, everyone busy
+    // is `no_eligible_partner`.
     const poolIds = pool.map((c) => c.id);
     const openRows = await db()
         .select({ a: exchangeMatches.siteAId, b: exchangeMatches.siteBId })
@@ -449,20 +397,12 @@ async function selectPartner(site: ExchangeSite, exclude: ReadonlySet<string> = 
  * Two concurrent submissions can select each other in the same instant, so this
  * cannot be a read-then-insert. `INSERT ... ON CONFLICT DO NOTHING RETURNING`
  * against the unique `(site_a_id, site_b_id)` index makes the database the
- * arbiter: the winner gets its row back, the loser gets an empty array and
- * re-selects the row the winner wrote. Both callers end up holding the same
- * single thread for the pair, which is the entire point of the sorted-pair rule.
+ * arbiter: the loser gets an empty array and re-selects by the ordered pair,
+ * which is what `orderPair` guarantees is enough to find without knowing the id.
  *
- * The re-select is by the ordered pair rather than by id because the loser
- * never learns the winner's id, and that is exactly what `orderPair` guarantees
- * is enough to find it.
- *
- * `created` distinguishes the two, and callers have to read it. The returned row
- * is a match either way, but only a `created` one was proposed by this call, and
- * announcing the other would describe an event that did not happen. The row it
- * hands back on a conflict can be in ANY state, `declined` and `expired`
- * included, since the unique index covers the pair for all time rather than the
- * open ones.
+ * Callers MUST read `created`. Only a created row was proposed by this call, and
+ * the row returned on conflict can be in any state, `declined` and `expired`
+ * included, since the index covers the pair for all time.
  */
 async function upsertMatch(input: {
     siteId: string;
@@ -479,25 +419,11 @@ async function upsertMatch(input: {
             siteAId,
             siteBId,
             category: input.category,
-            // ROUNDED BECAUSE THE COLUMN IS `integer`, and this one line is why
-            // matching had barely worked since it shipped. `scoreCandidate`
-            // finishes on `round2`, so a total carries two decimal places, and
-            // Postgres rejects `87.16` for an integer outright: `invalid input
-            // syntax for type integer`. The insert threw, `autoPair` threw with
-            // it, and `setSiteStatus` caught the lot and approved the site
-            // anyway — so a member was let in, told they were live, and never
-            // matched with anyone.
-            //
-            // It hid because a match was still created whenever the score
-            // happened to land on a whole number. Every match in production on
-            // 2026-08-06 scored 48, 42, 90 or 55: pairing had only ever
-            // succeeded by coincidence, four times in nine days.
-            //
-            // Rounding here rather than widening the column is the honest fix.
-            // `score.ts` says the total "is only ever a display number" —
-            // nothing reads it back to make a decision, and ordering happens in
-            // memory on the full float before this is ever called, so the
-            // hundredths were never load-bearing.
+            // ROUNDED BECAUSE THE COLUMN IS `integer`. `scoreCandidate` finishes
+            // on `round2`, and Postgres rejects `87.16` outright. Rounding here
+            // rather than widening the column: ordering happens in memory on the
+            // full float before this is called, so the hundredths are only ever a
+            // display number. See `matching/score-integer.test.ts`.
             score: Math.round(input.score),
             widened: input.widened,
             state: "proposed",
@@ -543,20 +469,13 @@ export type MatchView = {
      * True when this pair came from an adjacent category, because the exact one
      * was too thin to pair inside.
      *
-     * Exposed because the landing page and house rule §02 both promise we widen
-     * "and say so", and a widened match is indistinguishable from a wrong one
-     * unless we say which it is. The proposal email has always disclosed this;
-     * every other surface showed a bare category and left the member to
-     * conclude the matching was simply bad.
+     * Exposed because house rule §02 promises we widen "and say so", and a
+     * widened match is indistinguishable from a wrong one otherwise.
      *
-     * A property of the PAIR, not of the viewer: it is stored as
-     * `best.candidate.category !== category`, so it is true exactly when the two
-     * sites sit in different categories, which reads the same from either end.
-     * Both sides can therefore render it, and each side's "adjacent" means the
-     * OTHER site's category. What is not symmetric is which category was thin:
-     * only the side that initiated the pairing was measured against
-     * `WIDEN_BELOW`, so no surface should tell a member their own category was
-     * the thin one.
+     * A property of the PAIR, not the viewer, so both sides can render it and
+     * each side's "adjacent" means the OTHER site's category. Which category was
+     * thin is NOT symmetric — only the initiating side was measured against
+     * `WIDEN_BELOW` — so no surface should tell a member theirs was the thin one.
      */
     widened: boolean;
     /** The viewer's own site in this match. */
@@ -569,13 +488,10 @@ export type MatchView = {
     /**
      * True when the OTHER side has accepted and the viewer has not.
      *
-     * Derivable from `state` only if you also know which side of the pair the
-     * viewer is on, which `MatchView` deliberately does not expose (leaking
-     * `siteAId` would tell a member which half of the ordered pair they are,
-     * and that ordering is an implementation detail of the uniqueness
-     * constraint). So it is computed here, where `mineIsA` is already known.
-     * The browser dashboard needs it to say whose turn it is; getting that
-     * backwards tells someone to wait when they are the one blocking.
+     * Derivable from `state` only if you know which side of the pair the viewer
+     * is on, which `MatchView` deliberately does not expose — the ordering is an
+     * implementation detail of the uniqueness constraint. Computed here, where
+     * `mineIsA` is already known.
      */
     waitingOnMe: boolean;
     expiresAt: Date;
@@ -798,15 +714,11 @@ export async function respondToMatch(input: {
     const myAccept = mineIsA ? "a_accepted" : "b_accepted";
     const theirAccept = mineIsA ? "b_accepted" : "a_accepted";
 
-    // The transition is computed from a state that can be stale by the time the
-    // UPDATE runs. Both sides get the match-proposed email in the same instant,
-    // and two agents acting on it will accept within the same second; with an
-    // unguarded UPDATE the second write overwrites the first, the match ends on
-    // a single accept with the other one lost, and both members are told
-    // "waiting on them" until it expires. So every write carries
-    // `state = <the state it was computed from>`, and a miss means someone else
-    // moved the match first: re-read and recompute, which in the concurrent
-    // accept case turns this side's write into the one that lands on `agreed`.
+    // Compare-and-set, because both sides get the proposal email in the same
+    // instant and two agents will accept within the same second. An unguarded
+    // UPDATE loses the first write and leaves both members told "waiting on
+    // them" until it expires. Every write carries the state it was computed
+    // from; a miss means someone moved first, so re-read and recompute.
     let current = match;
     let updated = match;
     for (let attempt = 0; ; attempt++) {
@@ -815,15 +727,10 @@ export async function respondToMatch(input: {
             throw new MatchError("bad_state", `This match is already ${from}.`);
         }
 
-        // A match both sides are already in does not reopen from here. Accepting
-        // again is the harmless retry an agent may send, and is a no-op below;
-        // declining is the transition that has to be refused. Letting
-        // `accept: false` through would move `agreed` or `placed` back to
-        // `declined`, and a revealed match can already have a live link behind
-        // it: the link row would stay live while its own match reads `declined`,
-        // both sites would go back into the pool, and `get_link_brief` /
-        // `mark_link_placed` would start refusing a trade that is really under
-        // way. The accept side keeps its own idempotent no-op just below.
+        // Declining an agreed match must be refused: a revealed match can already
+        // have a live link behind it, and the link row would stay live while its
+        // match read `declined`. Re-accepting is the harmless agent retry and is
+        // a no-op just below.
         if ((from === "agreed" || from === "placed") && !accept) {
             throw new MatchError("bad_state", `This match is already ${from}.`);
         }

@@ -433,13 +433,10 @@ export async function notifyDigest(input: {
     );
 }
 
-// The five senders above are all about a match or a link, so they only ever
-// arrive once somebody ELSE has acted. The four below are the member's own
-// thread: signed up, submitted, approved, rejected. Without them a member can go
-// from signing in to being matched having received nothing at all, and a
-// submission sits in `pending_review` in total silence. All four are
+// The senders above fire when somebody ELSE acts. The four below are the
+// member's own thread — signed up, submitted, approved, rejected — and are
 // `transactional` and therefore not opt-out-able: they are the record of what
-// happened to that person's own account.
+// happened to that person's account.
 
 /**
  * First email a member ever gets, fired the once from `getSessionMember`.

@@ -35,17 +35,13 @@ import { type MatchState, isRevealed } from "@/lib/exchange";
 /**
  * The site fields masking needs.
  *
- * A `Pick` of the row rather than the row itself, for the same reason
- * `MaskedPartner` has no domain field: this type states exactly what masking is
- * allowed to read. `domain` and `url` are in the set only because
- * `toRevealedPartner` needs them, and that function is the only thing here that
- * touches them.
+ * A `Pick` rather than the row itself, for the same reason `MaskedPartner` has
+ * no domain field: it states exactly what masking may read. `domain` and `url`
+ * are here only for `toRevealedPartner`.
  *
- * `linksGiven` and `linksGot` are deliberately NOT in the set, though the row
- * still carries columns by those names. They are stale — standing is counted
- * from live links now, not stored — and leaving them out means this file cannot
- * read the wrong number even by accident. The counts arrive as an argument
- * instead.
+ * `linksGiven` / `linksGot` are deliberately excluded even though the columns
+ * exist: they are stale, and leaving them out means this file cannot read the
+ * wrong number by accident. Counts arrive as an argument instead.
  */
 type SiteLike = Pick<
     ExchangeSite,
@@ -59,7 +55,6 @@ type SiteLike = Pick<
  * so handing it out does not reveal anything. What it is FOR is a different
  * question, and the honest answer today is: nothing. See the `@file` block.
  *
- * @param site - The candidate site row.
  * @param counts - Live link counts for this site, from `services/standing.ts`.
  *   Required rather than optional so that a caller who has not resolved them
  *   fails to compile instead of quietly publishing zeroes or stale columns.
@@ -81,13 +76,10 @@ export function toMaskedPartner(site: SiteLike, counts: LiveLinkCounts): MaskedP
 /**
  * Builds the post-accept view of a partner, including how to reach them.
  *
- * @param site - The partner's site row.
  * @param counts - Live link counts for this site, as {@link toMaskedPartner}.
- * @param ownerEmail - The partner's email, resolved from their member record.
- * @param state - The current match state. Anything before `agreed` throws.
- * @throws When called for a match that has not reached mutual accept. This is a
- *   programming error, not a user error: reaching this means a caller tried to
- *   reveal an identity the member has not consented to share yet.
+ * @param state - Anything before `agreed` throws.
+ * @throws When the match has not reached mutual accept. A programming error, not
+ *   a user one: a caller tried to reveal an identity nobody consented to share.
  */
 export function toRevealedPartner(
     site: SiteLike,

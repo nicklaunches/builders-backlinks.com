@@ -90,15 +90,11 @@ const CLIENTS: readonly ClientDef[] = [
         label: "Codex",
         where: "Add to",
         path: "~/.codex/config.toml",
-        // TODO(verify): confirmed against the Codex "Model Context Protocol" docs
-        // (learn.chatgpt.com/docs/extend/mcp): remote streamable-HTTP servers take
+        // TODO(verify): matches the Codex MCP docs — remote streamable-HTTP takes
         // `url` plus `bearer_token_env_var`, and `codex mcp add` is stdio-only, so
-        // this has to be a hand-edited file. Two things still to check against the
-        // installed CLI version before launch:
-        //   1. whether older builds still require `experimental_use_rmcp_client = true`
-        //      at the top level for remote servers to load at all
-        //   2. whether a literal `bearer_token = "..."` is accepted as an alternative
-        //      to the env-var indirection used here
+        // this must be hand-edited. Still to check against the installed CLI:
+        // (1) whether older builds need `experimental_use_rmcp_client = true`,
+        // (2) whether a literal `bearer_token` works instead of the env-var form.
         snippet: `# export BUILDERS_BACKLINKS_TOKEN=bb_live_...
 
 [mcp_servers.builders-backlinks]

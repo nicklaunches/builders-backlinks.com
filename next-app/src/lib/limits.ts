@@ -75,12 +75,10 @@ export class RateLimited extends Error {
  */
 export function callerKey(memberId: string | null, headers: Headers): string {
     if (memberId) return memberCaller(memberId);
-    // CF-Connecting-IP is set by Cloudflare's edge on every request it proxies
-    // and any inbound copy is overwritten, so it cannot be spoofed by the
-    // caller. x-forwarded-for is the fallback for anything not behind the edge
-    // (local `wrangler dev`, a direct origin hit), and it IS caller-controlled
-    // there, which is why the anonymous budgets assume a bucket can be minted
-    // rather than treating one as a hard identity.
+    // CF-Connecting-IP is set by the edge and any inbound copy overwritten, so
+    // it cannot be spoofed. x-forwarded-for is the fallback off-edge and IS
+    // caller-controlled there, which is why the anonymous budgets assume a
+    // bucket can be minted rather than treating one as an identity.
     const edge = headers.get("cf-connecting-ip")?.trim();
     const forwarded = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
     return `ip:${edge || forwarded || headers.get("x-real-ip") || "unknown"}`;

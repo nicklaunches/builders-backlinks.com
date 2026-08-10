@@ -44,32 +44,16 @@ const MAX_SITES_PER_MEMBER = 10;
 /**
  * Reduces a submitted anchor to the phrase it claims to be.
  *
- * An anchor is not free text the way a description is. It is shown to partners
- * and then pasted into their pages, by an agent, as the label of a real link, so
- * the characters that end a markdown label or open a tag have no legitimate use
- * in one and are dropped here rather than escaped at every read site.
- * `buildSnippet` in `services/links.ts` escapes as well, but only the snippet it
- * emits: an agent handed `anchorOptions` writes its own markup around them, and
- * this is the half that keeps the payload out of the database entirely.
+ * An anchor ends up pasted into a partner's page, by an agent, as the label of a
+ * real link, so the characters that close a markdown label or open a tag are
+ * dropped here rather than escaped at every read site. Braces are in the set
+ * because `{` opens a JSX expression in the `mdx` and `jsx` snippets.
+ * `buildSnippet` escapes too, but only what it emits — an agent handed
+ * `anchorOptions` writes its own markup, and this is the half that keeps the
+ * payload out of the database at all. Nothing rewrites a stored anchor, so a
+ * character admitted here is admitted for good.
  *
- * Both interfaces pass through here, which is the point. `submit_site` takes a
- * `keywords` override and the form takes a textarea, and neither should be the
- * one that forgot.
- *
- * Braces are in the set for the same reason the angle brackets are, and were
- * missed at first because they are inert in the two formats anyone thinks to
- * check. `{` opens a JSX expression in the `mdx` and `jsx` snippets, and in the
- * `anchorOptions` an agent writes its own markup around.
- *
- * Exported only so `sites.test.ts` can reach it, the same way `briefFor` is.
- * It is pure, and it is the half of this pair that has no other way to be
- * checked: the escaping in `buildSnippet` is visible in a snippet, whereas what
- * this drops is visible only in the database.
- *
- * A throwaway script re-ran it over every existing row on 2026-08-03, before
- * the braces were added, and found nothing to repair across all 26 sites. So
- * there is still no path that rewrites a stored anchor, and if one is ever
- * needed the repair is another one-off script.
+ * Exported for `sites.test.ts`, the same way `briefFor` is.
  */
 export function anchorPhrase(raw: string): string {
     return raw
@@ -88,15 +72,12 @@ export type SiteDraft = SiteAnalysis & {
 /**
  * Analyzes a URL and returns a proposed listing without writing anything.
  *
- * @param rawUrl - The URL the member gave.
- * @returns The draft listing to show for confirmation.
  * @throws `AnalyzeError` when the site cannot be reached or is too thin.
  */
 export async function draftSite(rawUrl: string): Promise<SiteDraft> {
     const analysis = await analyzeSite(rawUrl);
 
-    // Existence only: one row, one column, no need to hydrate a listing we are
-    // never going to show.
+    // Existence only: no need to hydrate a listing we will never show.
     const existing = await db()
         .select({ id: exchangeSites.id })
         .from(exchangeSites)
@@ -120,13 +101,10 @@ export type CommitSiteInput = {
 /**
  * Writes a confirmed listing.
  *
- * Domain Rating is deliberately re-derived from the draft rather than accepted
- * from the caller in a trusted way: it is a public metric that partners use to
- * decide, so a client-supplied value would be trivially inflatable. The draft
- * step already fetched it server-side; the value is carried through here rather
- * than fetched twice, but it never originates outside the server.
+ * Domain Rating is carried through from the draft, which fetched it server-side,
+ * rather than fetched twice — but it never originates outside the server. It is
+ * the metric partners decide on, so a client-supplied value would be inflatable.
  *
- * @returns The created site row.
  * @throws `SiteError` for domain collisions, bad categories, or over-listing.
  */
 export async function commitSite(input: CommitSiteInput): Promise<ExchangeSite> {
@@ -169,10 +147,9 @@ export async function commitSite(input: CommitSiteInput): Promise<ExchangeSite> 
         throw new SiteError("too_many_sites", `You can list up to ${MAX_SITES_PER_MEMBER} sites.`);
     }
 
-    // `ON CONFLICT DO NOTHING` on the unique `domain` index rather than catching
-    // a driver error code: a domain belongs to exactly one member, ever, and
-    // getting nothing back is an unambiguous statement that somebody else has
-    // it. It is also race-safe, which a check-then-insert would not be.
+    // `ON CONFLICT DO NOTHING` rather than catching a driver error code: getting
+    // nothing back unambiguously means somebody else holds the domain, and it is
+    // race-safe where a check-then-insert would not be.
     const [created] = await db()
         .insert(exchangeSites)
         .values({
@@ -185,8 +162,7 @@ export async function commitSite(input: CommitSiteInput): Promise<ExchangeSite> 
             domainRating: input.domainRating ?? null,
             drCheckedAt: input.domainRating == null ? null : new Date(),
             placementOffered,
-            // Every submission is reviewed before it can be matched. No path
-            // skips this, which is exactly what /terms promises.
+            // No path skips review, which is what /terms promises.
             status: "pending_review",
         })
         .onConflictDoNothing({ target: exchangeSites.domain })
@@ -196,7 +172,6 @@ export async function commitSite(input: CommitSiteInput): Promise<ExchangeSite> 
         throw new SiteError("domain_taken", `${domain} is already listed in the exchange by another member.`);
     }
 
-    // Acknowledge, and show the analysis back while it is still correctable.
     // Fire and forget: the site exists whether or not the email goes out.
     void notifySubmissionReceived({ site: created });
 
@@ -207,9 +182,7 @@ export async function commitSite(input: CommitSiteInput): Promise<ExchangeSite> 
  * Lists the sites a member owns, newest first, with their live link counts.
  *
  * The counts are spread OVER the row's own `links_given` / `links_got` columns,
- * which are stale and awaiting a drop. Doing it at this one seam is what lets
- * both callers — the dashboard and the `list_my_sites` MCP tool — show a member
- * their real standing without either of them learning how it is counted.
+ * which are stale and awaiting a drop.
  */
 export async function listMySites(member: ExchangeMember): Promise<(ExchangeSite & LiveLinkCounts)[]> {
     const sites = await db()
@@ -228,14 +201,9 @@ export type SiteForReview = ExchangeSite & { ownerEmail: string | null };
 /**
  * Every site in a given status, newest first, with the submitter's email.
  *
- * Deliberately does NOT go through `services/mask.ts`. Masking exists to keep
- * members from seeing each other before a match is agreed; a reviewer deciding
- * whether a listing is honest needs the domain and the person behind it, and
- * hiding either would make the job impossible.
- *
- * The join is on `exchangeMembers.userId = exchangeSites.ownerId`, not on a
- * member id: `ownerId` references `users.id`. That is the same route
- * `notify.ts` takes to reach a member's email.
+ * Deliberately does NOT go through `services/mask.ts`: masking keeps members from
+ * seeing each other before a match is agreed, and a reviewer judging whether a
+ * listing is honest needs the domain and the person behind it.
  *
  * @param status - Omit to list every site regardless of status.
  */
@@ -251,52 +219,18 @@ export async function listSitesForReview(status?: SiteStatus): Promise<SiteForRe
 }
 
 /**
- * Moves a site to a new status and tells its owner.
+ * Moves a site to a new status and tells its owner. The only writer of `status`.
  *
- * This function is what makes `active`, `paused`, `rejected` and `banned` mean
- * anything. Until it existed, `status` was written exactly once, by the insert
- * in `commitSite`, and never again by any code anywhere — and since every
- * consumer filters on `active`, a submission was permanently invisible and the
- * only way to approve one was to UPDATE the row by hand in the SQL console.
+ * Approving pairs immediately: `autoPair` refuses anything that is not `active`,
+ * so approval is the first moment the site can pair at all, and without the call
+ * here it would wait a day for the re-pair pass. That pass is the guarantee;
+ * this is only the fast path.
  *
- * It lives in the service layer because that is the seam the whole architecture
- * rests on: the admin page and any future MCP tool call this same function, so
- * approving cannot come to mean two different things. The ESLint layering rule
- * enforces the MCP half of that.
+ * KEEP THE CATCH, and keep it swallowing — the row is already committed, so
+ * throwing would tell the reviewer an approval failed when it did not. Pairing
+ * is awaited so its `match-proposed` email lands after the approval email.
  *
- * The reviewer's note is written to `review_note`, a column that has existed
- * since the first migration and had no reader or writer until now.
- *
- * Approving MATCHES IMMEDIATELY. A site is `pending_review` from the moment it
- * is submitted until a human clears it, and `autoPair` refuses to pair anything
- * that is not `active` (that is the review promise in /terms), so approval is
- * the first moment the site can pair with anyone at all. Without the call here
- * an approved site would wait a full day for the re-pair pass, at exactly the
- * moment the member has just been told they are live.
- *
- * This used to be the ONLY caller of `autoPair`, and pairing a member exactly
- * once, inside a `try` that swallows, is how 26 of 33 active sites came to have
- * no match by 2026-08-06: the insert was throwing on a fractional score and this
- * branch approved them regardless. The daily re-pair pass in `api/cron/recheck`
- * is now the safety net. This call is the fast path, not the guarantee — do not
- * remove it, but do not rely on it as the only one either.
- *
- * KEEP THE CATCH, and keep it swallowing. The row is already committed by the
- * time it runs, so throwing here would tell the reviewer the approval failed
- * when it did not. What it must never again do is throw away the reason, which
- * is what `errorDetail` is for.
- *
- * This is also the only writer of `status` in the app, which is what makes
- * `statusChangedAt` / `statusChangedBy` diagnostic rather than decorative.
- *
- * Pairing is awaited rather than fired and forgotten, because its own
- * `match-proposed` email should land after the approval email rather than
- * racing it. The email sends here are fire and forget as everywhere else.
- *
- * @param siteId - The site to move.
- * @param status - Target status. Any value in the `site_status` enum.
  * @param reviewNote - Reviewer's reason. Required in spirit for `rejected`.
- * @returns The updated row.
  * @throws `SiteError` when the id matches nothing.
  */
 export async function setSiteStatus(
@@ -316,15 +250,11 @@ export async function setSiteStatus(
         .set({
             status,
             updatedAt: now,
-            // The attribution pair. Written on every status move, including the
-            // ones with no actor, because "changed at this time by nobody
-            // identifiable" is itself the finding: this is the only writer of
-            // `status` in the app, so a status that moves without leaving a
+            // Written even with no actor: a status that moved without leaving a
             // `status_changed_at` behind did not move through here at all.
             statusChangedAt: now,
             statusChangedBy: actorUserId ?? null,
-            // Only overwrite the note when one was given. Approving a site does
-            // not erase the note explaining why it was rejected last month.
+            // Approving must not erase the note explaining last month's rejection.
             ...(note ? { reviewNote: note } : {}),
         })
         .where(eq(exchangeSites.id, siteId))
@@ -334,13 +264,8 @@ export async function setSiteStatus(
 
     if (status === "active") {
         void notifySiteApproved({ site: updated });
-        // Best effort. A pairing failure must not make the approval look like
-        // it did not happen, because the row is already committed.
-        //
-        // The outcome is logged rather than dropped. This is the only caller of
-        // `autoPair`, so an unlogged return value would mean nothing anywhere
-        // observes whether approving a site actually matched it, and "I approved
-        // them and they never heard anything" would have no trail to follow.
+        // Logged rather than dropped: nothing else observes whether approving a
+        // site actually matched it.
         try {
             const pair = await autoPair(updated);
             console.log(
@@ -349,12 +274,6 @@ export async function setSiteStatus(
                     : `setSiteStatus: approved ${updated.domain}, no match yet (${pair.reason} in ${pair.category})`,
             );
         } catch (err) {
-            // `errorDetail`, not the raw error. Logging `err` directly is what
-            // let the integer-score bug run for a week: workerd printed a bare
-            // minified stack, so this line reported that pairing had failed
-            // without once mentioning that Postgres had rejected a fractional
-            // score for an integer column. The answer was on the error object
-            // the whole time and never made it into the log.
             console.error(`setSiteStatus: autoPair failed after approving ${updated.domain}: ${errorDetail(err)}`);
         }
     } else if (status === "rejected") {

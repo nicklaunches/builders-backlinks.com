@@ -337,16 +337,12 @@ async function requestAuthority(path: string, domain: string, apiKey: string): P
  * so that second call is made only when the first says `listed`: one quota unit
  * in the common case, two for an approved site.
  *
- * Never throws and never rejects. Every failure path (missing API key, 429, 402,
- * any other non-2xx, an unparseable or unrecognised body, a timeout, a thrown
- * exception) resolves to nulls, each with its own log line. `analyzeSite` runs
- * this inside a `Promise.all` where only the LLM leg is allowed to reject, so
- * breaking that guarantee would turn a missing score into a failed submission.
- *
- * Both values are clamped to 0-100 and rounded before they are returned.
+ * NEVER THROWS. Every failure path resolves to nulls with its own log line:
+ * `analyzeSite` runs this inside a `Promise.all` where only the LLM leg may
+ * reject, so breaking that turns a missing score into a failed submission. Both
+ * values are clamped to 0-100 and rounded.
  *
  * @param domain - Canonical domain, lowercase, no scheme and no path.
- * @returns `domainRating` (Ahrefs DR) and `trueDr`, either or both possibly null.
  */
 export async function getAuthorityScores(
     domain: string,

@@ -108,28 +108,15 @@ function escapeJsxText(value: string): string {
 /**
  * Builds the one line a member pastes into their own site.
  *
- * BOTH HALVES ARE UNTRUSTED HERE. The anchor is the partner's keyword, typed by
- * them and only ever trimmed and lowercased on the way in, and this string is
- * handed to an agent with the instruction to put it in a file and deploy. An
- * anchor of `x](https://elsewhere.example` silently repoints the markdown link,
- * so the member gives a real backlink to a domain that was never in the trade,
- * and `</a><script>` in the HTML form is script in their page rather than link
- * text. Anything added to this function has to escape for the format it emits.
+ * BOTH HALVES ARE UNTRUSTED. The anchor is the partner's keyword and the result
+ * is handed to an agent told to put it in a file and deploy: `x](https://…`
+ * repoints the markdown link at a domain never in the trade, and `</a><script>`
+ * is script in the member's page. Anything added here must escape for the format
+ * it emits, the URL included.
  *
- * The URL is escaped too. It comes from our own fetcher today, so it is already
- * an absolute http(s) URL, but that is an argument for it costing nothing to
- * escape rather than an argument for trusting it: markdown uses the
- * angle-bracket destination form so a parenthesis cannot end the link.
- *
- * The four formats no longer share two branches, because `mdx` and `jsx` each
- * read a character their plain counterpart does not: `{` opens an expression in
- * both, and neither `anchorPhrase` nor the markdown and HTML escapes touch it.
- * An anchor of `{globalthis.x=1}` is inert in a .md or .html file and is code
- * in the .mdx or .tsx one. It buys little on its own, since `anchorPhrase`
- * drops the parentheses, backticks and quotes needed to call anything or build
- * a string, but an expression that merely fails to compile still breaks the
- * build of the member who pasted it, and this is a snippet we tell people to
- * commit unread.
+ * `mdx` and `jsx` each get their own branch because `{` opens an expression that
+ * neither `anchorPhrase` nor the markdown and HTML escapes touch — inert in .md,
+ * code in .mdx — and this is a snippet people commit unread.
  */
 function buildSnippet(format: SnippetFormat, url: string, anchor: string): string {
     const destination = url.replace(/[<>]/g, encodeURIComponent);
@@ -192,10 +179,8 @@ export async function getLinkBrief(input: {
 /**
  * Builds a brief from a partner site, with no ownership or state checks.
  *
- * `getLinkBrief` is the guarded entry point and does those checks first. This
- * exists because the agreed-match email needs the same brief for a member who
- * is not the current caller, and duplicating the shape in the email layer is
- * how the two drift apart.
+ * `getLinkBrief` is the guarded entry point. This exists unguarded because the
+ * agreed-match email needs the same brief for a member who is not the caller.
  *
  * The CALLER decides whose site this is. Pass the partner, never the recipient,
  * or everyone is told to link to themselves.
@@ -236,15 +221,13 @@ export type PlacementReport = {
 /**
  * Records a placement and verifies it immediately.
  *
- * Verification runs inline rather than on a queue because the caller is
- * usually an agent that just made the edit: telling it "verified, in content,
- * dofollow" while it still has the context is worth far more than an email an
- * hour later.
+ * Verification runs inline rather than on a queue because the caller is usually
+ * an agent that just made the edit, and an answer while it still has the context
+ * beats an email an hour later.
  *
- * A crawl failure is reported as inconclusive, never as a missing link.
- * Client-rendered sites legitimately fail an HTML-only fetch, and accusing a
- * member of not placing a link they did place is the worst error this system
- * can make.
+ * A crawl failure is reported as inconclusive, never as a missing link:
+ * client-rendered sites legitimately fail an HTML-only fetch, and accusing a
+ * member of not placing a link they placed is the worst error this system makes.
  */
 export async function markLinkPlaced(input: {
     member: ExchangeMember;
@@ -272,11 +255,9 @@ export async function markLinkPlaced(input: {
         detectSitewide: true,
     });
 
-    // What is already recorded for this direction decides how the write below
-    // is read: a first report creates the link, a re-report corrects it. The
-    // upsert alone cannot tell the two apart, and the difference matters three
-    // times over: the give/get counters, `firstSeenAt`, and what an
-    // inconclusive crawl is allowed to overwrite.
+    // The upsert alone cannot tell a first report from a correction, and the
+    // difference decides `firstSeenAt` and what an inconclusive crawl may
+    // overwrite.
     const [existing] = await db()
         .select()
         .from(exchangeLinks)
@@ -292,16 +273,14 @@ export async function markLinkPlaced(input: {
 
     const inconclusive = result.error !== null;
     const now = new Date();
-    // An inconclusive crawl carries no information, so it must not rewrite a
-    // status that earlier evidence established: a live link stays live through
-    // a flaky re-report, exactly as the recheck cron treats a flaky recheck.
-    // Only a first report defaults to "promised".
+    // An inconclusive crawl carries no information and must not rewrite a status
+    // earlier evidence established: a live link stays live through a flaky
+    // re-report. Only a first report defaults to "promised".
     const status: LinkStatus = result.found ? "live" : inconclusive ? (existing?.status ?? "promised") : "missing";
 
-    // Upsert on the unique `(match, from, to)` index: one link per direction per
-    // match, and re-reporting the same placement is a correction rather than a
-    // second link. `checkCount` is incremented in SQL rather than read and
-    // written back, so two agents reporting at once cannot lose a count.
+    // Upsert on the unique `(match, from, to)` index, so re-reporting corrects
+    // rather than duplicates. `checkCount` increments in SQL rather than
+    // read-then-write, so two agents reporting at once cannot lose a count.
     const [link] = await db()
         .insert(exchangeLinks)
         .values({
@@ -342,12 +321,9 @@ export async function markLinkPlaced(input: {
 
     if (!link) throw new LinkError("not_found", "The placement could not be recorded.");
 
-    // Nothing to increment. Standing is a COUNT over the links that are live
-    // right now (`services/standing.ts`), so the upsert above has already moved
-    // it, exactly once, however many times an agent retries this call. The
-    // counter columns that used to be maintained here could not manage that:
-    // the increment read the row first, so two agents reporting at the same
-    // moment both saw nothing and both counted.
+    // Nothing to increment: standing is a COUNT over the currently live links
+    // (`services/standing.ts`), so the upsert above already moved it, exactly
+    // once, however many times an agent retries.
 
     if (result.found) {
         // Both directions live promotes the match. Counted rather than assumed:

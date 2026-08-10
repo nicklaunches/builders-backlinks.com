@@ -147,12 +147,10 @@ export async function sendEmail({
     const origin = process.env.NEXT_PUBLIC_SITE_URL ?? "https://builders-backlinks.com";
     const unsubscribeUrl = buildUnsubscribeUrl(origin, to);
 
-    // The URL goes into the render context for EVERY category, including
-    // transactional. Opting out here pauses the whole account (it also drops
-    // the member's sites out of matching), so "stop sending me things" is a
-    // request a member can legitimately make from a match notification, and a
-    // footer link is cheaper for both sides than a support email. The header,
-    // which mail clients turn into a one-tap control, is still digest-only.
+    // The URL goes into the render context for EVERY category, transactional
+    // included: opting out pauses the whole account, so it is a request a member
+    // can legitimately make from a match notification. The HEADER, which clients
+    // turn into a one-tap control, stays digest-only.
     const headers = category === "digest" ? listUnsubscribeHeaders(unsubscribeUrl, sender) : undefined;
 
     try {

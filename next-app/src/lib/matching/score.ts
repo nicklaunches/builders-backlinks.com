@@ -392,7 +392,6 @@ function rejectedBreakdown(reason: NonNullable<ScoreBreakdown["rejected"]>): Sco
  * tell them apart.
  *
  * @param subject - The site we are finding a partner for.
- * @param candidate - The potential partner being scored.
  * @param ctx - Match history, pool widening flag and the current time.
  * @returns A full breakdown. Read `rejected` before trusting `total`.
  */

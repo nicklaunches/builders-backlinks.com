@@ -47,13 +47,10 @@ export const metadata: Metadata = {
         "SaaS SEO",
     ],
     alternates: { canonical: "/" },
-    // No `images` key in either block, deliberately. `src/app/opengraph-image.png`
-    // and `src/app/icon.png` are Next file conventions: the framework emits
-    // og:image, twitter:image and the icon links from those files, at the right
-    // absolute URLs via metadataBase above, and file-based metadata wins over
-    // anything declared here. Listing the paths again would be a second source
-    // of truth that silently goes stale when the filenames change.
-    //
+    // No `images` key in either block, deliberately: `opengraph-image.png` and
+    // `icon.png` are Next file conventions, so the framework emits the tags from
+    // those files and file-based metadata wins over anything declared here.
+    // Listing the paths again is a second source of truth that goes stale.
     // Regenerate both with `pnpm assets:generate`.
     openGraph: {
         type: "website",

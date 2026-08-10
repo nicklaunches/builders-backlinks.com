@@ -30,18 +30,12 @@ const VERIFIEDDR_URL = "https://verifieddr.com";
 /**
  * Domain Rating, with its source named.
  *
- * This IS Ahrefs Domain Rating: we read it through VerifiedDR, who also return
- * their own TrueDR alongside it. The label is therefore accurate, unlike the
- * brief period when the score came from a different index and was still called
- * Domain Rating.
+ * This IS Ahrefs Domain Rating, read through VerifiedDR. The credit stays
+ * regardless of whether a licence compels it: a number that decides who a member
+ * is matched with should say where it came from.
  *
- * The credit stays regardless of whether any licence compels it. A number that
- * decides who a member gets matched with should say where it came from, because
- * naming the source is the only way a reader can judge it.
- *
- * Note the member is shown DR, but MATCHING bands on TrueDR. See
- * `src/lib/matching/score.ts`: DR is the recognisable number and TrueDR is the
- * one that is hard to inflate.
+ * The member is shown DR, but MATCHING bands on TrueDR — DR is the recognisable
+ * number, TrueDR is the one that is hard to inflate. See `matching/score.ts`.
  */
 export function DomainRatingBadge({ value }: { value: number | null }) {
     return (

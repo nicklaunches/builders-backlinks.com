@@ -256,7 +256,6 @@ export function ancestorsAt(masked: string, index: number): ElementRef[] {
  * before nav so that a "footer-nav" wrapper reports as footer, which is what a
  * member looking at the page would say it is.
  *
- * @param el - The candidate ancestor.
  * @param outer - Ancestors above `el`, outermost first.
  * @returns A placement, or null when this element says nothing.
  */

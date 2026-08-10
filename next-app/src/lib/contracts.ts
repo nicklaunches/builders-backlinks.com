@@ -64,20 +64,12 @@ export class AnalyzeError extends Error {
 /**
  * What to tell a member after each analysis failure, beyond what went wrong.
  *
- * One copy, deliberately, and it lives here rather than in `src/lib/analyze`
- * because the MCP layer is not allowed to import that leaf. There were two
- * copies: `explain()` in `src/lib/mcp/tools.ts` and `explainAnalyzeFailure()` in
- * `src/app/submit/actions.ts`, the second of which claimed in a comment to
- * mirror the first "word for word". It did not. The agent path was missing four
- * of the six branches, including `llm_failed`, so when a slow LLM broke a
- * submission the browser said "try again in a moment" and the agent — the path
- * this product treats as first-class — was told nothing and had no reason to
- * retry.
+ * One copy, and it lives here rather than in `src/lib/analyze` because the MCP
+ * layer may not import that leaf. Two copies drifted once and left the agent
+ * path — the one this product treats as first-class — silent on four of six
+ * failures. The switch is exhaustive on {@link AnalyzeErrorCode} on purpose, so
+ * a seventh code is a compile error rather than a silently empty hint.
  *
- * The switch is exhaustive on {@link AnalyzeErrorCode} on purpose: adding a
- * seventh code is then a compile error here rather than a silently empty hint.
- *
- * @param code - The failure code from an `AnalyzeError`.
  * @returns A sentence to append, or "" where the message already says enough.
  */
 export function analyzeFailureHint(code: AnalyzeErrorCode): string {

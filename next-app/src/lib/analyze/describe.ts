@@ -31,21 +31,13 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 /**
  * Default model when `OPENROUTER_ANALYZE_MODEL` is not set.
  *
- * Checked against the live OpenRouter model list: this one advertises
- * `response_format` in its supported parameters, which this module requires
- * because the whole prompt depends on getting strict JSON back. If you swap it,
- * confirm the replacement supports `response_format` first, or the parse below
- * fails on every single call.
+ * A replacement MUST support `response_format`, or the parse below fails on
+ * every call. It must also not be a reasoning model: this job is extraction and
+ * rephrasing, and a reasoning model asked for four sentences of prose thinks its
+ * way past the request budget and fails the submission.
  *
- * This was `deepseek-v4-pro` until a member could not list their site at all: a
- * reasoning model, asked for four sentences of prose, thought its way past the
- * request budget. Flash is the same family, same 1M context, same
- * `response_format` and `structured_outputs` support, and roughly a fifth of the
- * price. The job here is extraction and rephrasing, not reasoning.
- *
- * `wrangler.jsonc` sets `OPENROUTER_ANALYZE_MODEL` to this same value, and a var
- * WINS over this constant. Change the two together or production will quietly
- * run whatever the var says.
+ * `wrangler.jsonc` sets `OPENROUTER_ANALYZE_MODEL` to this same value and the
+ * var WINS, so change the two together.
  */
 const DEFAULT_MODEL = "deepseek/deepseek-v4-flash";
 

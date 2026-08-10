@@ -67,16 +67,11 @@ function Avatar({ handle, initials, src }: (typeof BUILDERS)[number]) {
     const [failed, setFailed] = useState(false);
 
     return (
-        // ring-bg, not a border: the ring is drawn outside the circle, so the
-        // avatars keep their full size while still reading as separated where
-        // they overlap.
-        //
-        // Two details follow from that overlap and from how the ring is drawn.
-        // `transition-shadow`, because a ring IS a box-shadow, and
-        // `transition-colors` does not cover it — the hover would otherwise
-        // snap. And `z-10` while hovered or focused, because the next avatar is
-        // pulled over this one by -space-x-2 and would clip both the accent ring
-        // and the global :focus-visible outline.
+        // ring-bg, not a border: drawn outside the circle, so avatars keep full
+        // size while still reading as separated. `transition-shadow` because a
+        // ring IS a box-shadow and `transition-colors` misses it, and `z-10` on
+        // hover because -space-x-2 pulls the next avatar over this one and would
+        // clip both the ring and the :focus-visible outline.
         <a
             href={`https://x.com/${handle}`}
             target="_blank"
