@@ -85,7 +85,10 @@ export type MatchRow = {
 };
 
 /** The agent-facing `nextStep`, restated for someone looking at a screen. */
-function uiNextStep(row: MatchRow): string {
+function uiNextStep(row: MatchRow, waitingOnThem: boolean): string {
+    // `waitingOnThem` outranks `row.state`, because a match accepted in this
+    // session still arrives here as `proposed`: nothing refetches the row.
+    if (waitingOnThem) return "You have accepted. Waiting on them.";
     switch (row.state) {
         case "proposed":
             return "Neither of you has responded yet. Accept to signal you are in. If they accept too, you are revealed to each other.";
@@ -127,10 +130,15 @@ export function MatchCard({ row }: { row: MatchRow }) {
     const [declining, setDeclining] = useState(false);
 
     // Optimistically reflect the decision without refetching the page, matching
-    // how the rest of this app avoids revalidatePath.
+    // how the rest of this app avoids revalidatePath. Accepting has two
+    // outcomes, and both have to land here: `revealed` when the other side had
+    // already accepted, and accepted-but-waiting when this click was the first.
+    // Only the former changes `state`, so the latter needs its own flag or the
+    // card re-renders the untouched `proposed` row it was sent with.
     const decided = respond.status === "done" && respond.matchId === row.matchId ? respond : null;
     const isAgreed = row.state === "agreed" || row.state === "placed" || (decided?.revealed ?? false);
     const isDeclined = row.state === "declined" || (decided ? !decided.accepted : false);
+    const waitingOnThem = !isAgreed && !isDeclined && (row.waitingOnThem || (decided?.accepted ?? false));
 
     const respondError =
         respond.status === "error" && respond.matchId === row.matchId
@@ -146,7 +154,9 @@ export function MatchCard({ row }: { row: MatchRow }) {
                     {/* Identity only inside the revealed branch. See rule 1 above. */}
                     {row.revealed && row.partnerDomain ? row.partnerDomain : `A ${row.category} site`}
                 </h3>
-                <StatePill state={isDeclined ? "declined" : isAgreed ? "agreed" : row.state} />
+                <StatePill
+                    state={isDeclined ? "declined" : isAgreed ? "agreed" : waitingOnThem ? "accepted" : row.state}
+                />
                 <span className="text-muted ml-auto font-mono text-[11.5px] tracking-[0.14em] uppercase">
                     {row.expires}
                 </span>
@@ -178,7 +188,7 @@ export function MatchCard({ row }: { row: MatchRow }) {
                 <Fact label="They offer" value={row.partnerOffers.replace(/_/g, " ")} />
             </dl>
 
-            <p className="text-muted mt-5 text-[14px] leading-relaxed">{uiNextStep(row)}</p>
+            <p className="text-muted mt-5 text-[14px] leading-relaxed">{uiNextStep(row, waitingOnThem)}</p>
 
             {respondError ? <ErrorNote>{respondError}</ErrorNote> : null}
 
@@ -201,7 +211,7 @@ export function MatchCard({ row }: { row: MatchRow }) {
                                 ) : (
                                     <Check aria-hidden="true" className="size-4" />
                                 )}
-                                {responding ? "Accepting" : row.waitingOnThem ? "Accepted, waiting" : "Accept"}
+                                {responding ? "Accepting" : waitingOnThem ? "Accepted, waiting" : "Accept"}
                             </button>
                             <button
                                 type="button"

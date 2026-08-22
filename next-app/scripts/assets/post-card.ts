@@ -50,6 +50,41 @@ const SNAPSHOT = {
 } as const;
 
 /**
+ * Pulled from the `get_categories` MCP tool on the date below.
+ *
+ * The headline this renders ("where the 56 sites are") counts sites, which is
+ * what the tool returns and what the exchange trades. Post 471 leads on 58
+ * builders, a larger number because a builder can register before a site is
+ * active. `posted/2026-08-22.md` is the record of both.
+ */
+const SNAPSHOT_0822 = {
+    date: "2026-08-22",
+    /** Categories with nobody in them at all. The tool's "be first" list. */
+    emptyCategories: 18,
+    rows: [
+        { label: "Launch Platforms", count: 8 },
+        { label: "Marketing", count: 7 },
+        { label: "Food & Drink", count: 6 },
+        { label: "SEO", count: 5 },
+        { label: "AI", count: 4 },
+        { label: "Developer Tools", count: 4 },
+        { label: "Finance", count: 3 },
+        { label: "Lifestyle", count: 3 },
+        { label: "Social Media", count: 3 },
+        { label: "Design Tools", count: 2 },
+        { label: "Education", count: 2 },
+        { label: "Travel", count: 2 },
+        { label: "Analytics", count: 1 },
+        { label: "E-Commerce", count: 1 },
+        { label: "Health & Fitness", count: 1 },
+        { label: "Legal", count: 1 },
+        { label: "Music", count: 1 },
+        { label: "No Code", count: 1 },
+        { label: "Productivity", count: 1 },
+    ],
+} as const;
+
+/**
  * How many bars are drawn before the tail is rolled into one muted line.
  *
  * X renders an attached image at roughly 400px wide, so this card is read at a
@@ -77,8 +112,39 @@ const STANDING = {
     headline: "the first trade, closed both ways",
 } as const;
 
-type Snapshot = typeof SNAPSHOT;
-type Standing = typeof STANDING;
+/**
+ * Our own standing, pulled from `get_my_standing` on the date below.
+ *
+ * `was` is the 08-06 card's figures, which is what post 360's family put in
+ * public. The card states the move against a published claim, not against a
+ * reading only this repo has seen.
+ */
+const STANDING_0822 = {
+    date: "2026-08-22",
+    sites: 5,
+    given: 7,
+    received: 7,
+    /** The product's own verdict, printed verbatim rather than re-derived here. */
+    standing: "healthy",
+    was: { given: 1, received: 1 },
+    headline: "seven trades, closed both ways",
+} as const;
+
+type Snapshot = {
+    readonly date: string;
+    readonly emptyCategories: number;
+    readonly rows: readonly { readonly label: string; readonly count: number }[];
+};
+
+type Standing = {
+    readonly date: string;
+    readonly sites: number;
+    readonly given: number;
+    readonly received: number;
+    readonly standing: string;
+    readonly was: { readonly given: number; readonly received: number };
+    readonly headline: string;
+};
 
 /** Measured as one glyph, emitted as ASCII. Both matter: see `valueRow`. */
 const ARROW = "→";
@@ -318,6 +384,8 @@ export function standingSvg(snapshot: Standing): string {
 const CARDS: readonly { name: string; svg: string }[] = [
     { name: `${SNAPSHOT.date}-categories.png`, svg: categoryLadderSvg(SNAPSHOT) },
     { name: `${STANDING.date}-standing.png`, svg: standingSvg(STANDING) },
+    { name: `${SNAPSHOT_0822.date}-categories.png`, svg: categoryLadderSvg(SNAPSHOT_0822) },
+    { name: `${STANDING_0822.date}-standing.png`, svg: standingSvg(STANDING_0822) },
 ];
 
 async function main() {
