@@ -162,6 +162,12 @@ async function main(): Promise<void> {
         check("and cannot be written to", write.status === 404, `got ${write.status}`);
     }
 
+    console.log("\nmalformed ids");
+    {
+        const page = await call({ path: "/app/inbox/not-a-thread", cookie: ada.cookie });
+        check("a malformed thread id is a 404 page, not a 500", page.status === 404, `got ${page.status}`);
+    }
+
     console.log("\nthe origin gate");
     {
         const crossOrigin = await call({
@@ -290,6 +296,21 @@ async function main(): Promise<void> {
 
     console.log("\nplacement");
     {
+        // What a member pastes here is rendered as a link on the PARTNER's
+        // screen, so anything that is not an http(s) URL is refused outright
+        // rather than stored as an inconclusive placement.
+        const badScheme = await call({
+            path: `/api/inbox/threads/${agreed}/placement`,
+            method: "POST",
+            cookie: ada.cookie,
+            body: { pageUrl: "javascript:alert(1)" },
+        });
+        check(
+            "a non-http page URL is refused",
+            badScheme.status === 400,
+            `got ${badScheme.status}: ${badScheme.text.slice(0, 120)}`,
+        );
+
         // A localhost URL is refused by the SSRF guard in `lib/analyze`, which is
         // exactly the inconclusive path worth asserting: the placement is still
         // recorded, and the member is not accused of failing to place it.

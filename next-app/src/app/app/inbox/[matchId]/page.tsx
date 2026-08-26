@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { z } from "zod";
 
 import { InboxShell, InboxSignInPrompt } from "@/app/app/inbox/inbox-shell";
 import { asJson } from "@/app/app/inbox/shared";
@@ -26,11 +27,17 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
+const MATCH_ID = z.uuid();
+
 export default async function ThreadPage({ params }: { params: Promise<{ matchId: string }> }) {
     const member = await getSessionMember();
     if (!member) return <InboxSignInPrompt />;
 
     const { matchId } = await params;
+    // The same check the routes make. A malformed id would otherwise reach
+    // Postgres as a uuid cast error, which is a 500, and a guessed URL deserves
+    // the same 404 as a real id that is not yours.
+    if (!MATCH_ID.safeParse(matchId).success) notFound();
 
     // The fetch is what can fail, so only the fetch is guarded: JSX built inside
     // a try does not have its render errors caught by it, and React says so.

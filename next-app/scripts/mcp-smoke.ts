@@ -255,9 +255,14 @@ async function main() {
 
         const noThread = await auth.callTool({
             name: "send_message",
-            arguments: { match: member.id, body: "there is no such thread" },
+            arguments: { match_id: member.id, body: "there is no such thread" },
         });
-        check("send_message refuses an unknown thread", (noThread as { isError?: boolean }).isError === true);
+        const noThreadText = JSON.stringify((noThread as { content?: unknown }).content ?? "");
+        check(
+            "send_message refuses an unknown thread",
+            (noThread as { isError?: boolean }).isError === true && noThreadText.includes("No thread"),
+            noThreadText.slice(0, 160),
+        );
 
         const badBrief = await auth.callTool({ name: "get_link_brief", arguments: { match_id: member.id } });
         check("get_link_brief refuses an unknown match", (badBrief as { isError?: boolean }).isError === true);

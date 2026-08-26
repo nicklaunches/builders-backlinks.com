@@ -71,7 +71,9 @@ export function Composer({
                     disabled={disabled}
                     onChange={(event) => setValue(event.target.value)}
                     onKeyDown={(event) => {
-                        if (event.key === "Enter" && !event.shiftKey) {
+                        // An IME confirms a candidate with Enter, and that
+                        // keystroke arrives here with `isComposing` set.
+                        if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                             event.preventDefault();
                             send();
                         }

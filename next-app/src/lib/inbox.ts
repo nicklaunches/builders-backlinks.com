@@ -187,7 +187,7 @@ export function threadEvents(input: {
         {
             id: "opened",
             at: input.proposedAt,
-            text: isRevealed(state)
+            text: isRevealed(state, input.agreedAt)
                 ? `${input.myDomain} and ${input.partnerLabel} are trading one editorial link each. Agree here which page each link goes on, then paste your published URL above and we will verify it.`
                 : `The exchange paired ${input.myDomain} with ${input.partnerLabel}. Accept and, if they accept too, you are revealed to each other and can talk here.`,
         },
@@ -305,4 +305,21 @@ export function linkifySegments(body: string): TextSegment[] {
 
     if (cursor < body.length) segments.push({ text: body.slice(cursor), href: null });
     return segments;
+}
+
+/**
+ * An href for a URL a member typed, or null when it must stay text.
+ *
+ * The same rule as {@link linkifySegments}, for a URL that arrives whole rather
+ * than inside a message: a recorded page URL is rendered as a link on the OTHER
+ * member's screen, and only `http` and `https` are ever handed to an anchor.
+ */
+export function safeHref(url: string | null): string | null {
+    if (!url) return null;
+    try {
+        const { protocol } = new URL(url);
+        return protocol === "http:" || protocol === "https:" ? url : null;
+    } catch {
+        return null;
+    }
 }

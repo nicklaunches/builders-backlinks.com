@@ -18,6 +18,7 @@ import { type PendingMessage, Timeline, type TimelineItem } from "@/app/app/inbo
 import { cn } from "@/components/web/cn";
 import { CopyButton } from "@/components/web/copy-button";
 import { SnippetBody } from "@/components/web/snippet-body";
+import { safeHref } from "@/lib/inbox";
 import type { LinkBrief } from "@/lib/services/links";
 
 /**
@@ -221,7 +222,9 @@ export function ThreadPane({ initial }: { initial: ThreadDetailJson }) {
                     <Banner tone="muted">
                         {thread.state === "declined"
                             ? "This exchange was declined. Nothing further to do — both sites are back in the pool."
-                            : "This exchange expired before both sides accepted. Both sites went back into the pool."}
+                            : thread.revealed
+                              ? "This exchange expired before both links went live. Both sites went back into the pool."
+                              : "This exchange expired before both sides accepted. Both sites went back into the pool."}
                     </Banner>
                 ) : thread.revealed ? (
                     <RevealedWork thread={thread} onThread={applyThread} />
@@ -421,6 +424,10 @@ function Site({ domain, rating }: { domain: string; rating: number | null }) {
 type TaskJson = ThreadDetailJson["tasks"][number];
 
 function TaskRow({ task, title, children }: { task: TaskJson; title: string; children?: React.ReactNode }) {
+    // The other member typed this URL. Anything that is not http(s) stays text
+    // rather than becoming a scheme in an anchor on this member's screen.
+    const href = safeHref(task.pageUrl);
+
     return (
         <div className="border-line bg-surface rounded-sm border">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3.5 py-2.5">
@@ -433,9 +440,13 @@ function TaskRow({ task, title, children }: { task: TaskJson; title: string; chi
 
             {task.pageUrl ? (
                 <p className="border-line text-muted truncate border-t px-3.5 py-2 text-[12.5px]">
-                    <a href={task.pageUrl} target="_blank" rel="noopener noreferrer" className="hover:text-fg">
-                        {task.pageUrl}
-                    </a>
+                    {href ? (
+                        <a href={href} target="_blank" rel="noopener noreferrer" className="hover:text-fg">
+                            {task.pageUrl}
+                        </a>
+                    ) : (
+                        task.pageUrl
+                    )}
                     {task.dofollow === false ? " · nofollow" : null}
                     {task.checkedAt ? ` · checked ${formatDate(task.checkedAt)}` : null}
                 </p>

@@ -175,3 +175,17 @@ test("the inbox renders in light mode without a dark-only assumption", async ({ 
 
     await context.close();
 });
+
+test("Enter pressed while an IME is composing does not send", async ({ browser, baseURL }) => {
+    const { context, page } = await pageFor(browser, seed.people.adatools!, baseURL!);
+
+    await openThread(page, seed.matches.agreed);
+    const box = page.getByRole("textbox", { name: "Write a reply" });
+    await box.fill("こんにちは");
+    // A CJK keyboard confirms a candidate with Enter; that keystroke reaches the
+    // page with `isComposing` set and must not post a half-typed message.
+    await box.dispatchEvent("keydown", { key: "Enter", isComposing: true });
+    await expect(box).toHaveValue("こんにちは");
+
+    await context.close();
+});

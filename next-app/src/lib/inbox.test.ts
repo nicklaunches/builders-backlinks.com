@@ -7,6 +7,7 @@ import {
     buildTimeline,
     linkTaskState,
     linkifySegments,
+    safeHref,
     shouldNotifyMessage,
     threadEvents,
     threadSteps,
@@ -246,4 +247,31 @@ test("an expired match says so on the timeline", () => {
     });
     assert.equal(events.at(-1)?.id, "expired");
     assert.equal(events.at(-1)?.at.getTime(), new Date("2026-08-15T00:00:00Z").getTime() + 0 * HOUR);
+});
+
+test("the opening message keeps naming the partner after an agreed match expires", () => {
+    // Expiry closes the thread; it does not re-mask two members who have
+    // already been introduced to each other.
+    const opened = threadEvents({
+        state: "expired",
+        proposedAt: new Date("2026-08-01T00:00:00Z"),
+        aAcceptedAt: new Date("2026-08-02T00:00:00Z"),
+        bAcceptedAt: new Date("2026-08-02T00:00:00Z"),
+        agreedAt: new Date("2026-08-02T00:00:00Z"),
+        expiresAt: new Date("2026-08-16T00:00:00Z"),
+        mineIsA: true,
+        myDomain: "mine.com",
+        partnerLabel: "theirs.com",
+        links: [],
+    })[0];
+    assert.equal(opened?.text.includes("are trading one editorial link each"), true);
+});
+
+test("safeHref hands back only http and https URLs", () => {
+    assert.equal(safeHref("https://a.com/page?x=1"), "https://a.com/page?x=1");
+    assert.equal(safeHref("http://a.com"), "http://a.com");
+    assert.equal(safeHref("javascript:alert(1)"), null);
+    assert.equal(safeHref("data:text/html,hi"), null);
+    assert.equal(safeHref("not a url"), null);
+    assert.equal(safeHref(null), null);
 });

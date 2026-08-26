@@ -528,14 +528,14 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
             description:
                 "Reads the conversation attached to a match, oldest first. A thread opens only once both sides have accepted, so before that this refuses and respond_to_match is the call to make instead. Called with no match, it lists every thread that has something in it.",
             inputSchema: z.object({
-                match: z.string().optional().describe("The match to read. Omit to list threads instead."),
+                match_id: z.string().optional().describe("The match to read. Omit to list threads instead."),
                 limit: z.number().int().min(1).max(100).default(30).describe("Most recent messages to show."),
             }),
         },
         guard(ctx, "list_messages", async (args) => {
             const member = requireMember(ctx);
 
-            if (!args.match) {
+            if (!args.match_id) {
                 const threads = await listThreads(member);
                 const withTalk = threads.filter((t) => t.lastMessage !== null || t.canMessage);
                 if (withTalk.length === 0) {
@@ -557,7 +557,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
                 );
             }
 
-            const messages = await listMessages({ member, matchId: args.match });
+            const messages = await listMessages({ member, matchId: args.match_id });
             const recent = messages.slice(-args.limit);
             if (recent.length === 0) {
                 return text("Nobody has written in this thread yet. Sending the first message is usually worth it.");
@@ -573,13 +573,13 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
             description:
                 "Sends a message to the other side of a match. Use it to agree which pages the two links go on before writing either. Only works once both sides have accepted, because before that neither of you knows who the other is.",
             inputSchema: z.object({
-                match: z.string().describe("The match whose thread to write in."),
+                match_id: z.string().describe("The match whose thread to write in."),
                 body: z.string().min(1).max(4000).describe("What to say. Plain text."),
             }),
         },
         guard(ctx, "send_message", async (args) => {
             const member = requireMember(ctx);
-            const sent = await sendMessage({ member, matchId: args.match, body: args.body });
+            const sent = await sendMessage({ member, matchId: args.match_id, body: args.body });
             return text(
                 [
                     `Sent to ${sent.senderLabel === "You" ? "your partner" : sent.senderLabel}.`,

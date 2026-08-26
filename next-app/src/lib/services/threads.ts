@@ -48,6 +48,12 @@ import { NO_LINKS, liveLinkCountsFor } from "@/lib/services/standing";
  * caller, because there are three callers (two routes and an MCP tool) and a
  * check in the UI protects nobody.
  *
+ * Two readings of "revealed", and they differ only after a match closes. A
+ * match agreed and then expired keeps its identities out — `isRevealed` with
+ * `agreedAt` says so — so its thread stays readable and keeps naming both
+ * sides. Writing takes the strict reading, the state alone: a closed thread is
+ * read-only whatever it once was.
+ *
  * Ownership is checked the same way everywhere else does it: the viewer's site
  * ids, then whether the match names one of them. A match that names none of them
  * is reported as `not_yours` rather than `not_found`, matching `MatchError`, so
@@ -88,6 +94,7 @@ export type MessageView = {
 export type ThreadSummary = {
     matchId: string;
     state: MatchState;
+    /** Identities are out: both sides accepted at some point, even if the match has since closed. */
     revealed: boolean;
     /** The partner's domain once revealed, otherwise a category description. */
     partnerLabel: string;
@@ -101,6 +108,7 @@ export type ThreadSummary = {
     lastActivityAt: Date;
     unread: number;
     waitingOnMe: boolean;
+    /** Open AND revealed. False on a closed thread, even one that was revealed. */
     canMessage: boolean;
 };
 
@@ -122,6 +130,7 @@ export type ThreadTask = {
 export type ThreadDetail = {
     matchId: string;
     state: MatchState;
+    /** Identities are out: both sides accepted at some point, even if the match has since closed. */
     revealed: boolean;
     widened: boolean;
     /** The PARTNER's category, for the same reason the dashboard uses it. */
@@ -132,6 +141,7 @@ export type ThreadDetail = {
     steps: ThreadStepView[];
     tasks: ThreadTask[];
     timeline: TimelineEntry[];
+    /** Open AND revealed. False on a closed thread, even one that was revealed. */
     canMessage: boolean;
     waitingOnMe: boolean;
     expiresAt: Date;
@@ -186,8 +196,8 @@ async function loadThread(member: ExchangeMember, matchId: string): Promise<Thre
 }
 
 /** What a partner is called before and after the reveal. */
-function labelFor(site: ExchangeSite, state: MatchState): string {
-    return isRevealed(state) ? site.domain : `A ${site.category} site`;
+function labelFor(site: ExchangeSite, revealed: boolean): string {
+    return revealed ? site.domain : `A ${site.category} site`;
 }
 
 /** True when the other side accepted first and the viewer has not answered. */
@@ -283,12 +293,13 @@ export async function listThreads(member: ExchangeMember): Promise<ThreadSummary
             theirLinkStatus: theirLink?.status ?? null,
         });
         const preview = previewByMatch.get(match.id) ?? null;
+        const revealed = isRevealed(match.state, match.agreedAt);
 
         summaries.push({
             matchId: match.id,
             state: match.state,
-            revealed: isRevealed(match.state),
-            partnerLabel: labelFor(partner, match.state),
+            revealed,
+            partnerLabel: labelFor(partner, revealed),
             partnerCategory: partner.category,
             partnerDomainRating: partner.domainRating,
             mySiteDomain: mySite.domain,
@@ -350,7 +361,7 @@ export async function getThread(input: { member: ExchangeMember; matchId: string
         liveLinkCountsFor(partnerSite.id),
     ]);
 
-    const revealed = isRevealed(match.state);
+    const revealed = isRevealed(match.state, match.agreedAt);
     const myLink = links.find((l) => l.fromSiteId === mySite.id) ?? null;
     const theirLink = links.find((l) => l.fromSiteId === partnerSite.id) ?? null;
 
@@ -361,12 +372,18 @@ export async function getThread(input: { member: ExchangeMember; matchId: string
             .from(exchangeMembers)
             .where(eq(exchangeMembers.userId, partnerSite.ownerId))
             .limit(1);
-        partner = toRevealedPartner(partnerSite, counts ?? NO_LINKS, partnerMember?.email ?? "", match.state);
+        partner = toRevealedPartner(
+            partnerSite,
+            counts ?? NO_LINKS,
+            partnerMember?.email ?? "",
+            match.state,
+            match.agreedAt,
+        );
     } else {
         partner = toMaskedPartner(partnerSite, counts ?? NO_LINKS);
     }
 
-    const partnerLabel = labelFor(partnerSite, match.state);
+    const partnerLabel = labelFor(partnerSite, revealed);
     const events = threadEvents({
         state: match.state,
         proposedAt: match.createdAt,
@@ -410,7 +427,7 @@ export async function getThread(input: { member: ExchangeMember; matchId: string
             events,
             messages: messages.map((m) => toMessageView(m, member, partnerLabel)),
         }),
-        canMessage: revealed,
+        canMessage: isRevealed(match.state),
         waitingOnMe: isWaitingOnMe(match, mineIsA),
         expiresAt: match.expiresAt,
         lastReadAt: readRow[0]?.lastReadAt ?? null,
@@ -435,7 +452,10 @@ function toMessageView(row: ExchangeMessage, member: ExchangeMember, partnerLabe
  * The `since` cursor is what makes polling cheap: an idle thread answers with an
  * empty array rather than re-sending the conversation every few seconds.
  *
- * @throws `ThreadError` when the match is not the member's or is not revealed.
+ * Readable for as long as the identities are out, so a thread that closed after
+ * agreement keeps its history.
+ *
+ * @throws `ThreadError` when the match is not the member's or was never revealed.
  */
 export async function listMessages(input: {
     member: ExchangeMember;
@@ -444,9 +464,8 @@ export async function listMessages(input: {
 }): Promise<MessageView[]> {
     const { member } = input;
     const { match, partnerSite } = await loadThread(member, input.matchId);
-    if (!isRevealed(match.state)) {
-        throw new ThreadError("not_revealed", "Messages open once both sides accept the match.");
-    }
+    const revealed = isRevealed(match.state, match.agreedAt);
+    if (!revealed) throw new ThreadError("not_revealed", "Messages open once both sides accept the match.");
 
     const rows = await db()
         .select()
@@ -460,7 +479,7 @@ export async function listMessages(input: {
         .orderBy(asc(exchangeMessages.createdAt))
         .limit(MESSAGE_PAGE);
 
-    const partnerLabel = labelFor(partnerSite, match.state);
+    const partnerLabel = labelFor(partnerSite, revealed);
     return rows.map((row) => toMessageView(row, member, partnerLabel));
 }
 
@@ -488,8 +507,15 @@ export async function sendMessage(input: {
     }
 
     const { match, mySite, partnerSite } = await loadThread(member, input.matchId);
+    // The strict reading, on purpose: a closed thread is read-only even though
+    // its identities stay out. The refusal says which of the two it is.
     if (!isRevealed(match.state)) {
-        throw new ThreadError("not_revealed", "Messages open once both sides accept the match.");
+        throw new ThreadError(
+            "not_revealed",
+            match.agreedAt
+                ? "This exchange is closed, so its thread is read-only."
+                : "Messages open once both sides accept the match.",
+        );
     }
 
     const now = new Date();
@@ -539,7 +565,8 @@ export async function sendMessage(input: {
         });
     }
 
-    return toMessageView(row, member, labelFor(partnerSite, match.state));
+    // Past the gate above, so the partner is named.
+    return toMessageView(row, member, labelFor(partnerSite, true));
 }
 
 /** Moves a reader's cursor to `at`, inserting the row the first time. */

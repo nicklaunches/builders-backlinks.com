@@ -547,7 +547,7 @@ async function buildMatchView(
     if (!partnerSite) return null;
 
     const state = match.state;
-    const revealed = isRevealed(state);
+    const revealed = isRevealed(state, match.agreedAt);
     const counts = partnerCounts
         ? (partnerCounts.get(partnerSite.id) ?? NO_LINKS)
         : await liveLinkCountsFor(partnerSite.id);
@@ -559,7 +559,7 @@ async function buildMatchView(
             .from(exchangeMembers)
             .where(eq(exchangeMembers.userId, partnerSite.ownerId))
             .limit(1);
-        partner = toRevealedPartner(partnerSite, counts, partnerMember?.email ?? "", state);
+        partner = toRevealedPartner(partnerSite, counts, partnerMember?.email ?? "", state, match.agreedAt);
     } else {
         partner = toMaskedPartner(partnerSite, counts);
     }

@@ -78,6 +78,8 @@ export function toMaskedPartner(site: SiteLike, counts: LiveLinkCounts): MaskedP
  *
  * @param counts - Live link counts for this site, as {@link toMaskedPartner}.
  * @param state - Anything before `agreed` throws.
+ * @param agreedAt - When the match was agreed, if the caller holds the row. A
+ *   match that closed after agreement is still revealed: see `isRevealed`.
  * @throws When the match has not reached mutual accept. A programming error, not
  *   a user one: a caller tried to reveal an identity nobody consented to share.
  */
@@ -86,8 +88,9 @@ export function toRevealedPartner(
     counts: LiveLinkCounts,
     ownerEmail: string,
     state: MatchState,
+    agreedAt?: Date | null,
 ): RevealedPartner {
-    if (!isRevealed(state)) {
+    if (!isRevealed(state, agreedAt)) {
         throw new Error(`Refusing to reveal partner identity for a match in state "${state}"`);
     }
     return {
