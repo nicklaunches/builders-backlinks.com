@@ -10,6 +10,7 @@ import { getCategoryDepths, getRules } from "@/lib/services/catalog";
 import { LinkError, checkLinks, getLinkBrief, getStanding, markLinkPlaced } from "@/lib/services/links";
 import { MatchError, listMatches, respondToMatch, searchPartners } from "@/lib/services/matches";
 import { SiteError, commitSite, draftSite, listMySites } from "@/lib/services/sites";
+import { ThreadError, listMessages, listThreads, sendMessage } from "@/lib/services/threads";
 
 /**
  * @file The MCP tool surface.
@@ -78,6 +79,12 @@ function requireMember(ctx: ToolContext): ExchangeMember {
 
 class NotSignedIn extends Error {}
 
+/** One line of a message, for a thread listing. */
+function preview(body: string): string {
+    const line = body.replace(/\s+/g, " ").trim();
+    return line.length > 90 ? `${line.slice(0, 90)}…` : line;
+}
+
 /** Turns any thrown service error into a message the model can act on. */
 function explain(err: unknown): TextResult {
     if (err instanceof NotSignedIn) return failure(SIGN_IN_HINT);
@@ -95,7 +102,12 @@ function explain(err: unknown): TextResult {
             [`Could not analyze that site: ${err.message}`, analyzeFailureHint(err.code)].filter(Boolean).join(" "),
         );
     }
-    if (err instanceof SiteError || err instanceof MatchError || err instanceof LinkError) {
+    if (
+        err instanceof SiteError ||
+        err instanceof MatchError ||
+        err instanceof LinkError ||
+        err instanceof ThreadError
+    ) {
         return failure(err.message);
     }
     console.error("mcp tool failed", err);
@@ -505,6 +517,75 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
             const s = await getStanding(member);
             return text(
                 `${s.sites} site(s). Given ${s.linksGiven}, received ${s.linksReceived}. Standing: ${s.health}. ${s.note}`,
+            );
+        }),
+    );
+
+    server.registerTool(
+        "list_messages",
+        {
+            title: "Read a thread",
+            description:
+                "Reads the conversation attached to a match, oldest first. A thread opens only once both sides have accepted, so before that this refuses and respond_to_match is the call to make instead. Called with no match, it lists every thread that has something in it.",
+            inputSchema: z.object({
+                match: z.string().optional().describe("The match to read. Omit to list threads instead."),
+                limit: z.number().int().min(1).max(100).default(30).describe("Most recent messages to show."),
+            }),
+        },
+        guard(ctx, "list_messages", async (args) => {
+            const member = requireMember(ctx);
+
+            if (!args.match) {
+                const threads = await listThreads(member);
+                const withTalk = threads.filter((t) => t.lastMessage !== null || t.canMessage);
+                if (withTalk.length === 0) {
+                    return text(
+                        "No open threads. A thread appears once a match reaches mutual acceptance; list_matches shows what is waiting on you.",
+                    );
+                }
+                return text(
+                    withTalk
+                        .map((t) =>
+                            [
+                                `${t.matchId}  [${t.state}]  ${t.partnerLabel}${t.unread > 0 ? `  ${t.unread} unread` : ""}`,
+                                t.lastMessage
+                                    ? `  last: ${t.lastMessage.mine ? "you" : "them"}: ${preview(t.lastMessage.body)}`
+                                    : "  no messages yet",
+                            ].join("\n"),
+                        )
+                        .join("\n\n"),
+                );
+            }
+
+            const messages = await listMessages({ member, matchId: args.match });
+            const recent = messages.slice(-args.limit);
+            if (recent.length === 0) {
+                return text("Nobody has written in this thread yet. Sending the first message is usually worth it.");
+            }
+            return text(recent.map((m) => `${m.senderLabel}:\n${m.body}`).join("\n\n"));
+        }),
+    );
+
+    server.registerTool(
+        "send_message",
+        {
+            title: "Write to a partner",
+            description:
+                "Sends a message to the other side of a match. Use it to agree which pages the two links go on before writing either. Only works once both sides have accepted, because before that neither of you knows who the other is.",
+            inputSchema: z.object({
+                match: z.string().describe("The match whose thread to write in."),
+                body: z.string().min(1).max(4000).describe("What to say. Plain text."),
+            }),
+        },
+        guard(ctx, "send_message", async (args) => {
+            const member = requireMember(ctx);
+            const sent = await sendMessage({ member, matchId: args.match, body: args.body });
+            return text(
+                [
+                    `Sent to ${sent.senderLabel === "You" ? "your partner" : sent.senderLabel}.`,
+                    "They see it in their inbox, and get an email if they have been away from the thread for a while.",
+                    "Read the reply with list_messages, and when the placement is done call mark_link_placed.",
+                ].join(" "),
             );
         }),
     );

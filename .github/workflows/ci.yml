@@ -22,6 +22,10 @@
 #   test:cron  drives the daily re-pair pass and compares its dry run to its
 #              live run, which is how both of the defects that pass shipped
 #              with were eventually found
+#   test:inbox drives every /api/inbox route with real session cookies, including
+#              the masking, ownership and cross-origin refusals
+#   test:e2e   drives the inbox in a real browser, two members at once, which is
+#              the only way to check that a reply arrives without a reload
 #
 # ONE JOB, NOT TWO, and that is a reversal worth explaining. The suites started
 # out in a separate `e2e` job so that a type error would report as a type error
@@ -104,8 +108,16 @@ jobs:
       # The cron routes fail closed without this, by design. Any value works;
       # it authenticates the test to its own throwaway server.
       CRON_SECRET: ci-cron-secret
+      # The inbox suites sign in by minting the same encrypted session JWT a real
+      # sign-in leaves behind, which needs the key the server is using. A
+      # throwaway on a throwaway server, and deliberately written in the open for
+      # the same reason DATABASE_URL above is.
+      AUTH_SECRET: ci-auth-secret-not-used-anywhere-else
+      AUTH_TRUST_HOST: "true"
       MCP_SMOKE_BASE: http://localhost:3100
       CRON_SMOKE_BASE: http://localhost:3100
+      INBOX_SMOKE_BASE: http://localhost:3100
+      E2E_BASE_URL: http://localhost:3100
       NEXT_PUBLIC_SITE_URL: http://localhost:3100
 
     steps:
@@ -179,6 +191,26 @@ jobs:
 
       - run: pnpm test:mcp
       - run: pnpm test:cron
+      - run: pnpm test:inbox
+
+      # Chromium only, and only here: the browser suite is the one thing in this
+      # repo that needs a binary the runner does not ship with. `--with-deps`
+      # pulls the shared libraries headless Chrome needs on a bare ubuntu image.
+      - name: Install the browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - run: pnpm test:e2e
+
+      # The trace is the only way to see what a browser failure looked like once
+      # the runner is gone.
+      - name: Keep the browser traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: next-app/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
 
       # The server log is where a 500 explains itself. Without this the only
       # evidence of why an end-to-end test failed dies with the runner.

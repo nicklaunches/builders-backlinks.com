@@ -259,6 +259,18 @@ export const exchangeMatches = pgTable(
         proposedById: uuid("proposed_by_id").references(() => users.id, { onDelete: "set null" }),
         declineReason: text("decline_reason"),
 
+        /**
+         * When each side accepted, or NULL where it has not.
+         *
+         * `state` records the latest transition and `agreedAt` the moment both
+         * sides were in, so between them neither says when the FIRST acceptance
+         * happened — and the inbox timeline has to place that event. Nullable
+         * forever and never backfilled: a match agreed before these columns
+         * existed has no honest value to put here.
+         */
+        aAcceptedAt: timestamp("a_accepted_at", { withTimezone: true }),
+        bAcceptedAt: timestamp("b_accepted_at", { withTimezone: true }),
+
         /** The reveal moment: domains and emails unlock here and not before. */
         agreedAt: timestamp("agreed_at", { withTimezone: true }),
         expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
@@ -328,6 +340,99 @@ export const exchangeLinks = pgTable(
 );
 
 /**
+ * A message written by one member to the other inside a match thread.
+ *
+ * The thread is the match: there is no separate conversation id, because two
+ * members only ever have something to say to each other in the context of one
+ * pair, and the pair is already unique by invariant 2.
+ *
+ * WRITES ARE GATED ON REVEAL, in `services/threads.ts`, not here. Before a match
+ * is `agreed` neither side knows who the other is, and a free-text field between
+ * them is the one channel that could undo that: "hi, I'm example.com" defeats
+ * every masking rule in `services/mask.ts`. The gate is a service-level check
+ * rather than a constraint because the state that decides it lives on another
+ * table, and a trigger enforcing it there would be the only trigger in the
+ * schema.
+ *
+ * `sender_site_id` is stored alongside `sender_user_id` even though a member's
+ * side of a match is derivable: a member can own several sites, and reading a
+ * two-year-old thread should not depend on re-deriving which of them was in it.
+ */
+export const exchangeMessages = pgTable(
+    "exchange_messages",
+    {
+        id: uuid("id").defaultRandom().primaryKey(),
+        matchId: uuid("match_id")
+            .notNull()
+            .references(() => exchangeMatches.id, { onDelete: "cascade" }),
+        senderUserId: uuid("sender_user_id")
+            .notNull()
+            .references(() => users.id, { onDelete: "cascade" }),
+        senderSiteId: uuid("sender_site_id")
+            .notNull()
+            .references(() => exchangeSites.id, { onDelete: "cascade" }),
+
+        /** Plain text. Rendered escaped, with URLs autolinked at display time. */
+        body: text("body").notNull(),
+
+        /**
+         * When the "you have a reply" email for this message went out. NULL when
+         * none was sent, which is the common case: the throttle in
+         * `lib/inbox.ts` suppresses most of them.
+         */
+        notifiedAt: timestamp("notified_at", { withTimezone: true }),
+
+        /**
+         * MILLISECOND precision, deliberately, because this column is a cursor.
+         *
+         * The inbox polls with `?since=<the newest message's createdAt>`, and
+         * that value has been through JSON, which has no date type and truncates
+         * to milliseconds. At the Postgres default of microseconds a message
+         * stored at `…123456` is still greater than the `…123` the client sends
+         * back, so every poll re-delivers the message it just received, forever.
+         */
+        createdAt: timestamp("created_at", { withTimezone: true, precision: 3 }).defaultNow().notNull(),
+    },
+    (table) => [
+        /** The only read pattern: one thread, oldest first, paged by time. */
+        index("exchange_messages_thread_idx").on(table.matchId, table.createdAt),
+        /** The throttle asks "was anything mailed here recently", per thread. */
+        index("exchange_messages_notified_idx").on(table.matchId, table.notifiedAt),
+        /**
+         * The length bound the API also enforces, kept here as well because the
+         * column is written from two interfaces and an unbounded text column
+         * behind a chat box is an easy way to store a megabyte per keystroke.
+         */
+        check("exchange_messages_body_length", sql`char_length(${table.body}) between 1 and 4000`),
+    ],
+);
+
+/**
+ * How far each member has read in a thread. One row per (match, reader).
+ *
+ * A cursor rather than a per-message read flag: a thread has exactly two
+ * participants and marking a thread read is one write either way, but a cursor
+ * stays one write no matter how many messages it covers.
+ *
+ * It is also what makes the reply email honest. The throttle asks whether the
+ * recipient has looked at the thread recently, and without a cursor the only
+ * answer available is "we mailed them, so presumably".
+ */
+export const exchangeThreadReads = pgTable(
+    "exchange_thread_reads",
+    {
+        matchId: uuid("match_id")
+            .notNull()
+            .references(() => exchangeMatches.id, { onDelete: "cascade" }),
+        userId: uuid("user_id")
+            .notNull()
+            .references(() => users.id, { onDelete: "cascade" }),
+        lastReadAt: timestamp("last_read_at", { withTimezone: true }).defaultNow().notNull(),
+    },
+    (table) => [primaryKey({ columns: [table.matchId, table.userId] })],
+);
+
+/**
  * Fixed-window rate limit counters, one row per (bucket, caller, window).
  *
  * Kept in Postgres rather than KV because the limiter needs an atomic
@@ -378,6 +483,12 @@ export const exchangeMatchesRelations = relations(exchangeMatches, ({ one, many 
     siteA: one(exchangeSites, { fields: [exchangeMatches.siteAId], references: [exchangeSites.id] }),
     siteB: one(exchangeSites, { fields: [exchangeMatches.siteBId], references: [exchangeSites.id] }),
     links: many(exchangeLinks),
+    messages: many(exchangeMessages),
+}));
+
+export const exchangeMessagesRelations = relations(exchangeMessages, ({ one }) => ({
+    match: one(exchangeMatches, { fields: [exchangeMessages.matchId], references: [exchangeMatches.id] }),
+    sender: one(users, { fields: [exchangeMessages.senderUserId], references: [users.id] }),
 }));
 
 export const exchangeLinksRelations = relations(exchangeLinks, ({ one }) => ({
@@ -392,7 +503,10 @@ export type ExchangeMember = typeof exchangeMembers.$inferSelect;
 export type ExchangeSite = typeof exchangeSites.$inferSelect;
 export type ExchangeMatch = typeof exchangeMatches.$inferSelect;
 export type ExchangeLink = typeof exchangeLinks.$inferSelect;
+export type ExchangeMessage = typeof exchangeMessages.$inferSelect;
+export type ExchangeThreadRead = typeof exchangeThreadReads.$inferSelect;
 
 export type NewExchangeSite = typeof exchangeSites.$inferInsert;
 export type NewExchangeMatch = typeof exchangeMatches.$inferInsert;
 export type NewExchangeLink = typeof exchangeLinks.$inferInsert;
+export type NewExchangeMessage = typeof exchangeMessages.$inferInsert;

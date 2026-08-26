@@ -737,7 +737,25 @@ export async function respondToMatch(input: {
 
         // Built as a patch rather than mutated in place: one UPDATE, and the
         // fields that do not change are not written at all.
-        const patch: { state?: MatchState; declineReason?: string | null; agreedAt?: Date } = {};
+        const patch: {
+            state?: MatchState;
+            declineReason?: string | null;
+            agreedAt?: Date;
+            aAcceptedAt?: Date;
+            bAcceptedAt?: Date;
+        } = {};
+        const now = new Date();
+
+        // Written once per side and never moved: the inbox timeline places the
+        // first acceptance from it, and a retry restamping it would slide an
+        // event that already happened.
+        const stampAccept = () => {
+            if (mineIsA) {
+                if (!current.aAcceptedAt) patch.aAcceptedAt = now;
+            } else if (!current.bAcceptedAt) {
+                patch.bAcceptedAt = now;
+            }
+        };
 
         if (!accept) {
             patch.state = "declined";
@@ -747,9 +765,11 @@ export async function respondToMatch(input: {
             // agents retry, and a retry should be harmless.
         } else if (from === theirAccept) {
             patch.state = "agreed";
-            patch.agreedAt = new Date();
+            patch.agreedAt = now;
+            stampAccept();
         } else {
             patch.state = myAccept;
+            stampAccept();
         }
 
         if (Object.keys(patch).length === 0) {

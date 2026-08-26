@@ -7,6 +7,7 @@ import { LinkVerifiedEmail } from "@/emails/link-verified";
 import { MatchAgreedEmail } from "@/emails/match-agreed";
 import { MatchExpiredEmail } from "@/emails/match-expired";
 import { MatchProposedEmail } from "@/emails/match-proposed";
+import { MessageReceivedEmail } from "@/emails/message-received";
 import { PlacementPendingEmail } from "@/emails/placement-pending";
 import { SiteApprovedEmail } from "@/emails/site-approved";
 import { SiteRejectedEmail } from "@/emails/site-rejected";
@@ -215,6 +216,44 @@ export async function notifyMatchAgreed(input: {
             );
         }
         await Promise.all(sends);
+    });
+}
+
+/** How much of a message the email quotes before trailing off. */
+const MESSAGE_EXCERPT_LENGTH = 400;
+
+/**
+ * Tells a member their partner wrote to them in a thread.
+ *
+ * The decision to send is NOT made here. `services/threads.ts` asks
+ * `shouldNotifyMessage` first and stamps the message it mailed, so this is only
+ * ever reached for a reply that already passed the throttle. Calling it
+ * directly mails on every message, which is what the throttle exists to stop.
+ */
+export async function notifyMessageReceived(input: {
+    matchId: string;
+    /** The site whose owner is being told, i.e. the RECIPIENT's own site. */
+    recipientSite: ExchangeSite;
+    senderDomain: string;
+    body: string;
+}): Promise<void> {
+    await safely("message-received", async () => {
+        const to = await emailForSite(input.recipientSite);
+        if (!to) return;
+
+        const truncated = input.body.length > MESSAGE_EXCERPT_LENGTH;
+        await sendEmail({
+            to,
+            subject: `${input.senderDomain} replied about your link exchange`,
+            react: MessageReceivedEmail({
+                matchId: input.matchId,
+                senderDomain: input.senderDomain,
+                recipientDomain: input.recipientSite.domain,
+                excerpt: truncated ? input.body.slice(0, MESSAGE_EXCERPT_LENGTH).trimEnd() : input.body,
+                truncated,
+            }),
+            emailType: "message-received",
+        });
     });
 }
 
