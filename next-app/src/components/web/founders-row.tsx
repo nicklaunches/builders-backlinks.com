@@ -42,6 +42,7 @@ const BUILDERS = [
     { handle: "nicklaunches", initials: "NL", src: "/founders/nicklaunches.png" },
     { handle: "hakimuddinkika", initials: "HK", src: "/founders/hakimuddinkika.jpg" },
     { handle: "josefandre_", initials: "JA", src: "/founders/josefandre.jpg" },
+    { handle: "ghosty_dev", initials: "GD", src: "/founders/ghosty_dev.jpg" },
 ] as const;
 
 type FoundersRowProps = {
