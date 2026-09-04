@@ -150,7 +150,8 @@ const STEP_LABELS: Record<string, string> = {
     live: "Live",
 };
 
-function StepChip({ step, state }: { step: string | null; state: string }) {
+/** Where a thread is on the rail, as a chip. Shared with the Overview's "needs you" rows. */
+export function StepChip({ step, state }: { step: string | null; state: string }) {
     if (state === "declined" || state === "expired") {
         return (
             <span className="border-line text-muted rounded-full border px-1.5 py-0.5 font-mono text-[10px] tracking-[0.1em] uppercase">

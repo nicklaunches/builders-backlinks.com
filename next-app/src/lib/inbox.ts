@@ -112,6 +112,30 @@ export function linkTaskState(link: { status: LinkStatus } | null): TaskState {
     }
 }
 
+/**
+ * Why a thread is on the Overview's "needs you" list, or null when it is not.
+ *
+ * Ordered by what the member would want to hear first: a reply they have not
+ * read beats a task they already know about. A closed thread never needs
+ * anyone. `missing` is listed because it is the one state the member cannot
+ * see coming: the crawl found their page without the link on it.
+ */
+export function attentionReason(thread: {
+    state: MatchState;
+    step: ThreadStep | null;
+    unread: number;
+    waitingOnMe: boolean;
+    canMessage: boolean;
+    myTask: TaskState;
+}): string | null {
+    if (thread.state === "declined" || thread.state === "expired") return null;
+    if (thread.unread > 0) return thread.unread === 1 ? "1 new message" : `${thread.unread} new messages`;
+    if (thread.step === "decide" && (thread.waitingOnMe || thread.state === "proposed")) return "Accept or decline";
+    if (thread.canMessage && thread.myTask === "not_started") return "Add your link";
+    if (thread.canMessage && thread.myTask === "missing") return "Your link was not found";
+    return null;
+}
+
 /** How long after someone last opened a thread we assume they are still in it. */
 export const NOTIFY_QUIET_MS = 15 * 60 * 1000;
 

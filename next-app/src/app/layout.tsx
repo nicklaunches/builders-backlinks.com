@@ -6,8 +6,11 @@
  * because this audience reads a monospace `bb_live_...` as "real" and a
  * proportional one as "marketing".
  */
+import { GoogleAnalytics } from "@next/third-parties/google";
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+
+import { GA_ID } from "@/lib/analytics";
 
 import "./globals.css";
 
@@ -79,10 +82,12 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <html lang="en" className={`${sans.variable} ${mono.variable}`}>
             <body className="bg-bg text-fg min-h-dvh antialiased">
                 {children}
-                {/* No analytics script here on purpose. Cloudflare Web Analytics
-                    is on "Automatic setup" for this zone, so the JS Snippet will
-                    be automatically injected at the edge. Rendering one here as
-                    well would double-count every pageview. */}
+                {/* Cloudflare Web Analytics is on "Automatic setup" for this
+                    zone and is injected at the edge, so it is deliberately not
+                    rendered here. GA4 is the product analytics (the funnel
+                    events in `lib/analytics.ts`) and loads only when the id was
+                    set at build time. */}
+                {GA_ID ? <GoogleAnalytics gaId={GA_ID} /> : null}
             </body>
         </html>
     );

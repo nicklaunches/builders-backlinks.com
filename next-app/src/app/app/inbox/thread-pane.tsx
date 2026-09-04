@@ -10,6 +10,7 @@ import {
     type MessageJson,
     POLL_OVERLAP_MS,
     type PlacementReportJson,
+    READ_EVENT,
     type ThreadDetailJson,
     formatDate,
     inboxFetch,
@@ -19,6 +20,7 @@ import { type PendingMessage, Timeline, type TimelineItem } from "@/app/app/inbo
 import { cn } from "@/components/web/cn";
 import { CopyButton } from "@/components/web/copy-button";
 import { SnippetBody } from "@/components/web/snippet-body";
+import { track } from "@/lib/analytics";
 import { safeHref } from "@/lib/inbox";
 import type { LinkBrief } from "@/lib/services/links";
 
@@ -78,9 +80,11 @@ export function ThreadPane({ initial }: { initial: ThreadDetailJson }) {
 
     /** Opening a thread is reading it, and so is a new message arriving while it is open. */
     useEffect(() => {
-        void inboxFetch(`/api/inbox/threads/${thread.matchId}/read`, { method: "POST" }).catch(() => {
-            // A missed read cursor only costs a stale badge.
-        });
+        void inboxFetch(`/api/inbox/threads/${thread.matchId}/read`, { method: "POST" })
+            .then(() => window.dispatchEvent(new Event(READ_EVENT)))
+            .catch(() => {
+                // A missed read cursor only costs a stale badge.
+            });
     }, [thread.matchId, lastMessageAt]);
 
     // Poll for the other side's replies. Paused while hidden, and keyed on the
@@ -149,6 +153,7 @@ export function ThreadPane({ initial }: { initial: ThreadDetailJson }) {
                 );
                 setPending((current) => current.filter((p) => p.id !== id));
                 setMessages((current) => merge(current, [data.message]));
+                track("send_message");
             } catch (err) {
                 setPending((current) => current.map((p) => (p.id === id ? { ...p, failed: true } : p)));
                 setError(err instanceof Error ? err.message : "That message did not send.");
@@ -284,6 +289,7 @@ function DecideWork({ thread, onThread }: { thread: ThreadDetailJson; onThread: 
                 { method: "POST", body: { accept, reason: reason.trim() || undefined } },
             );
             onThread(data.thread);
+            track(accept ? "accept_match" : "decline_match", { revealed: data.thread.revealed });
         } catch (err) {
             setError(err instanceof Error ? err.message : "That did not go through.");
         } finally {

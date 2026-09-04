@@ -1,12 +1,13 @@
 "use client";
 
 import { AlertTriangle, KeyRound, Loader2, RotateCcw, ShieldAlert } from "lucide-react";
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 
 import { type IssueKeyState, issueKeyAction } from "@/app/app/key/actions";
 import { cn } from "@/components/web/cn";
 import { CopyButton } from "@/components/web/copy-button";
 import { SnippetBody } from "@/components/web/snippet-body";
+import { track } from "@/lib/analytics";
 
 /**
  * @file The key page's interactive half.
@@ -146,6 +147,8 @@ function Generate({ formAction, pending }: { formAction: () => void; pending: bo
 function Reveal({ state, onDismiss }: { state: Extract<IssueKeyState, { status: "issued" }>; onDismiss: () => void }) {
     const command = claudeCommand(state.plaintext);
     const cursor = cursorConfig(state.plaintext);
+
+    useEffect(() => track("issue_key"), []);
 
     return (
         <div className="flex flex-col gap-6">
