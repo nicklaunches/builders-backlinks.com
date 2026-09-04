@@ -7,6 +7,7 @@ import type { MaskedPartner, RevealedPartner } from "@/lib/contracts";
 import type { LinkBrief } from "@/lib/services/links";
 
 import { buildUnsubscribeUrl, runWithEmailContext } from "../src/emails/_context";
+import { DashboardUpdateEmail } from "../src/emails/dashboard-update";
 import { DigestEmail } from "../src/emails/digest";
 import { LinkRemovedEmail } from "../src/emails/link-removed";
 import { LinkVerifiedEmail } from "../src/emails/link-verified";
@@ -298,6 +299,12 @@ const fixtures: Fixture[] = [
                 "The CLI overview, thanks — that is the page people actually land on. From my side you would go in the shipping section of an existing guide rather than a links page.",
             truncated: false,
         }),
+    },
+    {
+        name: "dashboard-update",
+        subject: "Your exchange now has an inbox",
+        masked: false,
+        element: createElement(DashboardUpdateEmail),
     },
     {
         name: "welcome",
