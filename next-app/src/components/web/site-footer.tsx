@@ -33,6 +33,7 @@ const PAGES = [
     { href: "/submit", label: "Submit a site" },
     { href: "/terms", label: "Terms" },
     { href: "/privacy", label: "Privacy" },
+    { href: "/changelog", label: "Changelog" },
 ] as const;
 
 /** Muted underline that warms to the accent on hover. Shared by every link here. */
