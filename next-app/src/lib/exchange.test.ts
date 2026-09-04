@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { GIVE_UP_AFTER_CHECKS, MATCH_STATES, type MatchState, OPEN_MATCH_STATES, nextCheckAt } from "@/lib/exchange";
+import {
+    GIVE_UP_AFTER_CHECKS,
+    MATCH_STATES,
+    type MatchState,
+    OPEN_MATCH_STATES,
+    isRevealed,
+    nextCheckAt,
+} from "@/lib/exchange";
 
 /**
  * @file The recheck schedule.
@@ -144,5 +151,26 @@ describe("OPEN_MATCH_STATES", () => {
         for (const state of OPEN_MATCH_STATES) {
             assert.ok(MATCH_STATES.includes(state), `${state} is not in the pgEnum`);
         }
+    });
+});
+
+describe("isRevealed", () => {
+    it("turns on the reveal only at mutual acceptance", () => {
+        assert.equal(isRevealed("proposed"), false);
+        assert.equal(isRevealed("a_accepted"), false);
+        assert.equal(isRevealed("b_accepted"), false);
+        assert.equal(isRevealed("agreed"), true);
+        assert.equal(isRevealed("placed"), true);
+    });
+
+    it("keeps a match revealed once it was agreed, whatever happened after", () => {
+        // The daily sweep expires an `agreed` match whose links never went live.
+        // Both members already know each other by then, and the record of that
+        // is `agreedAt`: a reveal cannot be taken back by a state change.
+        const agreedAt = new Date("2026-08-02T00:00:00Z");
+        assert.equal(isRevealed("expired", agreedAt), true);
+        assert.equal(isRevealed("declined", agreedAt), true);
+        assert.equal(isRevealed("expired", null), false);
+        assert.equal(isRevealed("proposed", null), false);
     });
 });

@@ -60,6 +60,9 @@ export async function SiteHeader() {
                             <Link href="/app" className={NAV_LINK_CLASS}>
                                 Dashboard
                             </Link>
+                            <Link href="/app/inbox" className={NAV_LINK_CLASS}>
+                                Inbox
+                            </Link>
                             {/* w-auto overrides the button's own w-full, which is
                                 right in a card and wrong in a 56px-tall bar. */}
                             <SignOutButton className="w-auto px-3 py-1.5 text-[13.5px]" />

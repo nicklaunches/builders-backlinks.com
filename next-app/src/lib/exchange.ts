@@ -81,9 +81,15 @@ export function orderPair<T extends { toString(): string }>(x: T, y: T): [T, T] 
  *
  * `services/mask.ts` gates on this: before it, a partner has no domain or email
  * in any payload; from it, both sides are revealed to each other at once.
+ *
+ * A reveal cannot be undone. The daily sweep expires an `agreed` match whose
+ * links never went live, and both members already know each other by then, so
+ * a caller holding the match row passes `agreedAt` too: once that is set, the
+ * match stays revealed whatever `state` says afterwards. A caller with only a
+ * state gets the strict reading, which is the safe one to be wrong in.
  */
-export function isRevealed(state: MatchState): boolean {
-    return state === "agreed" || state === "placed";
+export function isRevealed(state: MatchState, agreedAt?: Date | null): boolean {
+    return state === "agreed" || state === "placed" || agreedAt != null;
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;

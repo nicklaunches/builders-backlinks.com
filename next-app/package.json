@@ -15,6 +15,8 @@
         "test:mcp": "node --import tsx scripts/mcp-smoke.ts",
         "test:cron": "node --import tsx scripts/cron-smoke.ts",
         "test:nudge": "node --import tsx scripts/nudge-check.ts",
+        "test:inbox": "node --import tsx scripts/inbox-smoke.ts",
+        "test:e2e": "playwright test",
         "emails:render": "node --import tsx scripts/render-emails.ts",
         "assets:generate": "node --import tsx scripts/assets/generate.ts",
         "assets:post": "node --import tsx scripts/assets/post-card.ts",
@@ -25,6 +27,7 @@
         "db:migrate": "drizzle-kit migrate",
         "db:push": "drizzle-kit push",
         "db:studio": "drizzle-kit studio",
+        "seed:inbox": "node --import tsx scripts/seed-inbox.ts",
         "db:migrate:deploy": "node --import tsx scripts/assert-prod-db.ts && drizzle-kit migrate"
     },
     "dependencies": {
@@ -48,6 +51,7 @@
     },
     "devDependencies": {
         "@opennextjs/cloudflare": "^1.20.2",
+        "@playwright/test": "^1.62.1",
         "@resvg/resvg-js": "^2.6.2",
         "@tailwindcss/postcss": "^4",
         "@trivago/prettier-plugin-sort-imports": "^6.0.2",

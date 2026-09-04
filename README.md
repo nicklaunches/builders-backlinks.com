@@ -49,6 +49,17 @@ pnpm db:migrate
 pnpm dev
 ```
 
+To see the inbox with something in it, seed a few threads:
+
+```bash
+pnpm seed:inbox                # local databases only; it refuses anything else
+```
+
+That writes four throwaway members and one thread per stage — undecided, waiting
+on you, agreed and talking, both links live, expired — plus `.seed/inbox.json`
+with their ids and sign-in cookies. `pnpm test:inbox` (the API) and `pnpm test:e2e`
+(the browser) seed the same fixtures themselves.
+
 `pnpm dev` is Next on Node, which is convenient and is *not* the production runtime. [CLAUDE.md](./CLAUDE.md) has the full command list, how to run it the way it actually deploys, and the workerd behaviour that only shows up there.
 
 ## Hosting

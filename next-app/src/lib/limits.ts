@@ -53,6 +53,16 @@ const BUDGETS: Record<string, { limit: number; windowMs: number }> = {
 
     // Fetches the member's page to verify a placement.
     mark_link_placed: { limit: 60, windowMs: HOUR },
+
+    // The inbox polls this while a thread is open, so its budget is set by the
+    // poll interval rather than by human patience: one every few seconds for an
+    // hour has to stay inside it, or leaving a tab open throttles the member out
+    // of their own conversation.
+    list_messages: { limit: 1800, windowMs: HOUR },
+
+    // Typing speed, not machine speed. Loose enough that nobody in a real
+    // conversation meets it, tight enough that a looping agent stops.
+    send_message: { limit: 120, windowMs: HOUR },
 };
 
 const DEFAULT = { limit: 240, windowMs: HOUR };

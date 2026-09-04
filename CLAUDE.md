@@ -12,6 +12,7 @@ Path alias `@/*` maps to `next-app/src/*`.
 - Keep product data normalized and relationships explicit. Do not encode relational data in JSON or text merely to avoid joins.
 - For new application-backed backend functionality, default to: MCP tool handler / server action / route handler → `src/lib/services/*` → Drizzle. A tool handler contains no logic of its own. `eslint.config.mjs` enforces the layering: code under `src/lib/mcp/**` and `src/app/api/mcp/**` cannot import `@/lib/db`, the Drizzle table objects, `drizzle-orm`, or the `analyze` and `verify` leaf modules. Types and enums from the schema are fine — it is data *access* that is banned.
 - Every capability exists twice, as an MCP tool and as a browser surface, and both call the same service. The moment a tool does something a web route would not, the agent path and the browser path have started to drift.
+- Writes go through server actions, which Next hardens against cross-origin POSTs for us. `/api/inbox/*` is the deliberate exception — the inbox polls, and a poll wants a GET — so every mutation there calls `assertSameOrigin` (`src/lib/api.ts`) first. A cookie-authenticated route handler without that check is a CSRF hole.
 - Postgres only. Migrations run **before** the deploy, in CI and in `pnpm run deploy` alike, so keep them additive: a dropped or renamed column breaks the still-running old version the moment it applies. Split destructive changes across two deploys — stop using the column, ship, then drop it.
 - Derive enum values from the pgEnums via `src/lib/exchange.ts` rather than re-declaring them, so the database constraint and the TypeScript union cannot drift.
 - Use idiomatic TypeScript. Use Zod to validate untrusted data and narrow runtime values at trust boundaries: MCP tool inputs (`src/lib/mcp/tools.ts`), server-action `FormData`, cron query params, and responses from OpenRouter and VerifiedDR.
@@ -58,7 +59,14 @@ the blocks below it can stay short. Extend it when you change the reasoning.
 ## Testing
 
 Tests are colocated `*.test.ts` on node's built-in runner via `tsx`. There is no
-mocking library, and that is a constraint worth keeping.
+mocking library, and that is a constraint worth keeping. The browser suite is the
+one exception to "colocated": Playwright specs live in `e2e/`, because they drive
+the whole app rather than a module.
+
+Signing a test in is a MINTED COOKIE, never a login route. `scripts/dev-session.ts`
+encrypts the same session JWT Auth.js would issue, using `AUTH_SECRET`, so the
+end-to-end suites can be any seeded member without OAuth and without the app
+carrying a test-only sign-in path that could ship.
 
 - Don't add tests just for the sake of it. A test exists to enforce core behavior or a hard-to-spot edge case that could actually occur.
 - Keep tests as simple as possible, and always review them looking for simplifications.
@@ -80,6 +88,9 @@ mocking library, and that is a constraint worth keeping.
 | `pnpm test` | Node's built-in runner over `src/**/*.test.ts` |
 | `pnpm test:mcp` | Drives the server with the real MCP SDK client. Needs a running server and Postgres. |
 | `pnpm test:cron` | Drives the daily re-pair pass over a seeded pool. Localhost only. |
+| `pnpm test:inbox` | Drives every `/api/inbox` route with real session cookies. Seeds its own fixtures; needs a running server and Postgres. |
+| `pnpm test:e2e` | Playwright over the inbox UI, two members at once. Starts a dev server unless one is already listening. |
+| `pnpm seed:inbox` | Fills a LOCAL database with threads at every stage, and writes ids and sign-in cookies to `.seed/inbox.json`. |
 | `pnpm emails:render` | Renders every template to `.render/` |
 | `pnpm assets:generate` | Redraws the favicon, OG image and logo. Hand-run; commit the output |
 | `pnpm preview` | Build for Workers and serve it locally |

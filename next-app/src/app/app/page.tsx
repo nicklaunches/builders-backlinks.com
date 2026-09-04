@@ -1,5 +1,6 @@
 import { ArrowRight, LogIn } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { MatchCard, type MatchRow } from "@/app/app/match-card";
 import { cn } from "@/components/web/cn";
@@ -131,11 +132,20 @@ export default async function DashboardPage() {
                         you.
                     </Empty>
                 ) : (
-                    <ul className="space-y-4">
-                        {open.map((row) => (
-                            <MatchCard key={row.matchId} row={row} />
-                        ))}
-                    </ul>
+                    <>
+                        <p className="text-muted mb-4 text-[14px] leading-relaxed">
+                            Every match also has a thread in the{" "}
+                            <Link href="/app/inbox" className="text-accent-text underline underline-offset-4">
+                                inbox
+                            </Link>
+                            , where you can talk to the other builder about where the two links go.
+                        </p>
+                        <ul className="space-y-4">
+                            {open.map((row) => (
+                                <MatchCard key={row.matchId} row={row} />
+                            ))}
+                        </ul>
+                    </>
                 )}
             </Section>
 

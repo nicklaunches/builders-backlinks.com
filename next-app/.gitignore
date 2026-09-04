@@ -28,3 +28,11 @@ next-env.d.ts
 # JetBrains Mono is OFL, and a font binary in the repo is a licence obligation
 # nobody remembers. Delete this directory to force a re-fetch.
 scripts/assets/.fonts/
+
+# Local fixtures written by scripts/seed-inbox.ts. Contains session cookies
+# for seeded members, valid only against a local AUTH_SECRET.
+.seed/
+
+# Playwright output. Traces are uploaded from CI on failure, never committed.
+test-results/
+playwright-report/

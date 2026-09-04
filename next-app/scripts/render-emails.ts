@@ -13,6 +13,7 @@ import { LinkVerifiedEmail } from "../src/emails/link-verified";
 import { MatchAgreedEmail } from "../src/emails/match-agreed";
 import { MatchExpiredEmail } from "../src/emails/match-expired";
 import { MatchProposedEmail } from "../src/emails/match-proposed";
+import { MessageReceivedEmail } from "../src/emails/message-received";
 import { PlacementPendingEmail } from "../src/emails/placement-pending";
 import { SiteApprovedEmail } from "../src/emails/site-approved";
 import { SiteRejectedEmail } from "../src/emails/site-rejected";
@@ -281,6 +282,23 @@ const fixtures: Fixture[] = [
     // false. They are still worth previewing: the rejection copy in particular
     // is the hardest thing in this directory to get the tone of, and reading it
     // rendered is the only way to judge that.
+    {
+        // Post-agreement only, so the sender's domain in it is correct rather
+        // than a leak. It is in this file for the tone: the excerpt is another
+        // member's words, quoted, and it has to read as a forwarded reply and
+        // not as a notification about one.
+        name: "message-received",
+        subject: "partner-site.com replied about your link exchange",
+        masked: false,
+        element: createElement(MessageReceivedEmail, {
+            matchId: "1a5f1c62-0d4f-4c3a-9a11-6a0f2b4de111",
+            senderDomain: "partner-site.com",
+            recipientDomain: "your-site.com",
+            excerpt:
+                "The CLI overview, thanks — that is the page people actually land on. From my side you would go in the shipping section of an existing guide rather than a links page.",
+            truncated: false,
+        }),
+    },
     {
         name: "welcome",
         subject: "Welcome to the exchange",

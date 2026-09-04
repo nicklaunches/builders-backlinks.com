@@ -157,10 +157,12 @@ async function main() {
             "get_my_standing",
             "get_rules",
             "list_matches",
+            "list_messages",
             "list_my_sites",
             "mark_link_placed",
             "respond_to_match",
             "search_partners",
+            "send_message",
             "submit_site",
         ];
         const missing = expected.filter((n) => !names.includes(n));
@@ -245,6 +247,22 @@ async function main() {
 
         const matches = await callOk(auth, "list_matches");
         check("list_matches works", matches.length > 0, matches.slice(0, 120));
+
+        // The inbox half of the same capability. A brand new member has no
+        // thread, and the empty state has to point somewhere rather than dead-end.
+        const threads = await callOk(auth, "list_messages");
+        check("list_messages reports an empty inbox usefully", threads.includes("list_matches"), threads.slice(0, 160));
+
+        const noThread = await auth.callTool({
+            name: "send_message",
+            arguments: { match_id: member.id, body: "there is no such thread" },
+        });
+        const noThreadText = JSON.stringify((noThread as { content?: unknown }).content ?? "");
+        check(
+            "send_message refuses an unknown thread",
+            (noThread as { isError?: boolean }).isError === true && noThreadText.includes("No thread"),
+            noThreadText.slice(0, 160),
+        );
 
         const badBrief = await auth.callTool({ name: "get_link_brief", arguments: { match_id: member.id } });
         check("get_link_brief refuses an unknown match", (badBrief as { isError?: boolean }).isError === true);

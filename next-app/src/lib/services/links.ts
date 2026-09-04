@@ -1,5 +1,6 @@
 import { and, count, desc, eq, inArray, or, sql } from "drizzle-orm";
 
+import { normalizeUrl } from "@/lib/analyze/fetch-html";
 import { db } from "@/lib/db";
 import { type ExchangeMember, type ExchangeSite, exchangeLinks, exchangeMatches, exchangeSites } from "@/lib/db/schema";
 import { notifyLinkVerified } from "@/lib/email/notify";
@@ -228,6 +229,9 @@ export type PlacementReport = {
  * A crawl failure is reported as inconclusive, never as a missing link:
  * client-rendered sites legitimately fail an HTML-only fetch, and accusing a
  * member of not placing a link they placed is the worst error this system makes.
+ *
+ * @throws `LinkError` `invalid_url` when `pageUrl` is not an http(s) URL, before
+ *   anything is read or written.
  */
 export async function markLinkPlaced(input: {
     member: ExchangeMember;
@@ -235,6 +239,18 @@ export async function markLinkPlaced(input: {
     pageUrl: string;
     anchorUsed?: string;
 }): Promise<PlacementReport> {
+    // Refused up front: the crawl would report an unparseable URL as inconclusive
+    // and record it, and what is recorded is rendered as a link on the PARTNER's
+    // screen. Same parser as `verifyLink`, so the two cannot disagree.
+    try {
+        normalizeUrl(input.pageUrl);
+    } catch {
+        throw new LinkError(
+            "invalid_url",
+            "That does not look like a page URL. It needs to start with http:// or https://.",
+        );
+    }
+
     const [match] = await db().select().from(exchangeMatches).where(eq(exchangeMatches.id, input.matchId)).limit(1);
     if (!match) throw new LinkError("not_found", "No match with that id.");
     if (!isRevealed(match.state)) {

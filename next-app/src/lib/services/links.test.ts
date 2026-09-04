@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import type { ExchangeSite } from "@/lib/db/schema";
-import { briefFor } from "@/lib/services/links";
+import type { ExchangeMember, ExchangeSite } from "@/lib/db/schema";
+import { LinkError, briefFor, markLinkPlaced } from "@/lib/services/links";
 
 /**
  * @file The snippet a member pastes into their own source.
@@ -111,6 +111,18 @@ describe("briefFor snippets", () => {
         assert.equal(
             briefFor(partner({ keywords: [anchor] }), { matchId: "m", format: "html" }).snippet,
             '<a href="https://partner.example/">the {beta} plan</a>',
+        );
+    });
+});
+
+describe("markLinkPlaced input", () => {
+    it("refuses a page URL that is not http(s) before touching anything", async () => {
+        // The URL is stored and later rendered as a link on the PARTNER's screen,
+        // so a scheme other than http(s) is refused at the boundary rather than
+        // recorded as an inconclusive placement.
+        await assert.rejects(
+            markLinkPlaced({ member: { userId: "u" } as ExchangeMember, matchId: "m", pageUrl: "javascript:alert(1)" }),
+            (err: unknown) => err instanceof LinkError && err.code === "invalid_url",
         );
     });
 });
