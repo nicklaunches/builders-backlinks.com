@@ -128,7 +128,7 @@ export function LinkRemovedEmail({
             )}
 
             <Section style={styles.btnWrap}>
-                <Button href={`${origin}/app`} style={styles.button}>
+                <Button href={`${origin}/app/inbox/${matchId}`} style={styles.button}>
                     See your links
                 </Button>
             </Section>

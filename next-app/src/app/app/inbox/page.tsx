@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { InboxShell, InboxSignInPrompt, NoThreadSelected } from "@/app/app/inbox/inbox-shell";
+import { InboxShell, InboxSignedOut, NoThreadSelected } from "@/app/app/inbox/inbox-shell";
 import { listThreads } from "@/lib/services/threads";
 import { getSessionMember } from "@/lib/session";
 
@@ -23,7 +23,7 @@ export const dynamic = "force-dynamic";
 
 export default async function InboxPage() {
     const member = await getSessionMember();
-    if (!member) return <InboxSignInPrompt />;
+    if (!member) return <InboxSignedOut callbackUrl="/app/inbox" />;
 
     const threads = await listThreads(member);
 

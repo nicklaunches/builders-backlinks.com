@@ -1,37 +1,34 @@
-import { ArrowRight, LogIn } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { MatchCard, type MatchRow } from "@/app/app/match-card";
+import { RelativeTime } from "@/app/app/inbox/relative-time";
+import { StepChip } from "@/app/app/inbox/thread-list";
+import { Empty, PageFrame, Section, SignInPrompt, Stat } from "@/app/app/ui";
 import { cn } from "@/components/web/cn";
-import { SiteFooter } from "@/components/web/site-footer";
-import { SiteHeader } from "@/components/web/site-header";
+import { attentionReason, safeHref } from "@/lib/inbox";
 import { checkLinks, getStanding } from "@/lib/services/links";
-import { listMatches } from "@/lib/services/matches";
-import { listMySites } from "@/lib/services/sites";
+import { listThreads } from "@/lib/services/threads";
 import { getSessionMember } from "@/lib/session";
 
 /**
- * @file `/app`, the dashboard. Everything the MCP server does, in a browser.
+ * @file `/app`, the Overview: what needs the member, and how the exchange is going.
  *
- * This route did not exist, and six email templates linked to it: every "View
- * match" and "Check again" button the product has ever sent landed on a 404.
- * Past submission the entire trade loop was MCP-only, so a member who does not
- * use a coding agent could list a site and then do nothing with it. That made
- * the agent path mandatory when it is supposed to be merely better.
+ * Six email templates link here, so the route has to exist and has to answer
+ * "what now" in one screen. It does not repeat the inbox: a thread is a match,
+ * and accepting, agreeing and placing all happen in the thread pane. This page
+ * points at the threads that need someone and shows the numbers.
  *
- * THE MASKING BOUNDARY IS ENFORCED HERE, not in the component. `listMatches`
- * returns a `MaskedPartner` until both sides accept, and that type has no
- * `domain` field to read. The mapping below therefore takes `domain` from the
- * partner only inside a `revealed` check, and there is no other query in this
- * file that could reach a site row directly. Note the ESLint layering rule that
- * guards this for MCP handlers does NOT cover `src/app/app/**`, so this comment
- * is the guard rail: never add a raw `db()` call to a dashboard page.
+ * IDENTITY ARRIVES ALREADY MASKED. `listThreads` names a partner by
+ * `partnerLabel`, which is a category until both sides accept, and nothing here
+ * reaches for a site row. The ESLint layering rule that guards MCP handlers
+ * does NOT cover `src/app/app/**`, so this comment is the guard rail: never add
+ * a raw `db()` call to a dashboard page.
  */
 
 export const metadata: Metadata = {
-    title: "Your exchange",
-    description: "Your sites, matches and links.",
+    title: "Overview",
+    description: "What needs you, and how your exchange is going.",
     alternates: { canonical: "/app" },
     robots: { index: false, follow: false },
 };
@@ -39,143 +36,83 @@ export const metadata: Metadata = {
 /** Session-dependent, and must never be cached. */
 export const dynamic = "force-dynamic";
 
-const CALLBACK = "/app";
-
 /** Fixed locale and time zone, matching app/key/format.ts, to avoid hydration drift. */
 const DATE = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", day: "2-digit", month: "short", year: "numeric" });
 
-export default async function DashboardPage() {
+export default async function OverviewPage() {
     const member = await getSessionMember();
 
     if (!member) {
         return (
-            <Shell>
-                <SignInPrompt />
-            </Shell>
+            <PageFrame title="Overview">
+                <SignInPrompt
+                    callbackUrl="/app"
+                    title="Sign in to see your exchange"
+                    body="Your matches, the links you have placed, and what is owed back to you."
+                />
+            </PageFrame>
         );
     }
 
-    const [sites, matches, ledger, standing] = await Promise.all([
-        listMySites(member),
-        listMatches(member),
-        checkLinks(member),
+    const [standing, threads, ledger] = await Promise.all([
         getStanding(member),
+        listThreads(member),
+        checkLinks(member),
     ]);
 
-    const rows: MatchRow[] = matches.map((match) => {
-        // `revealed` is the ONLY gate on identity. `partner` is a MaskedPartner
-        // until it is true, and that type has no domain to read.
-        const revealed = match.revealed;
-        const partnerDomain = revealed && "domain" in match.partner ? match.partner.domain : null;
-
-        return {
-            matchId: match.matchId,
-            state: match.state,
-            // The PARTNER's category, not the match's. `match.category` is
-            // `best.candidate.category`, which for the side that did not
-            // initiate the pairing is their own category — so "(adjacent)"
-            // would be pointing at itself. The proposal email and the MCP tool
-            // both read `partner.category` for the same reason.
-            category: match.partner.category,
-            widened: match.widened,
-            revealed,
-            partnerDomain,
-            partnerDescription: match.partner.description,
-            partnerDomainRating: match.partner.domainRating,
-            partnerOffers: match.partner.placementOffered,
-            wantedAnchors: match.partner.wantedAnchors,
-            expires: `expires ${DATE.format(match.expiresAt)}`,
-            // From the service, which knows which side of the pair the viewer is
-            // on. Deriving it from `state` here is impossible without that.
-            waitingOnMe: match.waitingOnMe,
-            waitingOnThem: !match.waitingOnMe && (match.state === "a_accepted" || match.state === "b_accepted"),
-            // Straight through from the service. The ledger below is NOT the
-            // source for these: it is capped at 100 rows and truncates, and the
-            // MCP surface needs the same facts anyway.
-            myLink: match.myLink && {
-                pageUrl: match.myLink.pageUrl,
-                anchorText: match.myLink.anchorText,
-                status: match.myLink.status,
-                placement: match.myLink.placement,
-                // Named for what the member is told, not for the raw `rel` array.
-                dofollow: !match.myLink.rel.includes("nofollow"),
-                // Formatted here, like `expires` above, so the client renders a
-                // string and cannot drift between server and hydration.
-                checked: match.myLink.lastCheckedAt ? DATE.format(match.myLink.lastCheckedAt) : null,
-            },
-            theirLinkStatus: match.theirLink?.status ?? null,
-        };
+    const needsYou = threads.flatMap((thread) => {
+        const reason = attentionReason(thread);
+        return reason ? [{ thread, reason }] : [];
     });
-
-    const open = rows.filter((r) => !["declined", "expired"].includes(r.state));
-    const closed = rows.filter((r) => ["declined", "expired"].includes(r.state));
+    const open = threads.filter((t) => t.state !== "declined" && t.state !== "expired").length;
 
     return (
-        <Shell>
-            {/* Standing first: it is the one number that says whether this is working. */}
-            <section className="border-line bg-surface rounded-sm border p-6 sm:p-8">
-                <h2 className="text-muted font-mono text-[11px] tracking-[0.14em] uppercase">Standing</h2>
-                <p className="mt-3 text-[17px] leading-relaxed">{standing.note}</p>
-                <dl className="border-line mt-5 grid gap-px overflow-hidden rounded-sm border sm:grid-cols-3">
+        <PageFrame title="Overview">
+            <section className="border-line bg-surface rounded-sm border p-5 sm:p-6">
+                <p className="text-[15px] leading-relaxed">{standing.note}</p>
+                <dl className="border-line mt-4 grid gap-px overflow-hidden rounded-sm border sm:grid-cols-3">
                     <Stat label="Sites" value={String(standing.sites)} />
                     <Stat label="Links given" value={String(standing.linksGiven)} />
                     <Stat label="Links received" value={String(standing.linksReceived)} />
                 </dl>
             </section>
 
-            <Section title="Matches" count={open.length}>
-                {open.length === 0 ? (
+            <Section title="Needs you" count={needsYou.length}>
+                {needsYou.length === 0 ? (
                     <Empty>
-                        No open matches. We pair a site the moment it is approved, and yours is in the pool from then
-                        on, so the next site approved near your category can be matched with you. Every Tuesday we email
-                        you who is in that pool. How fast a match lands depends on how many builders are listed near
-                        you.
-                    </Empty>
-                ) : (
-                    <>
-                        <p className="text-muted mb-4 text-[14px] leading-relaxed">
-                            Every match also has a thread in the{" "}
-                            <Link href="/app/inbox" className="text-accent-text underline underline-offset-4">
-                                inbox
-                            </Link>
-                            , where you can talk to the other builder about where the two links go.
-                        </p>
-                        <ul className="space-y-4">
-                            {open.map((row) => (
-                                <MatchCard key={row.matchId} row={row} />
-                            ))}
-                        </ul>
-                    </>
-                )}
-            </Section>
-
-            <Section title="Your sites" count={sites.length}>
-                {sites.length === 0 ? (
-                    <Empty>
-                        Nothing listed yet.{" "}
-                        <a href="/submit" className="text-accent-text underline underline-offset-4">
-                            Submit a site
-                        </a>{" "}
-                        to get started.
+                        {open === 0 ? (
+                            <>
+                                No open exchanges. We pair a site the moment it is approved, and yours is in the pool
+                                from then on. Every Tuesday we email you who is in that pool.
+                            </>
+                        ) : (
+                            <>
+                                Nothing waiting on you. Your open exchanges are in the{" "}
+                                <Link href="/app/inbox" className="text-accent-text underline underline-offset-4">
+                                    inbox
+                                </Link>
+                                .
+                            </>
+                        )}
                     </Empty>
                 ) : (
                     <ul className="border-line grid gap-px overflow-hidden rounded-sm border">
-                        {sites.map((site) => (
-                            <li key={site.id} className="bg-surface flex flex-wrap items-baseline gap-x-3 gap-y-1 p-4">
-                                <span className="text-[15px] font-medium">{site.domain}</span>
-                                <span className="text-muted text-[13.5px]">{site.category}</span>
-                                <span
-                                    className={cn(
-                                        "rounded-full border px-2 py-0.5 font-mono text-[10px] tracking-[0.14em] uppercase",
-                                        site.status === "active"
-                                            ? "border-term-ok/40 bg-term-ok/10 text-term-ok"
-                                            : "border-line text-muted bg-surface-2",
-                                    )}>
-                                    {site.status.replace(/_/g, " ")}
-                                </span>
-                                <span className="text-muted ml-auto font-mono text-[11.5px]">
-                                    {site.linksGiven} given · {site.linksGot} received
-                                </span>
+                        {needsYou.map(({ thread, reason }) => (
+                            <li key={thread.matchId} className="bg-surface">
+                                <Link
+                                    href={`/app/inbox/${thread.matchId}`}
+                                    className="hover:bg-surface-2/70 flex flex-wrap items-center gap-x-3 gap-y-1.5 p-4 transition-colors">
+                                    <span className="text-[15px] font-medium">{thread.partnerLabel}</span>
+                                    <StepChip step={thread.step} state={thread.state} />
+                                    <span className="text-accent-text text-[13.5px] font-medium">{reason}</span>
+                                    <span className="ml-auto flex items-center gap-2">
+                                        <RelativeTime
+                                            iso={thread.lastActivityAt.toISOString()}
+                                            className="text-muted font-mono text-[11px]"
+                                        />
+                                        <ChevronRight aria-hidden="true" className="text-muted size-4" />
+                                    </span>
+                                </Link>
                             </li>
                         ))}
                     </ul>
@@ -189,115 +126,60 @@ export default async function DashboardPage() {
                 domain. */}
             {ledger.length > 0 ? (
                 <Section title="Links" count={ledger.length}>
-                    <ul className="border-line grid gap-px overflow-hidden rounded-sm border">
-                        {ledger.map((link) => (
-                            <li
-                                key={link.linkId}
-                                className="bg-surface flex flex-wrap items-baseline gap-x-3 gap-y-1 p-4">
-                                <span className="text-muted font-mono text-[11px] tracking-[0.14em] uppercase">
-                                    {link.direction}
-                                </span>
-                                <span className="min-w-0 flex-1 truncate text-[14px]">
-                                    {link.pageUrl ?? "No page recorded"}
-                                </span>
-                                <span className="text-muted text-[13px]">{link.placement}</span>
-                                <span
-                                    className={cn(
-                                        "font-mono text-[11px] tracking-[0.14em] uppercase",
-                                        link.status === "live" ? "text-term-ok" : "text-muted",
-                                    )}>
-                                    {link.status}
-                                </span>
-                            </li>
-                        ))}
-                    </ul>
+                    <div className="border-line overflow-x-auto rounded-sm border">
+                        <table className="w-full text-left text-[13.5px]">
+                            <thead className="bg-surface-2/60 text-muted font-mono text-[10.5px] tracking-[0.14em] uppercase">
+                                <tr>
+                                    <th className="px-4 py-2.5 font-medium">Direction</th>
+                                    <th className="px-4 py-2.5 font-medium">Page</th>
+                                    <th className="px-4 py-2.5 font-medium">Placement</th>
+                                    <th className="px-4 py-2.5 font-medium">Status</th>
+                                    <th className="px-4 py-2.5 font-medium">Checked</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-line divide-y">
+                                {ledger.map((link) => {
+                                    const href = safeHref(link.pageUrl);
+                                    return (
+                                        <tr key={link.linkId} className="bg-surface">
+                                            <td className="text-muted px-4 py-3 font-mono text-[11px] tracking-[0.14em] uppercase">
+                                                {link.direction}
+                                            </td>
+                                            <td className="max-w-[24rem] truncate px-4 py-3">
+                                                {href ? (
+                                                    <a
+                                                        href={href}
+                                                        rel="nofollow noopener"
+                                                        target="_blank"
+                                                        className="underline underline-offset-4">
+                                                        {link.pageUrl}
+                                                    </a>
+                                                ) : (
+                                                    (link.pageUrl ?? "No page recorded")
+                                                )}
+                                            </td>
+                                            <td className="text-muted px-4 py-3">
+                                                {link.placement}
+                                                {link.rel.includes("nofollow") ? " · nofollow" : ""}
+                                            </td>
+                                            <td
+                                                className={cn(
+                                                    "px-4 py-3 font-mono text-[11px] tracking-[0.14em] uppercase",
+                                                    link.status === "live" ? "text-term-ok" : "text-muted",
+                                                )}>
+                                                {link.status}
+                                            </td>
+                                            <td className="text-muted px-4 py-3 font-mono text-[11.5px] whitespace-nowrap">
+                                                {link.lastCheckedAt ? DATE.format(link.lastCheckedAt) : "—"}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
                 </Section>
             ) : null}
-
-            {closed.length > 0 ? (
-                <Section title="Closed" count={closed.length}>
-                    <ul className="space-y-4">
-                        {closed.map((row) => (
-                            <MatchCard key={row.matchId} row={row} />
-                        ))}
-                    </ul>
-                </Section>
-            ) : null}
-        </Shell>
-    );
-}
-
-/** Page chrome, matching the hand-rolled block /submit and /app/key both use. */
-function Shell({ children }: { children: React.ReactNode }) {
-    return (
-        <>
-            <SiteHeader />
-            <main id="main">
-                <div className="mx-auto max-w-3xl px-5 py-12 sm:px-6 sm:py-16">
-                    <p className="text-muted mb-4 font-mono text-[11.5px] tracking-[0.14em] uppercase">Your exchange</p>
-                    <h1 className="text-[2rem] leading-[1.1] font-semibold tracking-[-0.025em] text-balance sm:text-[2.5rem]">
-                        Sites, matches and links
-                    </h1>
-                    <p className="text-muted mt-4 text-[16px] leading-relaxed">
-                        Everything the MCP server does, without the MCP server. Your agent is still faster at the part
-                        where a link has to be written into a repository.
-                    </p>
-                    <div className="mt-10 space-y-10">{children}</div>
-                </div>
-            </main>
-            <SiteFooter />
-        </>
-    );
-}
-
-function Section({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
-    return (
-        <section>
-            <h2 className="text-muted mb-4 font-mono text-[11px] tracking-[0.14em] uppercase">
-                {title} {count > 0 ? `· ${count}` : ""}
-            </h2>
-            {children}
-        </section>
-    );
-}
-
-function Empty({ children }: { children: React.ReactNode }) {
-    return (
-        <p className="border-line bg-surface text-muted rounded-sm border p-8 text-center text-[14.5px] leading-relaxed">
-            {children}
-        </p>
-    );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-    return (
-        <div className="bg-surface-2/60 p-4">
-            <dt className="text-muted font-mono text-[10.5px] tracking-[0.14em] uppercase">{label}</dt>
-            <dd className="mt-1 text-[20px] font-semibold">{value}</dd>
-        </div>
-    );
-}
-
-/** Same shape as the prompts on /submit and /app/key. */
-function SignInPrompt() {
-    const href = `/signin?callbackUrl=${encodeURIComponent(CALLBACK)}`;
-    return (
-        <section aria-labelledby="signin-heading" className="border-line bg-surface rounded-sm border p-6 sm:p-8">
-            <div className="border-line flex size-10 items-center justify-center rounded-sm border">
-                <LogIn aria-hidden="true" className="size-4" />
-            </div>
-            <h2 id="signin-heading" className="mt-4 text-[19px] font-semibold">
-                Sign in to see your exchange
-            </h2>
-            <p className="text-muted mt-2 text-[14.5px] leading-relaxed">
-                Your matches, the links you have placed, and what is owed back to you.
-            </p>
-            <a
-                href={href}
-                className="bg-accent text-accent-fg hover:bg-accent-hover mt-6 inline-flex items-center gap-2 rounded-sm px-6 py-3 text-[15px] font-semibold transition-colors">
-                Sign in
-                <ArrowRight aria-hidden="true" className="size-4" />
-            </a>
-        </section>
+        </PageFrame>
     );
 }

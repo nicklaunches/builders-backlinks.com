@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
     NOTIFY_QUIET_MS,
     NOTIFY_THROTTLE_MS,
+    attentionReason,
     buildTimeline,
     linkTaskState,
     linkifySegments,
@@ -274,4 +275,26 @@ test("safeHref hands back only http and https URLs", () => {
     assert.equal(safeHref("data:text/html,hi"), null);
     assert.equal(safeHref("not a url"), null);
     assert.equal(safeHref(null), null);
+});
+
+const QUIET = {
+    state: "agreed" as const,
+    step: "add_links" as const,
+    unread: 0,
+    waitingOnMe: false,
+    canMessage: true,
+    myTask: "live" as const,
+};
+
+test("an unread reply outranks an open task, and a closed thread needs nobody", () => {
+    assert.equal(attentionReason({ ...QUIET, unread: 2, myTask: "not_started" }), "2 new messages");
+    assert.equal(attentionReason({ ...QUIET, myTask: "not_started" }), "Add your link");
+    assert.equal(attentionReason({ ...QUIET, state: "expired", unread: 2 }), null);
+});
+
+test("an undecided proposal needs a decision, one waiting on the other side does not", () => {
+    const decide = { ...QUIET, step: "decide" as const, canMessage: false };
+    assert.equal(attentionReason({ ...decide, state: "proposed" }), "Accept or decline");
+    assert.equal(attentionReason({ ...decide, state: "b_accepted", waitingOnMe: true }), "Accept or decline");
+    assert.equal(attentionReason({ ...decide, state: "a_accepted" }), null);
 });

@@ -141,5 +141,15 @@ export const MESSAGE_POLL_MS = 6000;
  */
 export const POLL_OVERLAP_MS = 10_000;
 
+/**
+ * Fired on `window` after a thread's read cursor moves.
+ *
+ * The tab bar lives in the `/app` layout, which a soft navigation does not
+ * re-render, so its unread badge cannot learn from the server that the thread
+ * just opened was read. This event is how the pane tells it, without a
+ * `router.refresh()` that would reset the pane's own state.
+ */
+export const READ_EVENT = "inbox:read";
+
 /** How often the thread list refreshes itself. Slower: it only moves badges. */
 export const THREAD_POLL_MS = 30000;

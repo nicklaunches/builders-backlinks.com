@@ -1,7 +1,7 @@
 "use server";
 
 import { signIn, signOut } from "@/auth";
-import { DEFAULT_CALLBACK_URL, safeCallbackUrl } from "@/components/web/auth/callback-url";
+import { SIGNED_OUT_URL, safeCallbackUrl } from "@/components/web/auth/callback-url";
 
 /**
  * @file The server actions behind the sign-in and sign-out buttons.
@@ -60,5 +60,5 @@ export async function signInWithProvider(formData: FormData): Promise<void> {
  * whole of signing out. There is no server-side session row to revoke.
  */
 export async function signOutAction(): Promise<void> {
-    await signOut({ redirectTo: DEFAULT_CALLBACK_URL });
+    await signOut({ redirectTo: SIGNED_OUT_URL });
 }

@@ -122,6 +122,17 @@ async function main(): Promise<void> {
 
         const threads = (signedIn.body as { threads?: Array<{ matchId: string }> }).threads ?? [];
         check("Ada sees her three threads", threads.length === 3, `got ${threads.length}`);
+
+        const anonUnread = await call({ path: "/api/inbox/unread" });
+        check("a signed-out caller gets no unread count", anonUnread.status === 401, `got ${anonUnread.status}`);
+
+        const unread = await call({ path: "/api/inbox/unread", cookie: bo.cookie });
+        const total = (unread.body as { unread?: number }).unread ?? -1;
+        check(
+            "Bo's tab badge counts Ada's unread reply",
+            total > 0,
+            `got ${unread.status}: ${unread.text.slice(0, 80)}`,
+        );
     }
 
     console.log("\nthe masking boundary");
