@@ -8,6 +8,7 @@ import { Composer } from "@/app/app/inbox/composer";
 import {
     MESSAGE_POLL_MS,
     type MessageJson,
+    POLL_OVERLAP_MS,
     type PlacementReportJson,
     type ThreadDetailJson,
     formatDate,
@@ -84,6 +85,10 @@ export function ThreadPane({ initial }: { initial: ThreadDetailJson }) {
 
     // Poll for the other side's replies. Paused while hidden, and keyed on the
     // newest message this client holds so an idle thread costs one empty answer.
+    // The cursor sits a little behind that message: `created_at` is the
+    // sender's transaction start, so a reply that committed late can carry an
+    // older stamp than one already shown, and a cursor taken exactly at the
+    // newest one would skip it forever. `merge` drops what it has already seen.
     useEffect(() => {
         if (!thread.canMessage) return;
         const controller = new AbortController();
@@ -91,7 +96,10 @@ export function ThreadPane({ initial }: { initial: ThreadDetailJson }) {
         async function poll() {
             if (document.visibilityState !== "visible") return;
             try {
-                const query = lastMessageAt ? `?since=${encodeURIComponent(lastMessageAt)}` : "";
+                const since = lastMessageAt
+                    ? new Date(new Date(lastMessageAt).getTime() - POLL_OVERLAP_MS).toISOString()
+                    : null;
+                const query = since ? `?since=${encodeURIComponent(since)}` : "";
                 const data = await inboxFetch<{ messages: MessageJson[] }>(
                     `/api/inbox/threads/${thread.matchId}/messages${query}`,
                     { signal: controller.signal },
@@ -701,5 +709,8 @@ function openerFor(thread: ThreadDetailJson): string {
 function merge(current: MessageJson[], incoming: MessageJson[]): MessageJson[] {
     const seen = new Set(current.map((m) => m.id));
     const fresh = incoming.filter((m) => !seen.has(m.id));
-    return fresh.length === 0 ? current : [...current, ...fresh];
+    if (fresh.length === 0) return current;
+    // Sorted, because the overlapping poll cursor can surface a message that is
+    // older than the current tail.
+    return [...current, ...fresh].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }

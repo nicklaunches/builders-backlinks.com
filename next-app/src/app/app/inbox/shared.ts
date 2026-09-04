@@ -132,5 +132,14 @@ export async function inboxFetch<T>(
 /** How often an open thread asks for new messages while the tab is visible. */
 export const MESSAGE_POLL_MS = 6000;
 
+/**
+ * How far behind the newest message a poll's `since` cursor sits.
+ *
+ * Long enough to cover a slow commit on the other side, short enough that the
+ * overlap re-fetches a handful of messages at most, all of which the client
+ * already holds and drops by id.
+ */
+export const POLL_OVERLAP_MS = 10_000;
+
 /** How often the thread list refreshes itself. Slower: it only moves badges. */
 export const THREAD_POLL_MS = 30000;

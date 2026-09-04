@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gt, inArray, isNull, ne, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, ne, or } from "drizzle-orm";
 
 import type { Category } from "@/lib/categories";
 import type { MaskedPartner, RevealedPartner } from "@/lib/contracts";
@@ -65,6 +65,31 @@ import { NO_LINKS, liveLinkCountsFor } from "@/lib/services/standing";
 
 /** How many messages a thread hands back per read. Threads are conversations, not archives. */
 const MESSAGE_PAGE = 200;
+
+/**
+ * One page of a thread, oldest first.
+ *
+ * Without a cursor it is the NEWEST page: fetched newest-first and reversed, so
+ * a long thread loses its beginning rather than its end. With a cursor the page
+ * runs forward from it, because a poll wants the next messages, not the latest.
+ */
+async function messagePage(matchId: string, since?: Date): Promise<ExchangeMessage[]> {
+    if (since) {
+        return db()
+            .select()
+            .from(exchangeMessages)
+            .where(and(eq(exchangeMessages.matchId, matchId), gt(exchangeMessages.createdAt, since)))
+            .orderBy(asc(exchangeMessages.createdAt))
+            .limit(MESSAGE_PAGE);
+    }
+    const rows = await db()
+        .select()
+        .from(exchangeMessages)
+        .where(eq(exchangeMessages.matchId, matchId))
+        .orderBy(desc(exchangeMessages.createdAt))
+        .limit(MESSAGE_PAGE);
+    return rows.reverse();
+}
 
 /** How many threads the list returns, matching the cap on `listMatches`. */
 const THREAD_LIMIT = 50;
@@ -347,12 +372,7 @@ export async function getThread(input: { member: ExchangeMember; matchId: string
 
     const [links, messages, readRow, counts] = await Promise.all([
         db().select().from(exchangeLinks).where(eq(exchangeLinks.matchId, match.id)),
-        db()
-            .select()
-            .from(exchangeMessages)
-            .where(eq(exchangeMessages.matchId, match.id))
-            .orderBy(asc(exchangeMessages.createdAt))
-            .limit(MESSAGE_PAGE),
+        messagePage(match.id),
         db()
             .select()
             .from(exchangeThreadReads)
@@ -467,17 +487,7 @@ export async function listMessages(input: {
     const revealed = isRevealed(match.state, match.agreedAt);
     if (!revealed) throw new ThreadError("not_revealed", "Messages open once both sides accept the match.");
 
-    const rows = await db()
-        .select()
-        .from(exchangeMessages)
-        .where(
-            and(
-                eq(exchangeMessages.matchId, match.id),
-                input.since ? gt(exchangeMessages.createdAt, input.since) : undefined,
-            ),
-        )
-        .orderBy(asc(exchangeMessages.createdAt))
-        .limit(MESSAGE_PAGE);
+    const rows = await messagePage(match.id, input.since);
 
     const partnerLabel = labelFor(partnerSite, revealed);
     return rows.map((row) => toMessageView(row, member, partnerLabel));
@@ -520,10 +530,13 @@ export async function sendMessage(input: {
 
     const now = new Date();
     const [lastNotified, recipientRead] = await Promise.all([
+        // Keep the IS NOT NULL: most messages were never mailed, and Postgres
+        // sorts NULLs first on DESC, so without it any unmailed message reads
+        // as "nothing sent yet" and the throttle never holds.
         db()
             .select({ notifiedAt: exchangeMessages.notifiedAt })
             .from(exchangeMessages)
-            .where(eq(exchangeMessages.matchId, match.id))
+            .where(and(eq(exchangeMessages.matchId, match.id), isNotNull(exchangeMessages.notifiedAt)))
             .orderBy(desc(exchangeMessages.notifiedAt))
             .limit(1),
         db()
@@ -595,40 +608,4 @@ export async function markThreadRead(input: {
     const now = new Date();
     await touchRead(match.id, input.member.userId, now);
     return { lastReadAt: now };
-}
-
-/**
- * Unread messages across every thread, for the nav badge.
- *
- * One query, and it counts messages rather than threads: a member with one
- * thread and nine replies is told nine, which is what the number on a mail icon
- * has always meant.
- */
-export async function unreadTotal(member: ExchangeMember): Promise<number> {
-    const ids = await mySiteIds(member);
-    if (ids.length === 0) return 0;
-
-    const rows = await db()
-        .select({ total: count() })
-        .from(exchangeMessages)
-        .innerJoin(exchangeMatches, eq(exchangeMatches.id, exchangeMessages.matchId))
-        .leftJoin(
-            exchangeThreadReads,
-            and(
-                eq(exchangeThreadReads.matchId, exchangeMessages.matchId),
-                eq(exchangeThreadReads.userId, member.userId),
-            ),
-        )
-        .where(
-            and(
-                or(inArray(exchangeMatches.siteAId, ids), inArray(exchangeMatches.siteBId, ids)),
-                ne(exchangeMessages.senderUserId, member.userId),
-                or(
-                    isNull(exchangeThreadReads.lastReadAt),
-                    gt(exchangeMessages.createdAt, exchangeThreadReads.lastReadAt),
-                ),
-            ),
-        );
-
-    return Number(rows[0]?.total ?? 0);
 }
