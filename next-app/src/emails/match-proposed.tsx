@@ -87,7 +87,7 @@ export function MatchProposedEmail({ matchId, partner, expiresAt, widened = fals
             <CodeBlock>{`respond_to_match matchId="${matchId}" accept=true`}</CodeBlock>
             <Text style={styles.paragraph}>Or do it in the browser:</Text>
             <Section style={styles.btnWrap}>
-                <Button href={`${origin}/app`} style={styles.button}>
+                <Button href={`${origin}/app/inbox/${matchId}`} style={styles.button}>
                     Review this match
                 </Button>
             </Section>

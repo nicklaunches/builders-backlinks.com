@@ -102,7 +102,7 @@ export function MatchAgreedEmail({ matchId, partner, brief }: MatchAgreedProps) 
             <Text style={styles.paragraph}>Tell us the page and we check it immediately:</Text>
             <CodeBlock>{`mark_link_placed matchId="${matchId}" pageUrl="https://your-site.com/the-page"`}</CodeBlock>
             <Section style={styles.btnWrap}>
-                <Button href={`${origin}/app`} style={styles.button}>
+                <Button href={`${origin}/app/inbox/${matchId}`} style={styles.button}>
                     Open your dashboard
                 </Button>
             </Section>

@@ -34,6 +34,7 @@
         "@auth/drizzle-adapter": "^1.11.3",
         "@modelcontextprotocol/sdk": "1.29.0",
         "@modelcontextprotocol/server": "2.0.0-beta.5",
+        "@next/third-parties": "16.2.12",
         "@react-email/components": "^1.0.12",
         "@react-email/render": "^2.0.8",
         "agents": "^0.20.0",

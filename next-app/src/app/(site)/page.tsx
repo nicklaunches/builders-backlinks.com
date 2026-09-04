@@ -22,12 +22,20 @@
  * here is true of the built product, so trimming is allowed but rewriting a
  * promise is not.
  *
+ * A SIGNED-IN MEMBER IS SENT TO `/app`. There is nothing on this page they have
+ * not already acted on, and the header's own sign-in lands here otherwise.
+ * `?stay=1` is the way back: the in-app header builds its "How it works" and
+ * "House rules" links with it, and it is a presence check so a fragment can
+ * ride along (`/?stay=1#rules`). A bare `/#rules` would 307 to `/app#rules`,
+ * where nothing answers to that id.
+ *
  * House rules deliberately do NOT use the card rhythm of the two sections
  * above. Three of them are a hairline spec ledger and the fourth, the
  * placement policy, is a full-width panel, because it is the differentiated
  * position and should not look like the other three.
  */
 import { ShieldCheck, Target, Terminal } from "lucide-react";
+import { redirect } from "next/navigation";
 
 import { FoundersRow } from "@/components/web/founders-row";
 import { InstallTabs } from "@/components/web/install-tabs";
@@ -35,6 +43,7 @@ import { SiteFooter } from "@/components/web/site-footer";
 import { SiteHeader } from "@/components/web/site-header";
 import { SubmitFallback } from "@/components/web/submit-fallback";
 import { getFounderCount } from "@/lib/services/catalog";
+import { getSessionUser } from "@/lib/session";
 
 /**
  * No `revalidate` any more, and no static render.
@@ -123,6 +132,8 @@ const HEADLINE_RULE = RULES.find((rule) => rule.emphasis);
  * a decorative number, and `FoundersRow` renders a complete, honest row without
  * one.
  */
+type SearchParams = Record<string, string | string[] | undefined>;
+
 async function readFounderCount(): Promise<number | null> {
     try {
         return await getFounderCount();
@@ -131,7 +142,12 @@ async function readFounderCount(): Promise<number | null> {
     }
 }
 
-export default async function LandingPage() {
+export default async function LandingPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
+    // Outside any try: `redirect` works by throwing, and catching it would
+    // render the page to someone who was meant to leave it.
+    const [params, user] = await Promise.all([searchParams, getSessionUser()]);
+    if (user && params.stay === undefined) redirect("/app");
+
     const founderCount = await readFounderCount();
 
     return (

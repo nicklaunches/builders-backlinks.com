@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { cache } from "react";
 
 import { auth } from "@/auth";
 import { db } from "@/lib/db";
@@ -16,6 +17,11 @@ import { notifyWelcome } from "@/lib/email/notify";
  * their names, parameters and return shapes.
  *
  * Nothing outside this file should import from `@/auth` directly.
+ *
+ * Both lookups are wrapped in React's `cache`, so the `/app` layout, the header
+ * and the page each asking for the member in one render pass is one cookie
+ * decode and one query, not three. The welcome email in `getSessionMember`
+ * stays once-per-member: the row insert, not the call count, is what gates it.
  */
 
 /** The shape the rest of the app knows a signed-in person by. */
@@ -30,7 +36,7 @@ export type SessionUser = {
 /**
  * The current session user, or null when signed out.
  */
-export async function getSessionUser(): Promise<SessionUser | null> {
+export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     const session = await auth();
     const user = session?.user;
     if (!user?.id) return null;
@@ -40,7 +46,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
         name: user.name ?? null,
         image: user.image ?? null,
     };
-}
+});
 
 /**
  * The exchange-side record for the current user, created on first use.
@@ -57,7 +63,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
  *
  * @returns The member record, or null when signed out.
  */
-export async function getSessionMember(): Promise<ExchangeMember | null> {
+export const getSessionMember = cache(async (): Promise<ExchangeMember | null> => {
     const user = await getSessionUser();
     if (!user?.email) return null;
 
@@ -80,4 +86,4 @@ export async function getSessionMember(): Promise<ExchangeMember | null> {
     }
 
     return (await db().query.exchangeMembers.findFirst({ where: eq(exchangeMembers.userId, user.id) })) ?? null;
-}
+});

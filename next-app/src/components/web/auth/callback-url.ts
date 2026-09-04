@@ -19,8 +19,16 @@
  * a server action is a public endpoint and its form data can be forged.
  */
 
-/** Where a signed-in person lands when there is no usable callback. */
-export const DEFAULT_CALLBACK_URL = "/";
+/**
+ * Where a signed-in person lands when there is no usable callback.
+ *
+ * The app, not the landing page: a member who just signed in from the header
+ * or the hero has nothing left to read on `/`, and `/` sends them here anyway.
+ */
+export const DEFAULT_CALLBACK_URL = "/app";
+
+/** Where signing out lands. The marketing page, deliberately not the app. */
+export const SIGNED_OUT_URL = "/";
 
 /**
  * Reduces an untrusted `callbackUrl` to a safe same-origin path.

@@ -2,11 +2,12 @@
 
 import { AlertTriangle, ArrowRight, CheckCircle2, EyeOff, Loader2 } from "lucide-react";
 import Link from "next/link";
-import { useActionState, useId, useState } from "react";
+import { useActionState, useEffect, useId, useState } from "react";
 
 import { type CommitState, type DraftPayload, commitSiteAction } from "@/app/submit/actions";
 import { DEFAULT_PLACEMENT, PLACEMENT_OPTIONS } from "@/app/submit/options";
 import { cn } from "@/components/web/cn";
+import { track } from "@/lib/analytics";
 import { CATEGORIES, UNMATCHABLE } from "@/lib/categories";
 
 /**
@@ -332,6 +333,9 @@ const SIGNED_OUT = "Your session expired before we could save this. Sign in agai
  * surface tells a member they have a match, not on the one that says "received".
  */
 function SubmittedPanel({ state }: { state: Extract<CommitState, { status: "done" }> }) {
+    // Mounted once per successful submission, which is exactly the count wanted.
+    useEffect(() => track("submit_site"), []);
+
     return (
         <section className="border-accent/35 bg-accent-soft rounded-sm border p-6 sm:p-8" aria-live="polite">
             <span className="border-line bg-surface text-accent mb-4 inline-flex size-10 items-center justify-center rounded-sm border">

@@ -11,10 +11,11 @@
  *     and `lib/analyze/verifieddr.ts`, including the detail that the model is never
  *     given the domain
  *   - the masked/revealed boundary comes from `lib/services/mask.ts`
- *   - the analytics claims describe Cloudflare Web Analytics, injected at the
- *     edge on "Automatic setup" rather than rendered by this app. It was chosen
- *     precisely BECAUSE it sets no cookie, which is what lets section 8 say the
- *     only cookie here is your sign-in session
+ *   - the analytics claims describe two tools: Cloudflare Web Analytics,
+ *     injected at the edge on "Automatic setup" rather than rendered by this
+ *     app, and Google Analytics 4, rendered from the root layout and sending
+ *     only the funnel events listed in `lib/analytics.ts`. GA4 sets cookies,
+ *     which is why section 8 no longer says the sign-in session is the only one
  *
  * Those third-party disclosures are the reason this page exists in a form
  * longer than one paragraph. A member submitting a URL has no way to know that
@@ -104,9 +105,9 @@ export default function PrivacyPage() {
                                     match. Then they learn both, at once, and that cannot be undone.
                                 </li>
                                 <li>
-                                    We do not sell anything to anyone, and we run no advertising scripts and no
-                                    cross-site trackers. The one analytics script is cookieless and counts pages, not
-                                    people. See section 8.
+                                    We do not sell anything to anyone, and we run no advertising scripts. Two analytics
+                                    tools count how the site is used, and one of them, Google Analytics, sets cookies.
+                                    See section 8.
                                 </li>
                             </ul>
                         </Prose>
@@ -273,11 +274,11 @@ export default function PrivacyPage() {
                                 providers.
                             </p>
                             <p>
-                                We do not sell, rent or share member data with anyone else. There is no advertising
-                                network and no data broker in the picture. The only analytics is Cloudflare Web
-                                Analytics, described in section 8, which is cookieless and reports page-level counts
-                                rather than anything about you as a person. If that ever changes, it will be on this
-                                page before it happens, and members will be emailed.
+                                <strong>Google</strong> receives the usage data described in section 8 through Google
+                                Analytics 4: pages viewed and a few product events, never your domain, your email or
+                                anything you write. We do not sell, rent or share member data with anyone else. There is
+                                no advertising network and no data broker in the picture. If that ever changes, it will
+                                be on this page before it happens, and members will be emailed.
                             </p>
                         </Prose>
                     </Section>
@@ -346,8 +347,8 @@ export default function PrivacyPage() {
                     <Section id="cookies" title="8. Cookies and tracking">
                         <Prose>
                             <p>
-                                One cookie, for your sign-in session, scoped to this domain. That is still the whole
-                                list, and it is the reason we use the analytics we do.
+                                Two kinds of cookie. One is your sign-in session, scoped to this domain. The others are
+                                set by Google Analytics and are described below.
                             </p>
                             <p>
                                 This site runs <strong>Cloudflare Web Analytics</strong>. It sets no cookie, writes
@@ -356,10 +357,12 @@ export default function PrivacyPage() {
                                 where visits came from, and which browsers and countries, in aggregate.
                             </p>
                             <p>
-                                We chose it over Google Analytics deliberately. Google Analytics would have set cookies,
-                                sent your visit to an advertising company, and made three other statements on this page
-                                untrue. The trade is that we get materially less: no funnels, no per-visitor journeys,
-                                no custom events. That was worth it.
+                                It also runs <strong>Google Analytics 4</strong>, which sets first-party cookies to tell
+                                one visit from the next and sends Google the pages you view plus five product events:
+                                submitting a site, issuing a key, accepting or declining a match, and sending a message.
+                                Those events carry no domain, no email address and no message text. We use it for the
+                                funnel Cloudflare cannot show: how many people who arrive go on to list a site and trade
+                                a link.
                             </p>
                             <p>
                                 There is still no advertising pixel, no session recorder and no cross-site tracker on

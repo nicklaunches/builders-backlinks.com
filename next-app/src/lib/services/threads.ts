@@ -127,6 +127,8 @@ export type ThreadSummary = {
     partnerDomainRating: number | null;
     mySiteDomain: string;
     step: ThreadStep | null;
+    /** What the viewer's own link is waiting on. */
+    myTask: TaskState;
     /** Null on a thread nobody has written in yet. */
     lastMessage: { body: string; mine: boolean; createdAt: Date } | null;
     /** Newest of the last message and the match's own last movement. Sorts the list. */
@@ -225,6 +227,25 @@ function labelFor(site: ExchangeSite, revealed: boolean): string {
     return revealed ? site.domain : `A ${site.category} site`;
 }
 
+/**
+ * The join and predicate that define "unread for this member".
+ *
+ * Shared by the per-thread counts and the badge total, so the number on the
+ * Inbox tab and the numbers on its rows cannot add up differently.
+ */
+function unreadFor(member: ExchangeMember) {
+    return {
+        join: and(
+            eq(exchangeThreadReads.matchId, exchangeMessages.matchId),
+            eq(exchangeThreadReads.userId, member.userId),
+        ),
+        where: and(
+            ne(exchangeMessages.senderUserId, member.userId),
+            or(isNull(exchangeThreadReads.lastReadAt), gt(exchangeMessages.createdAt, exchangeThreadReads.lastReadAt)),
+        ),
+    };
+}
+
 /** True when the other side accepted first and the viewer has not answered. */
 function isWaitingOnMe(match: ExchangeMatch, mineIsA: boolean): boolean {
     return match.state === (mineIsA ? "b_accepted" : "a_accepted");
@@ -253,6 +274,7 @@ export async function listThreads(member: ExchangeMember): Promise<ThreadSummary
     const idSet = new Set(ids);
     const matchIds = matches.map((m) => m.id);
     const partnerIds = matches.map((m) => (idSet.has(m.siteAId) ? m.siteBId : m.siteAId));
+    const unread = unreadFor(member);
 
     const [partners, links, unreadRows, previews, mySites] = await Promise.all([
         db().select().from(exchangeSites).where(inArray(exchangeSites.id, partnerIds)),
@@ -260,23 +282,8 @@ export async function listThreads(member: ExchangeMember): Promise<ThreadSummary
         db()
             .select({ matchId: exchangeMessages.matchId, unread: count() })
             .from(exchangeMessages)
-            .leftJoin(
-                exchangeThreadReads,
-                and(
-                    eq(exchangeThreadReads.matchId, exchangeMessages.matchId),
-                    eq(exchangeThreadReads.userId, member.userId),
-                ),
-            )
-            .where(
-                and(
-                    inArray(exchangeMessages.matchId, matchIds),
-                    ne(exchangeMessages.senderUserId, member.userId),
-                    or(
-                        isNull(exchangeThreadReads.lastReadAt),
-                        gt(exchangeMessages.createdAt, exchangeThreadReads.lastReadAt),
-                    ),
-                ),
-            )
+            .leftJoin(exchangeThreadReads, unread.join)
+            .where(and(inArray(exchangeMessages.matchId, matchIds), unread.where))
             .groupBy(exchangeMessages.matchId),
         db()
             .selectDistinctOn([exchangeMessages.matchId], {
@@ -329,6 +336,7 @@ export async function listThreads(member: ExchangeMember): Promise<ThreadSummary
             partnerDomainRating: partner.domainRating,
             mySiteDomain: mySite.domain,
             step: steps.find((s) => s.status === "current")?.step ?? null,
+            myTask: linkTaskState(myLink),
             lastMessage: preview
                 ? { body: preview.body, mine: preview.senderUserId === member.userId, createdAt: preview.createdAt }
                 : null,
@@ -608,4 +616,26 @@ export async function markThreadRead(input: {
     const now = new Date();
     await touchRead(match.id, input.member.userId, now);
     return { lastReadAt: now };
+}
+
+/**
+ * Unread messages across every thread, for the Inbox tab.
+ *
+ * One aggregate, and it counts messages rather than threads: a member with one
+ * thread and nine replies is told nine, which is what the number on a mail icon
+ * has always meant.
+ */
+export async function unreadCount(member: ExchangeMember): Promise<number> {
+    const ids = await mySiteIds(member);
+    if (ids.length === 0) return 0;
+
+    const unread = unreadFor(member);
+    const [row] = await db()
+        .select({ total: count() })
+        .from(exchangeMessages)
+        .innerJoin(exchangeMatches, eq(exchangeMatches.id, exchangeMessages.matchId))
+        .leftJoin(exchangeThreadReads, unread.join)
+        .where(and(or(inArray(exchangeMatches.siteAId, ids), inArray(exchangeMatches.siteBId, ids)), unread.where));
+
+    return Number(row?.total ?? 0);
 }
