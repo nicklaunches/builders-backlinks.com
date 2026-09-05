@@ -760,9 +760,10 @@ export async function respondToMatch(input: {
         if (!accept) {
             patch.state = "declined";
             patch.declineReason = input.reason ?? null;
-        } else if (from === "agreed" || from === "placed") {
-            // Already through. Accepting again is a no-op rather than an error:
-            // agents retry, and a retry should be harmless.
+        } else if (from === "agreed" || from === "placed" || from === myAccept) {
+            // Already accepted, or already through. Accepting again is a no-op
+            // rather than an error or a rewrite: agents retry, and a rewrite
+            // would bump `updatedAt` and float the thread to the top of the inbox.
         } else if (from === theirAccept) {
             patch.state = "agreed";
             patch.agreedAt = now;

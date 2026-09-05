@@ -320,7 +320,9 @@ function DecideWork({ thread, onThread }: { thread: ThreadDetailJson; onThread: 
             <p className="text-muted mt-4 text-[13.5px] leading-relaxed">
                 {thread.waitingOnMe
                     ? "They have accepted and are waiting on you. Accept to reveal both sides and open the thread."
-                    : "Neither of you has answered yet. Accepting only reveals you to each other once they accept too."}
+                    : thread.waitingOnThem
+                      ? "You have accepted. Waiting on them. Once they accept too you are revealed to each other and can talk here. You can still decline until then."
+                      : "Neither of you has answered yet. Accepting only reveals you to each other once they accept too."}
             </p>
 
             {error ? <Banner tone="warn">{error}</Banner> : null}
@@ -359,14 +361,16 @@ function DecideWork({ thread, onThread }: { thread: ThreadDetailJson; onThread: 
                 </div>
             ) : (
                 <div className="mt-4 flex flex-wrap gap-2">
-                    <button
-                        type="button"
-                        onClick={() => void respond(true)}
-                        disabled={busy !== null}
-                        className="bg-accent text-accent-fg hover:bg-accent-hover inline-flex items-center gap-2 rounded-sm px-5 py-2.5 text-[14px] font-semibold disabled:opacity-60">
-                        {busy === "accept" ? <Spinner /> : <Check aria-hidden="true" className="size-4" />}
-                        Accept
-                    </button>
+                    {thread.waitingOnThem ? null : (
+                        <button
+                            type="button"
+                            onClick={() => void respond(true)}
+                            disabled={busy !== null}
+                            className="bg-accent text-accent-fg hover:bg-accent-hover inline-flex items-center gap-2 rounded-sm px-5 py-2.5 text-[14px] font-semibold disabled:opacity-60">
+                            {busy === "accept" ? <Spinner /> : <Check aria-hidden="true" className="size-4" />}
+                            Accept
+                        </button>
+                    )}
                     <button
                         type="button"
                         onClick={() => setDeclining(true)}

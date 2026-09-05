@@ -135,6 +135,8 @@ export type ThreadSummary = {
     lastActivityAt: Date;
     unread: number;
     waitingOnMe: boolean;
+    /** The viewer accepted first and the partner has not answered. Nothing to do but wait or withdraw. */
+    waitingOnThem: boolean;
     /** Open AND revealed. False on a closed thread, even one that was revealed. */
     canMessage: boolean;
 };
@@ -171,6 +173,8 @@ export type ThreadDetail = {
     /** Open AND revealed. False on a closed thread, even one that was revealed. */
     canMessage: boolean;
     waitingOnMe: boolean;
+    /** The viewer accepted first and the partner has not answered. Nothing to do but wait or withdraw. */
+    waitingOnThem: boolean;
     expiresAt: Date;
     lastReadAt: Date | null;
 };
@@ -249,6 +253,17 @@ function unreadFor(member: ExchangeMember) {
 /** True when the other side accepted first and the viewer has not answered. */
 function isWaitingOnMe(match: ExchangeMatch, mineIsA: boolean): boolean {
     return match.state === (mineIsA ? "b_accepted" : "a_accepted");
+}
+
+/**
+ * True when the viewer accepted first and the other side has not answered.
+ *
+ * `state` alone cannot say this to the browser, which never learns which side
+ * of the pair it is on. Without the flag the pane reads `a_accepted` as "nobody
+ * has answered" and offers Accept to a member who already pressed it.
+ */
+function isWaitingOnThem(match: ExchangeMatch, mineIsA: boolean): boolean {
+    return match.state === (mineIsA ? "a_accepted" : "b_accepted");
 }
 
 /**
@@ -343,6 +358,7 @@ export async function listThreads(member: ExchangeMember): Promise<ThreadSummary
             lastActivityAt: preview && preview.createdAt > match.updatedAt ? preview.createdAt : match.updatedAt,
             unread: unreadByMatch.get(match.id) ?? 0,
             waitingOnMe: isWaitingOnMe(match, mineIsA),
+            waitingOnThem: isWaitingOnThem(match, mineIsA),
             canMessage: isRevealed(match.state),
         });
     }
@@ -457,6 +473,7 @@ export async function getThread(input: { member: ExchangeMember; matchId: string
         }),
         canMessage: isRevealed(match.state),
         waitingOnMe: isWaitingOnMe(match, mineIsA),
+        waitingOnThem: isWaitingOnThem(match, mineIsA),
         expiresAt: match.expiresAt,
         lastReadAt: readRow[0]?.lastReadAt ?? null,
     };

@@ -282,6 +282,45 @@ async function main(): Promise<void> {
 
     console.log("\naccepting");
     {
+        // The first acceptance on a fresh proposal: the pane must say the ball is
+        // now with the partner, and must NOT offer Accept again. A second press
+        // is a no-op, not a rewrite that bumps the thread's activity.
+        const first = await call({
+            path: `/api/inbox/threads/${proposed}/respond`,
+            method: "POST",
+            cookie: ada.cookie,
+            body: { accept: true },
+        });
+        type Pending = { thread?: { waitingOnMe?: boolean; waitingOnThem?: boolean; revealed?: boolean } };
+        const pending = (first.body as Pending).thread;
+        check("accepting a fresh proposal works", first.status === 200, `got ${first.status}`);
+        check("the first acceptance does not reveal", pending?.revealed === false);
+        check(
+            "and the pane knows the ball is with Di",
+            pending?.waitingOnThem === true && pending?.waitingOnMe === false,
+        );
+
+        const listed = await call({ path: "/api/inbox/threads", cookie: ada.cookie });
+        const summary = (listed.body as { threads?: { matchId: string; lastActivityAt: string }[] }).threads?.find(
+            (t) => t.matchId === proposed,
+        );
+        const again = await call({
+            path: `/api/inbox/threads/${proposed}/respond`,
+            method: "POST",
+            cookie: ada.cookie,
+            body: { accept: true },
+        });
+        const relisted = await call({ path: "/api/inbox/threads", cookie: ada.cookie });
+        const resummary = (relisted.body as { threads?: { matchId: string; lastActivityAt: string }[] }).threads?.find(
+            (t) => t.matchId === proposed,
+        );
+        check("accepting again is harmless", again.status === 200, `got ${again.status}`);
+        check(
+            "and does not move the thread",
+            summary !== undefined && summary.lastActivityAt === resummary?.lastActivityAt,
+            `${summary?.lastActivityAt} -> ${resummary?.lastActivityAt}`,
+        );
+
         const { waitingOnAda } = seed.matches;
         const before = await call({ path: `/api/inbox/threads/${waitingOnAda}`, cookie: ada.cookie });
         check(

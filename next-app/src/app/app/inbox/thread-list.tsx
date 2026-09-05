@@ -104,7 +104,9 @@ export function ThreadList({ initial, selectedId }: { initial: ThreadSummaryJson
                                         ? `${thread.lastMessage.mine ? "You: " : ""}${thread.lastMessage.body}`
                                         : thread.waitingOnMe
                                           ? "Waiting on your decision"
-                                          : `Trading with ${thread.mySiteDomain}`}
+                                          : thread.waitingOnThem
+                                            ? "You accepted, waiting on them"
+                                            : `Trading with ${thread.mySiteDomain}`}
                                 </p>
 
                                 <div className="mt-1.5 flex items-center gap-2">
