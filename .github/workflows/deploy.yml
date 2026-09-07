@@ -78,12 +78,17 @@ jobs:
       # from it. This is a repository variable, not a secret, because anything
       # NEXT_PUBLIC_ is shipped to every browser that loads the page.
       #
-      # Analytics needs nothing here: Cloudflare Web Analytics is on "Automatic
-      # setup", so the JS Snippet will be automatically injected at the edge.
+      # Cloudflare Web Analytics needs nothing here: it is on "Automatic setup",
+      # so the JS snippet is injected at the edge. GA4 is the opposite -- the
+      # measurement id is inlined by the bundler, so an unset NEXT_PUBLIC_GA_ID
+      # here does not merely misconfigure the tag, it removes it: `GA_ID` is
+      # null, the root layout renders no <GoogleAnalytics>, and the deployed
+      # site collects nothing while every local build looks fine.
       - name: Build
         run: pnpm exec opennextjs-cloudflare build
         env:
           NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL }}
+          NEXT_PUBLIC_GA_ID: ${{ vars.NEXT_PUBLIC_GA_ID }}
 
       - name: Deploy
         run: pnpm exec wrangler deploy
