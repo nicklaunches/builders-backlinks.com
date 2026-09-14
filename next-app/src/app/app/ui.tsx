@@ -47,15 +47,6 @@ export function Empty({ children }: { children: React.ReactNode }) {
     );
 }
 
-export function Stat({ label, value }: { label: string; value: string }) {
-    return (
-        <div className="bg-surface-2/60 p-4">
-            <dt className="text-muted font-mono text-[10.5px] tracking-[0.14em] uppercase">{label}</dt>
-            <dd className="mt-1 text-[20px] font-semibold">{value}</dd>
-        </div>
-    );
-}
-
 /**
  * The signed-out state of a member page.
  *

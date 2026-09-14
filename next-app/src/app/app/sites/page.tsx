@@ -63,7 +63,7 @@ export default async function SitesPage() {
                                         className={cn(
                                             "rounded-full border px-2 py-0.5 font-mono text-[10px] tracking-[0.14em] uppercase",
                                             site.status === "active"
-                                                ? "border-term-ok/40 bg-term-ok/10 text-term-ok"
+                                                ? "border-ok/40 bg-ok-soft text-ok-text"
                                                 : "border-line text-muted bg-surface-2",
                                         )}>
                                         {site.status.replace(/_/g, " ")}

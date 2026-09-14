@@ -633,12 +633,12 @@ function StateDot({ state }: { state: TaskJson["state"] }) {
             className={cn(
                 "flex size-4 items-center justify-center rounded-full border",
                 state === "live"
-                    ? "border-term-ok/50 bg-term-ok/20"
+                    ? "border-ok/50 bg-ok-soft"
                     : state === "missing"
                       ? "border-accent/50 bg-accent-soft"
                       : "border-line",
             )}>
-            {state === "live" ? <Check aria-hidden="true" className="text-term-ok size-2.5" /> : null}
+            {state === "live" ? <Check aria-hidden="true" className="text-ok-text size-2.5" /> : null}
         </span>
     );
 }
@@ -658,7 +658,7 @@ function Banner({ tone, children }: { tone: "ok" | "warn" | "muted"; children: R
             className={cn(
                 "mt-3 flex items-start gap-2 rounded-sm border px-3 py-2 text-[13px] leading-relaxed",
                 tone === "ok"
-                    ? "border-term-ok/40 bg-term-ok/10"
+                    ? "border-ok/40 bg-ok-soft"
                     : tone === "warn"
                       ? "border-accent/40 bg-accent-soft"
                       : "border-line bg-surface-2/60 text-muted",

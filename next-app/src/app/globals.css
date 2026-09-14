@@ -15,6 +15,15 @@
  *   --accent-text  accent-coloured TEXT on the page ground. Darker in light
  *                  mode, lighter in dark mode, >= 4.5:1 on every surface here
  *
+ * GREEN IS SPLIT THE SAME WAY, and for the same reason. `--term-ok` is an ANSI
+ * green chosen against `--term-bg`, and for a while the app rendered it as text
+ * on paper: the "live" chip, the sites table, the API key panel. On `--surface`
+ * that is 1.64:1, which is not a subtle miss, and it only looked fine because
+ * dark mode measures 9.04:1 and hid it half the time. `--ok-*` is the same hue
+ * (141.9deg) taken down until it clears the paper, so it still reads as the
+ * green the terminal uses. Use `--term-ok` inside the terminal and `--ok-*`
+ * everywhere else; the two are not interchangeable.
+ *
  * `--focus` is pinned across both themes because the focus ring has to clear
  * 3:1 on the paper background AND inside the always-dark terminal, and no
  * single value can do that if it also flips with the colour scheme.
@@ -42,6 +51,10 @@
     --accent-fg: #1a1206;
     --accent-soft: #fff2e5;
     --accent-text: #b35200;
+    --ok: #4ade80;
+    --ok-fg: #14161a;
+    --ok-soft: #edfcf2;
+    --ok-text: #268047;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -60,6 +73,13 @@
         --accent-fg: #1a1206;
         --accent-soft: #2a1608;
         --accent-text: #ff9d4d;
+        /* The fill and the ink on it are pinned like --accent/--accent-fg. Only
+           the text value flips: on a dark ground the terminal green is already
+           10.76:1, so dark mode keeps it and the paper value is the outlier. */
+        --ok: #4ade80;
+        --ok-fg: #14161a;
+        --ok-soft: #172a23;
+        --ok-text: #4ade80;
     }
 }
 
@@ -99,6 +119,10 @@
     --color-accent-fg: var(--accent-fg);
     --color-accent-soft: var(--accent-soft);
     --color-accent-text: var(--accent-text);
+    --color-ok: var(--ok);
+    --color-ok-fg: var(--ok-fg);
+    --color-ok-soft: var(--ok-soft);
+    --color-ok-text: var(--ok-text);
     --color-focus: var(--focus);
 
     --color-term-bg: var(--term-bg);

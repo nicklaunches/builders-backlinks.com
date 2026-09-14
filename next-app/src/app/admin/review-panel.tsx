@@ -265,9 +265,7 @@ function StatusPill({ status }: { status: SiteStatus }) {
         <span
             className={cn(
                 "rounded-full border px-2 py-0.5 font-mono text-[10px] tracking-[0.14em] uppercase",
-                status === "active"
-                    ? "border-term-ok/40 bg-term-ok/10 text-term-ok"
-                    : "border-line text-muted bg-surface-2",
+                status === "active" ? "border-ok/40 bg-ok-soft text-ok-text" : "border-line text-muted bg-surface-2",
             )}>
             {status.replace(/_/g, " ")}
         </span>

@@ -34,7 +34,7 @@ export function StepRail({ steps, muted }: { steps: ThreadStepView[]; muted?: bo
                         className={cn(
                             "flex size-[18px] shrink-0 items-center justify-center rounded-full border font-mono text-[10px] font-semibold",
                             step.status === "done"
-                                ? "border-term-ok/50 bg-term-ok/15 text-term-ok"
+                                ? "border-ok/50 bg-ok-soft text-ok-text"
                                 : step.status === "current"
                                   ? "border-accent bg-accent text-accent-fg"
                                   : step.status === "waiting"

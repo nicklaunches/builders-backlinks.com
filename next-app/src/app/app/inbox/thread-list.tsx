@@ -104,7 +104,7 @@ export function ThreadList({ initial, selectedId }: { initial: ThreadSummaryJson
 
                                 <p className="text-muted mt-0.5 truncate text-[12.5px]">{subtitle(thread)}</p>
 
-                                <div className="mt-1.5 flex items-center gap-2">
+                                <div className="mt-1.5 flex items-center gap-3">
                                     <StepChip status={threadStatus(thread)} />
                                     {thread.partnerDomainRating != null ? (
                                         <span className="text-muted font-mono text-[10.5px] tracking-[0.1em] uppercase">
@@ -158,15 +158,56 @@ function subtitle(thread: ThreadSummaryJson): string {
     return `Trading as ${thread.mySiteDomain}`;
 }
 
-/** Where a thread is, as a chip. Shared with the Overview's "needs you" rows. */
+/**
+ * What the dot means. The label says which step; the dot says whether the step
+ * is asking anything of you.
+ *
+ * Only `decide` is accent: it is the one status that cannot advance without the
+ * member. `waiting`, `agree` and `add_links` are in flight, and a closed thread
+ * gets a hollow dot because it is a slot with nothing in it.
+ *
+ * THE TWO LOUD DOTS TAKE `-text`, NOT THE FILL. A dot is a graphical object and
+ * owes 3:1 against the row behind it; `--accent` is 2.61:1 on paper and `--ok`
+ * is 1.74:1, so the fills that are correct under a label are wrong as the mark.
+ * The `-text` values are the same hues already solved for this ground, and they
+ * measure 5.09:1 and 4.93:1 here.
+ *
+ * The quiet dots stay under that bar on purpose. Every label names its own state
+ * in words, so those dots carry nothing a reader needs — they are pacing for the
+ * eye, and a thread with nothing to do should not draw it. Do not "fix" them.
+ */
+const DOT: Record<ThreadStatus, string> = {
+    decide: "bg-accent-text ring-3 ring-accent-soft",
+    waiting: "bg-line-strong",
+    agree: "bg-line-strong",
+    add_links: "bg-line-strong",
+    live: "bg-ok-text ring-3 ring-ok-soft",
+    declined: "ring-1 ring-line-strong ring-inset",
+    expired: "ring-1 ring-line-strong ring-inset",
+};
+
+/**
+ * Where a thread is, as a dot and a word. Shared with the Overview's rows.
+ *
+ * NO CONTAINER, deliberately. A pill has to spend contrast on its own edge, and
+ * the edge it was spending it on measured 1.28:1 — invisible, while forcing the
+ * label down to `--muted` to keep the pill from shouting. Moving the colour into
+ * a dot inverts that: a dot is a non-text indicator and answers to 3:1, which
+ * buys the label full `--fg` contrast and takes a box off every row.
+ */
 export function StepChip({ status }: { status: ThreadStatus | null }) {
-    const live = status === "live";
+    const closed = status === "declined" || status === "expired";
     return (
         <span
             className={cn(
-                "rounded-full border px-1.5 py-0.5 font-mono text-[10px] tracking-[0.1em] uppercase",
-                live ? "border-term-ok/40 bg-term-ok/10 text-term-ok" : "border-line text-muted",
+                "inline-flex items-center gap-1.5 font-mono text-[10.5px] tracking-[0.1em] uppercase",
+                closed ? "text-muted" : "text-fg",
+                status === "decide" && "font-semibold",
             )}>
+            <span
+                aria-hidden="true"
+                className={cn("size-1.5 shrink-0 rounded-full", status ? DOT[status] : "bg-line-strong")}
+            />
             {status ? THREAD_STATUS_LABELS[status] : "Open"}
         </span>
     );

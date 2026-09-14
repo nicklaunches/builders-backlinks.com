@@ -4,7 +4,7 @@ import Link from "next/link";
 
 import { RelativeTime } from "@/app/app/inbox/relative-time";
 import { StepChip } from "@/app/app/inbox/thread-list";
-import { Empty, PageFrame, Section, SignInPrompt, Stat } from "@/app/app/ui";
+import { Empty, PageFrame, Section, SignInPrompt } from "@/app/app/ui";
 import { cn } from "@/components/web/cn";
 import { attentionReason, safeHref, threadStatus } from "@/lib/inbox";
 import { checkLinks, getStanding } from "@/lib/services/links";
@@ -67,16 +67,13 @@ export default async function OverviewPage() {
     const open = threads.filter((t) => t.state !== "declined" && t.state !== "expired").length;
 
     return (
-        <PageFrame title="Overview">
-            <section className="border-line bg-surface rounded-sm border p-5 sm:p-6">
-                <p className="text-[15px] leading-relaxed">{standing.note}</p>
-                <dl className="border-line mt-4 grid gap-px overflow-hidden rounded-sm border sm:grid-cols-3">
-                    <Stat label="Sites" value={String(standing.sites)} />
-                    <Stat label="Links given" value={String(standing.linksGiven)} />
-                    <Stat label="Links received" value={String(standing.linksReceived)} />
-                </dl>
-            </section>
-
+        <PageFrame
+            title="Overview"
+            lede={
+                needsYou.length === 0
+                    ? "Nothing is waiting on you."
+                    : `${needsYou.length === 1 ? "One exchange needs" : `${needsYou.length} exchanges need`} you.`
+            }>
             <Section title="Needs you" count={needsYou.length}>
                 {needsYou.length === 0 ? (
                     <Empty>
@@ -117,6 +114,13 @@ export default async function OverviewPage() {
                         ))}
                     </ul>
                 )}
+            </Section>
+
+            <Section title="Standing">
+                <div className="border-line bg-surface rounded-sm border p-5 sm:p-6">
+                    <Reciprocity given={standing.linksGiven} received={standing.linksReceived} sites={standing.sites} />
+                    <p className="text-muted mt-4 text-[14px] leading-relaxed">{standing.note}</p>
+                </div>
             </Section>
 
             {/* The ledger shows real page URLs, including the partner's own page
@@ -165,7 +169,7 @@ export default async function OverviewPage() {
                                             <td
                                                 className={cn(
                                                     "px-4 py-3 font-mono text-[11px] tracking-[0.14em] uppercase",
-                                                    link.status === "live" ? "text-term-ok" : "text-muted",
+                                                    link.status === "live" ? "text-ok-text" : "text-muted",
                                                 )}>
                                                 {link.status}
                                             </td>
@@ -181,5 +185,54 @@ export default async function OverviewPage() {
                 </Section>
             ) : null}
         </PageFrame>
+    );
+}
+
+/**
+ * Given against received, as one bar.
+ *
+ * The two numbers are one relationship rather than two facts: this is a
+ * reciprocal exchange, so the balance between them IS the standing. Three stat
+ * tiles showed both figures side by side and hid the only thing they add up to.
+ *
+ * The bar is `aria-hidden` because the legend under it already carries both
+ * numbers as text. A screen reader should get the values, not a description of
+ * a picture of them.
+ *
+ * It takes the FILL tokens, where the inbox dots take `-text`, and the split is
+ * the point rather than an inconsistency: this is a solid area of colour read
+ * against the segment beside it, which is what `--accent` and `--ok` are for. A
+ * dot is a small mark read against the page, which is what `-text` is for.
+ */
+function Reciprocity({ given, received, sites }: { given: number; received: number; sites: number }) {
+    const total = given + received;
+
+    return (
+        <div>
+            <div aria-hidden="true" className="bg-surface-2 flex h-2 gap-0.5 overflow-hidden rounded-full">
+                {total > 0 ? (
+                    <>
+                        <span className="bg-accent" style={{ width: `${(given / total) * 100}%` }} />
+                        <span className="bg-ok" style={{ width: `${(received / total) * 100}%` }} />
+                    </>
+                ) : null}
+            </div>
+
+            <p className="mt-3 flex flex-wrap items-baseline gap-x-6 gap-y-1.5">
+                <Leg swatch="bg-accent" value={given} label="given" />
+                <Leg swatch="bg-ok" value={received} label="received" />
+                <span className="text-muted ml-auto text-[13.5px]">{sites === 1 ? "1 site" : `${sites} sites`}</span>
+            </p>
+        </div>
+    );
+}
+
+function Leg({ swatch, value, label }: { swatch: string; value: number; label: string }) {
+    return (
+        <span className="flex items-baseline gap-2">
+            <span aria-hidden="true" className={cn("size-2 shrink-0 self-center rounded-[2px]", swatch)} />
+            <span className="text-[17px] font-semibold tabular-nums">{value}</span>
+            <span className="text-muted text-[13.5px]">{label}</span>
+        </span>
     );
 }
