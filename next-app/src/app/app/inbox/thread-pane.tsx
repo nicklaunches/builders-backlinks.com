@@ -11,6 +11,7 @@ import {
     POLL_OVERLAP_MS,
     type PlacementReportJson,
     READ_EVENT,
+    THREAD_EVENT,
     type ThreadDetailJson,
     formatDate,
     inboxFetch,
@@ -70,10 +71,13 @@ export function ThreadPane({ initial }: { initial: ThreadDetailJson }) {
     const events = useMemo(() => eventsOf(thread), [thread]);
 
     // Every mutation answers with the whole thread, so applying one is: take the
-    // new facts, and take any messages that arrived with them.
+    // new facts, and take any messages that arrived with them. Only the accept,
+    // decline and placement controls reach here, never the message poll, so the
+    // event fires on exactly the transitions that move the list's chip.
     const applyThread = useCallback((next: ThreadDetailJson) => {
         setThread(next);
         setMessages((current) => merge(current, messagesOf(next)));
+        window.dispatchEvent(new Event(THREAD_EVENT));
     }, []);
 
     const lastMessageAt = messages.at(-1)?.createdAt ?? null;

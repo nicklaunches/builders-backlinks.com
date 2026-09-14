@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { RelativeTime } from "@/app/app/inbox/relative-time";
-import { THREAD_POLL_MS, type ThreadSummaryJson, inboxFetch } from "@/app/app/inbox/shared";
+import { THREAD_EVENT, THREAD_POLL_MS, type ThreadSummaryJson, inboxFetch } from "@/app/app/inbox/shared";
 import { cn } from "@/components/web/cn";
+import { THREAD_STATUS_LABELS, type ThreadStatus, threadStatus } from "@/lib/inbox";
 
 /**
  * @file The left pane: every thread, newest activity first.
@@ -52,10 +53,12 @@ export function ThreadList({ initial, selectedId }: { initial: ThreadSummaryJson
 
         timer = setInterval(refresh, THREAD_POLL_MS);
         document.addEventListener("visibilitychange", refresh);
+        window.addEventListener(THREAD_EVENT, refresh);
         return () => {
             controller.abort();
             if (timer) clearInterval(timer);
             document.removeEventListener("visibilitychange", refresh);
+            window.removeEventListener(THREAD_EVENT, refresh);
         };
     }, []);
 
@@ -99,18 +102,10 @@ export function ThreadList({ initial, selectedId }: { initial: ThreadSummaryJson
                                     />
                                 </div>
 
-                                <p className="text-muted mt-0.5 truncate text-[12.5px]">
-                                    {thread.lastMessage
-                                        ? `${thread.lastMessage.mine ? "You: " : ""}${thread.lastMessage.body}`
-                                        : thread.waitingOnMe
-                                          ? "Waiting on your decision"
-                                          : thread.waitingOnThem
-                                            ? "You accepted, waiting on them"
-                                            : `Trading with ${thread.mySiteDomain}`}
-                                </p>
+                                <p className="text-muted mt-0.5 truncate text-[12.5px]">{subtitle(thread)}</p>
 
                                 <div className="mt-1.5 flex items-center gap-2">
-                                    <StepChip step={thread.step} state={thread.state} />
+                                    <StepChip status={threadStatus(thread)} />
                                     {thread.partnerDomainRating != null ? (
                                         <span className="text-muted font-mono text-[10.5px] tracking-[0.1em] uppercase">
                                             DR {thread.partnerDomainRating}
@@ -145,31 +140,34 @@ function Avatar({ label, revealed }: { label: string; revealed: boolean }) {
     );
 }
 
-const STEP_LABELS: Record<string, string> = {
-    decide: "Decide",
-    agree: "Agree",
-    add_links: "Add links",
-    live: "Live",
-};
+/**
+ * The row's second line: the newest thing said, or what the thread is waiting on.
+ *
+ * The last message comes first even on a closed thread — a match that was
+ * revealed and then expired still had a conversation, and the chip beside this
+ * already says it is over.
+ */
+function subtitle(thread: ThreadSummaryJson): string {
+    if (thread.lastMessage) return `${thread.lastMessage.mine ? "You: " : ""}${thread.lastMessage.body}`;
+    if (thread.state === "declined") return "Declined. Nothing further to do.";
+    if (thread.state === "expired") return "Expired. Both sites went back in the pool.";
+    if (thread.waitingOnMe) return "Waiting on your decision";
+    if (thread.waitingOnThem) return "You accepted, waiting on them";
+    // Which of YOUR sites is in this trade. The row is titled by the partner, so
+    // "with" would read as naming them.
+    return `Trading as ${thread.mySiteDomain}`;
+}
 
-/** Where a thread is on the rail, as a chip. Shared with the Overview's "needs you" rows. */
-export function StepChip({ step, state }: { step: string | null; state: string }) {
-    if (state === "declined" || state === "expired") {
-        return (
-            <span className="border-line text-muted rounded-full border px-1.5 py-0.5 font-mono text-[10px] tracking-[0.1em] uppercase">
-                {state}
-            </span>
-        );
-    }
-
-    const live = step === "live";
+/** Where a thread is, as a chip. Shared with the Overview's "needs you" rows. */
+export function StepChip({ status }: { status: ThreadStatus | null }) {
+    const live = status === "live";
     return (
         <span
             className={cn(
                 "rounded-full border px-1.5 py-0.5 font-mono text-[10px] tracking-[0.1em] uppercase",
                 live ? "border-term-ok/40 bg-term-ok/10 text-term-ok" : "border-line text-muted",
             )}>
-            {step ? STEP_LABELS[step] : "Open"}
+            {status ? THREAD_STATUS_LABELS[status] : "Open"}
         </span>
     );
 }

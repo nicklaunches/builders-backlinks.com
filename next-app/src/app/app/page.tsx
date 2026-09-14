@@ -6,7 +6,7 @@ import { RelativeTime } from "@/app/app/inbox/relative-time";
 import { StepChip } from "@/app/app/inbox/thread-list";
 import { Empty, PageFrame, Section, SignInPrompt, Stat } from "@/app/app/ui";
 import { cn } from "@/components/web/cn";
-import { attentionReason, safeHref } from "@/lib/inbox";
+import { attentionReason, safeHref, threadStatus } from "@/lib/inbox";
 import { checkLinks, getStanding } from "@/lib/services/links";
 import { listThreads } from "@/lib/services/threads";
 import { getSessionMember } from "@/lib/session";
@@ -103,7 +103,7 @@ export default async function OverviewPage() {
                                     href={`/app/inbox/${thread.matchId}`}
                                     className="hover:bg-surface-2/70 flex flex-wrap items-center gap-x-3 gap-y-1.5 p-4 transition-colors">
                                     <span className="text-[15px] font-medium">{thread.partnerLabel}</span>
-                                    <StepChip step={thread.step} state={thread.state} />
+                                    <StepChip status={threadStatus(thread)} />
                                     <span className="text-accent-text text-[13.5px] font-medium">{reason}</span>
                                     <span className="ml-auto flex items-center gap-2">
                                         <RelativeTime

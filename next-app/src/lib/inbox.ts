@@ -37,7 +37,12 @@ export const THREAD_STEPS = ["decide", "agree", "add_links", "live"] as const;
 
 export type ThreadStep = (typeof THREAD_STEPS)[number];
 
-export type StepStatus = "done" | "current" | "todo";
+/**
+ * `waiting` is `current` with nothing owed: the step the exchange is on, which
+ * the viewer has already done their half of. Rendered quieter than `current`,
+ * because a step that asks for nothing must not look like a to-do.
+ */
+export type StepStatus = "done" | "current" | "waiting" | "todo";
 
 export type ThreadStepView = {
     step: ThreadStep;
@@ -53,16 +58,38 @@ const STEP_LABELS: Record<ThreadStep, string> = {
 };
 
 /**
+ * A thread in one word, as the sidebar and the Overview chip say it.
+ *
+ * The rail's four steps, plus the two closed states that replace them and the
+ * `waiting` reading of `decide`. See {@link threadStatus}.
+ */
+export type ThreadStatus = ThreadStep | "waiting" | "declined" | "expired";
+
+/** Chip text for every {@link ThreadStatus}. The one place these words exist. */
+export const THREAD_STATUS_LABELS: Record<ThreadStatus, string> = {
+    ...STEP_LABELS,
+    waiting: "Waiting",
+    declined: "Declined",
+    expired: "Expired",
+};
+
+/**
  * Where an exchange sits on the four-step rail.
  *
  * A closed match (`declined`, `expired`) keeps `decide` done and advances no
  * further: a decision was reached, it just was not agreement. The thread renders
  * a closed banner over the rail rather than pretending there is a next step.
+ *
+ * The rail sits on `decide` until BOTH sides have answered, whichever side the
+ * viewer is: one acceptance is not a decision. `waitingOnThem` does not move it,
+ * only softens it to `waiting`.
  */
 export function threadSteps(input: {
     state: MatchState;
     myLinkStatus: LinkStatus | null;
     theirLinkStatus: LinkStatus | null;
+    /** The viewer accepted and the partner has not, so `decide` asks them for nothing. */
+    waitingOnThem: boolean;
 }): ThreadStepView[] {
     const { state, myLinkStatus, theirLinkStatus } = input;
 
@@ -80,12 +107,34 @@ export function threadSteps(input: {
             : "agree";
 
     const reached = current === null ? 1 : THREAD_STEPS.indexOf(current);
+    const currentStatus: StepStatus = current === "decide" && input.waitingOnThem ? "waiting" : "current";
 
     return THREAD_STEPS.map((step, index) => ({
         step,
         label: STEP_LABELS[step],
-        status: index < reached ? "done" : index === reached && current !== null ? "current" : "todo",
+        status: index < reached ? "done" : index === reached && current !== null ? currentStatus : "todo",
     }));
+}
+
+/**
+ * What a thread's chip says, read from the viewer's side of the pair.
+ *
+ * A closed match names itself — `declined` and `expired` are the whole answer,
+ * and no step is worth showing over them. Otherwise it is the step, except that
+ * a viewer who has accepted gets `waiting` rather than a `decide` that reads as
+ * a to-do they already did.
+ *
+ * @returns Null only for a thread with no step and no closed state, which the
+ *   chip renders as "Open".
+ */
+export function threadStatus(input: {
+    state: MatchState;
+    step: ThreadStep | null;
+    waitingOnThem: boolean;
+}): ThreadStatus | null {
+    if (input.state === "declined" || input.state === "expired") return input.state;
+    if (input.step === "decide" && input.waitingOnThem) return "waiting";
+    return input.step;
 }
 
 /** What one direction of the trade is waiting on. */

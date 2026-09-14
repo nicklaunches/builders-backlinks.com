@@ -51,6 +51,24 @@ test("an undecided thread offers a decision and no way to talk", async ({ browse
     await context.close();
 });
 
+test("accepting moves the list's own chip off Decide, without a reload", async ({ browser, baseURL }) => {
+    const { context, page } = await pageFor(browser, seed.people.adatools!, baseURL!);
+
+    // The list and the pane are siblings with no shared state, so the row can
+    // only learn about an accept from the event the pane fires. Nothing here
+    // reloads: a row still asking for a decision the member just made is the bug.
+    await openThread(page, seed.matches.proposed);
+    const row = page.getByRole("link", { name: /A Marketing site/ });
+    await expect(row).toContainText("Decide");
+
+    await page.getByRole("button", { name: "Accept" }).click();
+
+    await expect(row).toContainText("Waiting");
+    await expect(row).toContainText("You accepted, waiting on them");
+
+    await context.close();
+});
+
 test("accepting a thread the partner already accepted reveals them", async ({ browser, baseURL }) => {
     const { context, page } = await pageFor(browser, seed.people.adatools!, baseURL!);
 
@@ -119,8 +137,11 @@ test("pasting a page that cannot be crawled is reported as inconclusive, not as 
     await page.getByRole("button", { name: "Check and finish" }).click();
 
     await expect(page.getByText(/could not|inconclusive|not be read/i)).toBeVisible({ timeout: 30_000 });
-    // The placement is recorded even so, which is what moves the rail on.
-    await expect(page.getByRole("listitem").filter({ hasText: "Add links" })).toHaveAttribute("aria-current", "step");
+    // The placement is recorded even so, which is what moves the rail on. Scoped
+    // to the rail: the sidebar row for this thread now carries the same step
+    // name, because the list redraws as soon as the placement lands.
+    const rail = page.getByRole("list", { name: "Exchange progress" });
+    await expect(rail.getByRole("listitem").filter({ hasText: "Add links" })).toHaveAttribute("aria-current", "step");
 
     await context.close();
 });

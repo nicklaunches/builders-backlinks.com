@@ -334,10 +334,12 @@ export async function listThreads(member: ExchangeMember): Promise<ThreadSummary
         const threadLinks = linksByMatch.get(match.id) ?? [];
         const myLink = threadLinks.find((l) => l.fromSiteId === mySite.id) ?? null;
         const theirLink = threadLinks.find((l) => l.fromSiteId === partner.id) ?? null;
+        const waitingOnThem = isWaitingOnThem(match, mineIsA);
         const steps = threadSteps({
             state: match.state,
             myLinkStatus: myLink?.status ?? null,
             theirLinkStatus: theirLink?.status ?? null,
+            waitingOnThem,
         });
         const preview = previewByMatch.get(match.id) ?? null;
         const revealed = isRevealed(match.state, match.agreedAt);
@@ -350,7 +352,7 @@ export async function listThreads(member: ExchangeMember): Promise<ThreadSummary
             partnerCategory: partner.category,
             partnerDomainRating: partner.domainRating,
             mySiteDomain: mySite.domain,
-            step: steps.find((s) => s.status === "current")?.step ?? null,
+            step: steps.find((s) => s.status === "current" || s.status === "waiting")?.step ?? null,
             myTask: linkTaskState(myLink),
             lastMessage: preview
                 ? { body: preview.body, mine: preview.senderUserId === member.userId, createdAt: preview.createdAt }
@@ -358,7 +360,7 @@ export async function listThreads(member: ExchangeMember): Promise<ThreadSummary
             lastActivityAt: preview && preview.createdAt > match.updatedAt ? preview.createdAt : match.updatedAt,
             unread: unreadByMatch.get(match.id) ?? 0,
             waitingOnMe: isWaitingOnMe(match, mineIsA),
-            waitingOnThem: isWaitingOnThem(match, mineIsA),
+            waitingOnThem,
             canMessage: isRevealed(match.state),
         });
     }
@@ -462,6 +464,7 @@ export async function getThread(input: { member: ExchangeMember; matchId: string
             state: match.state,
             myLinkStatus: myLink?.status ?? null,
             theirLinkStatus: theirLink?.status ?? null,
+            waitingOnThem: isWaitingOnThem(match, mineIsA),
         }),
         tasks: [
             toTask({ direction: "mine", link: myLink, targetDomain: revealed ? partnerSite.domain : "their site" }),

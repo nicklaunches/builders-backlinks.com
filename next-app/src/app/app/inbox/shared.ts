@@ -151,5 +151,17 @@ export const POLL_OVERLAP_MS = 10_000;
  */
 export const READ_EVENT = "inbox:read";
 
+/**
+ * Fired on `window` when an action in the pane moves a thread's own state.
+ *
+ * Accepting, declining and reporting a placement all change the chip the list
+ * draws for that thread, and the list has no other way to hear about it: the
+ * pane updates its own state from the response, and the two are siblings under
+ * the shell with nothing between them. Without this the row you just accepted
+ * keeps its old chip until the next poll, a whole {@link THREAD_POLL_MS} of the
+ * list disagreeing with the pane beside it.
+ */
+export const THREAD_EVENT = "inbox:thread-changed";
+
 /** How often the thread list refreshes itself. Slower: it only moves badges. */
 export const THREAD_POLL_MS = 30000;

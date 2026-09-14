@@ -11,6 +11,7 @@ import {
     safeHref,
     shouldNotifyMessage,
     threadEvents,
+    threadStatus,
     threadSteps,
 } from "@/lib/inbox";
 
@@ -27,8 +28,10 @@ import {
 const HOUR = 60 * 60 * 1000;
 
 /** A step rail keyed by step name, which is what every assertion below reads. */
-function rail(input: Parameters<typeof threadSteps>[0]): Record<string, string> {
-    return Object.fromEntries(threadSteps(input).map((s) => [s.step, s.status]));
+function rail(
+    input: Omit<Parameters<typeof threadSteps>[0], "waitingOnThem"> & { waitingOnThem?: boolean },
+): Record<string, string> {
+    return Object.fromEntries(threadSteps({ waitingOnThem: false, ...input }).map((s) => [s.step, s.status]));
 }
 
 test("the rail sits on decide until both sides have accepted", () => {
@@ -38,6 +41,12 @@ test("the rail sits on decide until both sides have accepted", () => {
         add_links: "todo",
         live: "todo",
     });
+});
+
+test("a viewer who has accepted gets decide as waiting, not as something to do", () => {
+    const mine = rail({ state: "a_accepted", myLinkStatus: null, theirLinkStatus: null, waitingOnThem: true });
+    assert.equal(mine.decide, "waiting");
+    assert.equal(mine.agree, "todo");
 });
 
 test("agreement moves the rail to agree, and the first placement moves it to add links", () => {
@@ -58,6 +67,16 @@ test("a closed match keeps decide done and never advances", () => {
         add_links: "todo",
         live: "todo",
     });
+});
+
+test("the chip says waiting to the side that has accepted, and decide to the side that has not", () => {
+    assert.equal(threadStatus({ state: "a_accepted", step: "decide", waitingOnThem: true }), "waiting");
+    assert.equal(threadStatus({ state: "a_accepted", step: "decide", waitingOnThem: false }), "decide");
+});
+
+test("a closed match names itself on the chip, whatever step it stopped on", () => {
+    assert.equal(threadStatus({ state: "expired", step: "add_links", waitingOnThem: false }), "expired");
+    assert.equal(threadStatus({ state: "declined", step: "decide", waitingOnThem: true }), "declined");
 });
 
 test("a link that is recorded but not confirmed is in progress, not done", () => {
