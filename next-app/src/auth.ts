@@ -82,6 +82,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth(() => ({
          */
         async jwt({ token, user }) {
             if (user?.id) token.id = user.id;
+
+            // The DISPLAY NAME AND PICTURE COME FROM OUR `users` ROW, not from
+            // the provider profile, and only on the sign-in pass. The adapter
+            // hands back the stored row, so an edit made here survives the next
+            // sign-in instead of being overwritten by Google every time.
+            if (user) {
+                token.name = user.name ?? token.name;
+                token.picture = user.image ?? token.picture;
+            }
             return token;
         },
 

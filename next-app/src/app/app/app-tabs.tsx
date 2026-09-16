@@ -75,7 +75,7 @@ export function AppTabs({ initialUnread }: { initialUnread: number }) {
     const unread = useUnreadCount(initialUnread, pathname);
 
     return (
-        <nav aria-label="Your exchange" className="border-line bg-bg/85 border-b backdrop-blur-md">
+        <nav aria-label="Your exchange" className="border-line bg-bg/85 relative z-10 border-b backdrop-blur-md">
             <ul className="mx-auto flex h-11 max-w-5xl scrollbar-none items-stretch gap-1 overflow-x-auto px-5 sm:px-6">
                 {TABS.map((tab) => {
                     const active = isActive(tab.href, pathname);

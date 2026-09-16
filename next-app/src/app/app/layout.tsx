@@ -10,6 +10,12 @@ import { getSessionMember } from "@/lib/session";
  * itself; here it is told not to be and the two bars are pinned together, so
  * there is one z-index and one edge for content to scroll under.
  *
+ * INSIDE that block the two bars are ordered explicitly — the header `z-20`,
+ * the tab bar `z-10` — because each one blurs what is behind it, and
+ * `backdrop-filter` makes an element its own stacking context. Left to DOM
+ * order the tab bar wins, and the account menu hanging out of the header opens
+ * BEHIND it.
+ *
  * THE CHROME HEIGHT IS PUBLISHED ONCE, as `--app-chrome`. The inbox is bound to
  * the viewport rather than the document and needs to know how much of it the
  * bars take, and a constant in the inbox that had to be kept in step with two

@@ -41,6 +41,17 @@ export type ChangelogEntry = {
 /** Newest first. The first entry is the current version. */
 export const CHANGELOG: readonly ChangelogEntry[] = [
     {
+        version: "0.6.1",
+        date: "2026-09-16",
+        slug: "v0-6-1",
+        title: "An account menu, and the footer everywhere",
+        summary: "The header spent its most prominent slot on Sign out, and never said whose account you were in.",
+        items: [
+            "The header ends in an account menu: who you are signed in as, the way back to your dashboard, your sites, your key, and sign out.",
+            "The footer is on every dashboard page now, not only on the marketing side.",
+        ],
+    },
+    {
         version: "0.6.0",
         date: "2026-09-16",
         slug: "v0-6-0",

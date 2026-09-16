@@ -1,5 +1,7 @@
 import { ArrowRight, LogIn } from "lucide-react";
 
+import { SiteFooter } from "@/components/web/site-footer";
+
 /**
  * @file The pieces every document-shaped `/app` page is built from.
  *
@@ -14,16 +16,29 @@ import { ArrowRight, LogIn } from "lucide-react";
  * the fold on a laptop; the tab bar already says where the member is.
  */
 
-/** The centred column with a compact title. */
+/**
+ * A document-shaped `/app` page: the title block, the content, and the footer.
+ *
+ * THE FOOTER LIVES HERE RATHER THAN IN THE LAYOUT, and that is the whole reason
+ * this is the frame. The inbox is bound to the viewport — it sizes itself to
+ * `100dvh` minus the chrome so the composer stays put — and anything the layout
+ * hung underneath it would make the document taller than the screen and give
+ * the page a second scrollbar behind the one the thread already has. Every
+ * other `/app` page is an ordinary document and ends the way the marketing
+ * pages do.
+ */
 export function PageFrame({ title, lede, children }: { title: string; lede?: string; children: React.ReactNode }) {
     return (
-        <main id="main">
-            <div className="mx-auto max-w-3xl px-5 py-8 sm:px-6 sm:py-10">
-                <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.02em]">{title}</h1>
-                {lede ? <p className="text-muted mt-2 text-[14.5px] leading-relaxed">{lede}</p> : null}
-                <div className="mt-8 space-y-8">{children}</div>
-            </div>
-        </main>
+        <>
+            <main id="main" className="flex-1">
+                <div className="mx-auto max-w-3xl px-5 py-8 sm:px-6 sm:py-10">
+                    <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.02em]">{title}</h1>
+                    {lede ? <p className="text-muted mt-2 text-[14.5px] leading-relaxed">{lede}</p> : null}
+                    <div className="mt-8 space-y-8">{children}</div>
+                </div>
+            </main>
+            <SiteFooter />
+        </>
     );
 }
 

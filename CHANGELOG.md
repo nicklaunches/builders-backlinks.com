@@ -15,6 +15,20 @@ Versions before 0.6.0 were reconstructed from the git history on 2026-09-16 and
 are deliberately coarse: they name the release a member would remember, not
 every push that went out that week.
 
+## 0.6.1 — 2026-09-16 — An account menu, and the footer everywhere
+
+The header spent its most prominent slot on Sign out, and never said whose
+account you were in.
+
+- The header ends in an account menu: who you are signed in as, the way back to your dashboard, your sites, your key, and sign out.
+- The footer is on every dashboard page now, not only on the marketing side.
+
+### Internal
+
+- The footer hangs off `PageFrame`, not the layout: the inbox sizes itself to the viewport, and anything the layout put under it would give the page a second scrollbar.
+- Both bars blur what is behind them, and `backdrop-filter` makes an element its own stacking context — so the header is `z-20` and the tab bar `z-10` explicitly. Left to DOM order the tab bar wins and the account menu opens behind it.
+- `callbacks.jwt` takes `name` and `picture` from the adapter's `users` row on the sign-in pass, so an edit to a member's display name survives the next OAuth sign-in instead of being overwritten by the provider.
+
 ## 0.6.0 — 2026-09-16 — A way out of an accept, and a floor on who you match with
 
 Accepting was one click that could agree an exchange outright, with no way back.

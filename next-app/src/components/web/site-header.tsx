@@ -23,15 +23,16 @@
  * The cost is bounded on purpose. Sessions are JWT (`auth.ts`), so this is a
  * cookie decode and not a database round trip.
  *
- * NO IN-APP NAVIGATION HERE. A signed-in member gets the marketing links, Docs
- * and Sign out; moving between Overview, Inbox, Sites and the key is the tab
- * bar's job in `app/layout.tsx`. The two section links carry `?stay=1` for a
- * member because `/` otherwise redirects them into the app (see the landing
- * page's `@file` block).
+ * NO IN-APP NAVIGATION HERE. The way back into the app is Dashboard inside the
+ * account menu, and moving between Overview, Inbox, Sites and the key is the
+ * tab bar's job in `app/layout.tsx`; a Dashboard link in the bar as well would
+ * be the same destination twice, two centimetres apart. The two section links
+ * carry `?stay=1` for a member because `/` otherwise redirects them into the
+ * app (see the landing page's `@file` block).
  */
 import Link from "next/link";
 
-import { SignOutButton } from "@/components/web/auth/sign-out-button";
+import { AccountMenu } from "@/components/web/auth/account-menu";
 import { cn } from "@/components/web/cn";
 import { Wordmark } from "@/components/web/wordmark";
 import { getSessionUser } from "@/lib/session";
@@ -53,7 +54,15 @@ export async function SiteHeader({ sticky = true }: { sticky?: boolean } = {}) {
     ];
 
     return (
-        <header className={cn("border-line bg-bg/85 border-b backdrop-blur-md", sticky && "sticky top-0 z-40")}>
+        <header
+            className={cn(
+                "border-line bg-bg/85 border-b backdrop-blur-md",
+                // `backdrop-blur` makes each bar its own stacking context, so
+                // without a z-index here the tab bar under this one — later in
+                // the DOM, blurring whatever is behind it — paints over the
+                // account menu. See the note in `app/layout.tsx`.
+                sticky ? "sticky top-0 z-40" : "relative z-20",
+            )}>
             <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-4 px-5 sm:px-6">
                 <Link href="/" className="rounded-sm" aria-label="Builders Backlinks, home">
                     <Wordmark />
@@ -66,9 +75,7 @@ export async function SiteHeader({ sticky = true }: { sticky?: boolean } = {}) {
                         </Link>
                     ))}
                     {signedIn ? (
-                        // w-auto overrides the button's own w-full, which is
-                        // right in a card and wrong in a 56px-tall bar.
-                        <SignOutButton className="w-auto px-3 py-1.5 text-[13.5px]" />
+                        <AccountMenu user={{ name: user.name, email: user.email, image: user.image }} />
                     ) : (
                         <Link
                             href="/signin"
