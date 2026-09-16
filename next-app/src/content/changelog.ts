@@ -41,22 +41,19 @@ export type ChangelogEntry = {
 /** Newest first. The first entry is the current version. */
 export const CHANGELOG: readonly ChangelogEntry[] = [
     {
-        version: "0.6.2",
+        version: "0.6.3",
         date: "2026-09-16",
-        slug: "v0-6-2",
-        title: "The repository, from the header",
-        summary: "The exchange is open source and the only thing that said so was a line in the footer.",
-        items: ["A star count in the header, linking to the repository."],
-    },
-    {
-        version: "0.6.1",
-        date: "2026-09-16",
-        slug: "v0-6-1",
-        title: "An account menu, and the footer everywhere",
-        summary: "The header spent its most prominent slot on Sign out, and never said whose account you were in.",
+        slug: "v0-6-3",
+        title: "An account menu, a star count, and DR that stays current",
+        summary:
+            "Three things the product was missing: somewhere to see whose account you are in, a way to find the code, " +
+            "and a Domain Rating that does not quietly go stale.",
         items: [
             "The header ends in an account menu: who you are signed in as, the way back to your dashboard, your sites, your key, and sign out.",
             "The footer is on every dashboard page now, not only on the marketing side.",
+            "A star count in the header, linking to the repository.",
+            "Every active site's DR is re-read about twice a week.",
+            "A lookup that fails leaves your score exactly as it was rather than blanking it.",
         ],
     },
     {

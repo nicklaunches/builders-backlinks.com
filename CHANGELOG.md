@@ -15,31 +15,28 @@ Versions before 0.6.0 were reconstructed from the git history on 2026-09-16 and
 are deliberately coarse: they name the release a member would remember, not
 every push that went out that week.
 
-## 0.6.2 — 2026-09-16 — The repository, from the header
+## 0.6.3 — 2026-09-16 — An account menu, a star count, and DR that stays current
 
-The exchange is open source and the only thing that said so was a line in the
-footer.
-
-- A star count in the header, linking to the repository.
-
-### Internal
-
-- The count is cached per isolate for an hour on top of `revalidate`, because this ships on workerd with no incremental cache configured — without it a header that renders on every request is a GitHub call on every request, against a sixty-an-hour limit on an IP shared with the whole colo. Every failure path still renders the link, without a number.
-- `content/links.ts` now owns the off-site addresses; the footer and the badge were about to hold two copies of the repository URL.
-
-## 0.6.1 — 2026-09-16 — An account menu, and the footer everywhere
-
-The header spent its most prominent slot on Sign out, and never said whose
-account you were in.
+Three things the product was missing: somewhere to see whose account you are in,
+a way to find the code, and a Domain Rating that does not quietly go stale.
 
 - The header ends in an account menu: who you are signed in as, the way back to your dashboard, your sites, your key, and sign out.
 - The footer is on every dashboard page now, not only on the marketing side.
+- A star count in the header, linking to the repository.
+- Every active site's DR is re-read about twice a week.
+- A lookup that fails leaves your score exactly as it was rather than blanking it.
 
 ### Internal
 
 - The footer hangs off `PageFrame`, not the layout: the inbox sizes itself to the viewport, and anything the layout put under it would give the page a second scrollbar.
 - Both bars blur what is behind them, and `backdrop-filter` makes an element its own stacking context — so the header is `z-20` and the tab bar `z-10` explicitly. Left to DOM order the tab bar wins and the account menu opens behind it.
 - `callbacks.jwt` takes `name` and `picture` from the adapter's `users` row on the sign-in pass, so an edit to a member's display name survives the next OAuth sign-in instead of being overwritten by the provider.
+- The star count is cached per isolate for an hour on top of `revalidate`, because this ships on workerd with no incremental cache configured — without it a header that renders on every request is a GitHub call on every request, against a sixty-an-hour limit on an IP shared with the whole colo. Every failure path still renders the link, without a number.
+- `content/links.ts` owns the off-site addresses; the footer and the badge were about to hold two copies of the repository URL.
+- `/api/cron/authority` at 02:30 and 14:30 UTC, taking the 24 stalest sites older than 3.5 days, oldest first, NULLS FIRST. The age filter is what makes the cadence per-site; the batch is what keeps a run inside VerifiedDR's 60-a-minute window. Sequential by design — a `Promise.all` over the batch is a burst for no gain on a job nobody waits for.
+- Watch the monthly quota: ~95 sites twice a week is roughly 820 units a month before submissions, against 1,000 on the Pro plan. `STALE_AFTER_DAYS` is the one number to raise; seven halves it.
+- A failed DR lookup stamps `dr_checked_at` and writes no scores, so a permanently failing domain cannot sit at the head of the queue burning a unit per run. That column means "when we last asked".
+- Only `active` sites are refreshed. A rejected or banned listing is never in a pool, and a paused one rejoins the cadence when it comes back.
 
 ## 0.6.0 — 2026-09-16 — A way out of an accept, and a floor on who you match with
 

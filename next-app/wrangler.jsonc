@@ -94,6 +94,7 @@
         "crons": [
             "0 9 * * 2", // weekly digest, Tuesday 09:00 UTC
             "0 4 * * *", // link rechecks, daily 04:00 UTC
+            "30 2,14 * * *", // Domain Rating refresh, twice daily, a batch each time
         ],
     },
     "observability": {
