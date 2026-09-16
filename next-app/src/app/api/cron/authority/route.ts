@@ -17,13 +17,29 @@ import { REFRESH_BATCH, STALE_AFTER_DAYS, refreshAuthorityScores } from "@/lib/s
  * passes none and gets the defaults. `stale=0` takes every active site whatever
  * its age, which is how a backfill is run; `dry=1` writes nothing and says how
  * many sites are due.
+ *
+ * A BACKFILL IS SEVERAL PACED RUNS, NOT ONE BIG BATCH, and the way to learn
+ * that is to do it wrong: refreshing ninety sites as six runs five seconds
+ * apart tripped VerifiedDR's sliding window of sixty requests a minute a third
+ * of the way in, and seventy-four lookups came back with nothing. A run is at
+ * most two calls per site, so the shape that works is a batch of fifteen or so
+ * every seventy seconds. {@link MAX_BATCH} is set where it is for the same
+ * reason: a larger batch cannot finish inside the window however long you wait
+ * between runs.
  */
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-/** A manual run may go wider than the schedule, but not without a ceiling. */
-const MAX_BATCH = 100;
+/**
+ * The widest a single run may go.
+ *
+ * Twenty-five sites is at most fifty VerifiedDR calls, which fits their
+ * sixty-a-minute window with room for the retry the caller will probably make.
+ * A hundred did not, and the ceiling is the only thing that can say so before
+ * the quota is spent rather than after.
+ */
+const MAX_BATCH = 25;
 
 const Params = z.object({
     batch: z.coerce.number().int().min(1).max(MAX_BATCH).default(REFRESH_BATCH),
