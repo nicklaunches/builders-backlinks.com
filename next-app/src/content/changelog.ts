@@ -41,6 +41,14 @@ export type ChangelogEntry = {
 /** Newest first. The first entry is the current version. */
 export const CHANGELOG: readonly ChangelogEntry[] = [
     {
+        version: "0.6.2",
+        date: "2026-09-16",
+        slug: "v0-6-2",
+        title: "The repository, from the header",
+        summary: "The exchange is open source and the only thing that said so was a line in the footer.",
+        items: ["A star count in the header, linking to the repository."],
+    },
+    {
         version: "0.6.1",
         date: "2026-09-16",
         slug: "v0-6-1",

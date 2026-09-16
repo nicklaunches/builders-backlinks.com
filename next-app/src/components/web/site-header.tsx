@@ -34,6 +34,7 @@ import Link from "next/link";
 
 import { AccountMenu } from "@/components/web/auth/account-menu";
 import { cn } from "@/components/web/cn";
+import { GitHubStars } from "@/components/web/github-stars";
 import { Wordmark } from "@/components/web/wordmark";
 import { getSessionUser } from "@/lib/session";
 
@@ -74,6 +75,8 @@ export async function SiteHeader({ sticky = true }: { sticky?: boolean } = {}) {
                             {item.label}
                         </Link>
                     ))}
+                    <GitHubStars />
+
                     {signedIn ? (
                         <AccountMenu user={{ name: user.name, email: user.email, image: user.image }} />
                     ) : (

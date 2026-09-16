@@ -15,6 +15,18 @@ Versions before 0.6.0 were reconstructed from the git history on 2026-09-16 and
 are deliberately coarse: they name the release a member would remember, not
 every push that went out that week.
 
+## 0.6.2 — 2026-09-16 — The repository, from the header
+
+The exchange is open source and the only thing that said so was a line in the
+footer.
+
+- A star count in the header, linking to the repository.
+
+### Internal
+
+- The count is cached per isolate for an hour on top of `revalidate`, because this ships on workerd with no incremental cache configured — without it a header that renders on every request is a GitHub call on every request, against a sixty-an-hour limit on an IP shared with the whole colo. Every failure path still renders the link, without a number.
+- `content/links.ts` now owns the off-site addresses; the footer and the badge were about to hold two copies of the repository URL.
+
 ## 0.6.1 — 2026-09-16 — An account menu, and the footer everywhere
 
 The header spent its most prominent slot on Sign out, and never said whose

@@ -19,14 +19,7 @@ import { Star } from "lucide-react";
 import Link from "next/link";
 
 import { ALTERNATIVES } from "@/content/alternatives";
-
-/**
- * Every sibling property lives at github.com/nicklaunches/<domain>, so this
- * follows the same convention. One constant, so renaming the repo is one edit.
- */
-const REPO_URL = "https://github.com/nicklaunches/builders-backlinks.com";
-const PARENT_URL = "https://nicklaunches.com";
-const X_URL = "https://x.com/nicklaunches";
+import { PARENT_URL, REPO_URL, X_URL } from "@/content/links";
 
 const PAGES = [
     { href: "/docs/mcp", label: "MCP docs" },
