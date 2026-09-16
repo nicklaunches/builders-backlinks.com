@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { exchangeLinks, exchangeMatches, exchangeMembers, exchangeSites, users } from "@/lib/db/schema";
 import { orderPair } from "@/lib/exchange";
 
-loadEnv({ path: ".env.local", quiet: true });
+loadEnv({ path: process.env.ENV_FILE ?? ".env.local", quiet: true });
 
 /**
  * @file Throwaway check for the placement-nudge pass in `api/cron/recheck`.

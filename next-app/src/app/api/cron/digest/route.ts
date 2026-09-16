@@ -7,6 +7,7 @@ import { exchangeMatches, exchangeMembers, exchangeSites } from "@/lib/db/schema
 import { isAuthorizedCron } from "@/lib/email/cron-auth";
 import { notifyDigest } from "@/lib/email/notify";
 import { OPEN_MATCH_STATES } from "@/lib/exchange";
+import { mutuallyAcceptable } from "@/lib/matching/floor";
 import { toMaskedPartner } from "@/lib/services/mask";
 import { NO_LINKS, liveLinkCounts } from "@/lib/services/standing";
 
@@ -143,7 +144,10 @@ export async function GET(request: Request) {
                 .orderBy(sql`${exchangeSites.lastMatchedAt} asc nulls first`)
                 .limit(MAX_CANDIDATES * 4)
         )
-            .filter((c) => !seen.has(c.id))
+            // Same floor the matcher applies, so the digest cannot advertise a
+            // partner that pairing would refuse to propose. Both directions of
+            // it, for the same reason `selectPartner` does both.
+            .filter((c) => !seen.has(c.id) && mutuallyAcceptable(subject, c))
             .slice(0, MAX_CANDIDATES);
 
         if (candidates.length === 0) {

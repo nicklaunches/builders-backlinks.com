@@ -28,6 +28,7 @@ const TABS = [
     { href: "/app/inbox", label: "Inbox" },
     { href: "/app/sites", label: "Sites" },
     { href: "/app/key", label: "API key" },
+    { href: "/app/changelog", label: "Changelog" },
 ] as const;
 
 /** Overview is exact, because every other tab lives under it. */

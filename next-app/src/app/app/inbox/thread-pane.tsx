@@ -203,7 +203,7 @@ export function ThreadPane({ initial }: { initial: ThreadDetailJson }) {
 
     return (
         <section className="flex h-full min-h-0 flex-col" aria-label={`Exchange with ${thread.partnerLabel}`}>
-            <header className="border-line bg-bg/95 border-b px-5 py-4 backdrop-blur-md sm:px-6">
+            <header className="border-line bg-surface/95 border-b px-5 py-4 backdrop-blur-md sm:px-6">
                 <div className="flex items-start gap-3">
                     <Link
                         href="/app/inbox"
@@ -234,11 +234,13 @@ export function ThreadPane({ initial }: { initial: ThreadDetailJson }) {
                 A thread opens scrolled to the newest message, so anything inside
                 that scroller starts off screen — which for the one control the
                 member came here to use is the wrong place to put it. */}
-            <div className="border-line bg-surface/40 max-h-[58%] shrink-0 overflow-y-auto border-b px-5 py-4 sm:max-h-[45%] sm:px-6">
+            <div className="border-line bg-bg/60 max-h-[58%] shrink-0 overflow-y-auto border-b px-5 py-4 sm:max-h-[45%] sm:px-6">
                 {closed ? (
                     <Banner tone="muted">
                         {thread.state === "declined"
-                            ? "This exchange was declined. Nothing further to do — both sites are back in the pool."
+                            ? thread.revealed
+                                ? "This exchange was withdrawn from after both sides agreed. Nothing is owed either way, and both sites are back in the pool."
+                                : "This exchange was declined. Nothing further to do — both sites are back in the pool."
                             : thread.revealed
                               ? "This exchange expired before both links went live. Both sites went back into the pool."
                               : "This exchange expired before both sides accepted. Both sites went back into the pool."}
@@ -281,8 +283,16 @@ export function ThreadPane({ initial }: { initial: ThreadDetailJson }) {
 function DecideWork({ thread, onThread }: { thread: ThreadDetailJson; onThread: (thread: ThreadDetailJson) => void }) {
     const [busy, setBusy] = useState<"accept" | "decline" | null>(null);
     const [declining, setDeclining] = useState(false);
+    const [confirming, setConfirming] = useState(false);
+    const confirmRef = useRef<HTMLDivElement | null>(null);
     const [reason, setReason] = useState("");
     const [error, setError] = useState<string | null>(null);
+
+    // The work area is its own scroller, and on a short window the buttons open
+    // below its fold: a question with no visible answer.
+    useEffect(() => {
+        if (confirming) confirmRef.current?.scrollIntoView({ block: "nearest" });
+    }, [confirming]);
 
     async function respond(accept: boolean) {
         setBusy(accept ? "accept" : "decline");
@@ -293,6 +303,10 @@ function DecideWork({ thread, onThread }: { thread: ThreadDetailJson; onThread: 
                 { method: "POST", body: { accept, reason: reason.trim() || undefined } },
             );
             onThread(data.thread);
+            // A first acceptance leaves the thread on `decide`, so a panel left
+            // open would go on asking for the answer that was just given.
+            setConfirming(false);
+            setDeclining(false);
             track(accept ? "accept_match" : "decline_match", { revealed: data.thread.revealed });
         } catch (err) {
             setError(err instanceof Error ? err.message : "That did not go through.");
@@ -321,13 +335,18 @@ function DecideWork({ thread, onThread }: { thread: ThreadDetailJson; onThread: 
                 />
             </dl>
 
-            <p className="text-muted mt-4 text-[13.5px] leading-relaxed">
-                {thread.waitingOnMe
-                    ? "They have accepted and are waiting on you. Accept to reveal both sides and open the thread."
-                    : thread.waitingOnThem
-                      ? "You have accepted. Waiting on them. Once they accept too you are revealed to each other and can talk here. You can still decline until then."
-                      : "Neither of you has answered yet. Accepting only reveals you to each other once they accept too."}
-            </p>
+            {/* Dropped while the confirmation is open: it says the same thing
+                one line lower, and this pane is a short scroller — every line
+                left in pushes the two buttons under its fold. */}
+            {confirming ? null : (
+                <p className="text-muted mt-4 text-[13.5px] leading-relaxed">
+                    {thread.waitingOnMe
+                        ? "They have accepted and are waiting on you. Accept to reveal both sides and open the thread."
+                        : thread.waitingOnThem
+                          ? "You have accepted. Waiting on them. Once they accept too you are revealed to each other and can talk here. You can still decline until then."
+                          : "Neither of you has answered yet. Accepting only reveals you to each other once they accept too."}
+                </p>
+            )}
 
             {error ? <Banner tone="warn">{error}</Banner> : null}
 
@@ -363,15 +382,55 @@ function DecideWork({ thread, onThread }: { thread: ThreadDetailJson; onThread: 
                         </button>
                     </div>
                 </div>
-            ) : (
-                <div className="mt-4 flex flex-wrap gap-2">
-                    {thread.waitingOnThem ? null : (
+            ) : confirming ? (
+                /* The second step, on the button that commits to something.
+                   Declining already had one, and it is the cheaper answer. */
+                <div ref={confirmRef} className="border-line-strong bg-surface-2/60 mt-4 rounded-sm border p-4">
+                    <p className="text-[14px] font-semibold">Accept this exchange?</p>
+                    <ul className="mt-2 space-y-1">
+                        <li className="flex gap-2 text-[13.5px] leading-relaxed">
+                            <span aria-hidden="true" className="text-accent-text">
+                                →
+                            </span>
+                            <span>
+                                {thread.waitingOnMe
+                                    ? `They have accepted, so this agrees it: they see ${thread.mySite.domain}, you see theirs.`
+                                    : `If they accept too, they see ${thread.mySite.domain} and you see theirs.`}
+                            </span>
+                        </li>
+                        <li className="flex gap-2 text-[13.5px] leading-relaxed">
+                            <span aria-hidden="true" className="text-accent-text">
+                                →
+                            </span>
+                            <span>One editorial link each. You can withdraw until a link goes live, at no cost.</span>
+                        </li>
+                    </ul>
+                    <div className="mt-3.5 flex flex-wrap gap-2">
                         <button
                             type="button"
                             onClick={() => void respond(true)}
                             disabled={busy !== null}
                             className="bg-accent text-accent-fg hover:bg-accent-hover inline-flex items-center gap-2 rounded-sm px-5 py-2.5 text-[14px] font-semibold disabled:opacity-60">
                             {busy === "accept" ? <Spinner /> : <Check aria-hidden="true" className="size-4" />}
+                            Yes, accept
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setConfirming(false)}
+                            className="border-line hover:bg-surface-2 rounded-sm border px-4 py-2.5 text-[14px]">
+                            Go back
+                        </button>
+                    </div>
+                </div>
+            ) : (
+                <div className="mt-4 flex flex-wrap gap-2">
+                    {thread.waitingOnThem ? null : (
+                        <button
+                            type="button"
+                            onClick={() => setConfirming(true)}
+                            disabled={busy !== null}
+                            className="bg-accent text-accent-fg hover:bg-accent-hover inline-flex items-center gap-2 rounded-sm px-5 py-2.5 text-[14px] font-semibold disabled:opacity-60">
+                            <Check aria-hidden="true" className="size-4" />
                             Accept
                         </button>
                     )}
@@ -425,6 +484,100 @@ function RevealedWork({
                     targetUrl={partnerUrl}
                 />
             ) : null}
+
+            {thread.canWithdraw ? <Withdraw thread={thread} onThread={onThread} /> : null}
+        </div>
+    );
+}
+
+/**
+ * The way back out of an agreed exchange, while leaving costs nobody anything.
+ *
+ * One quiet line until it is asked for: it is the rarer thing to want, and it
+ * must not compete with the link the member came here to place. `canWithdraw`
+ * decides whether to offer it; `respondToMatch` decides whether to allow it.
+ */
+function Withdraw({ thread, onThread }: { thread: ThreadDetailJson; onThread: (thread: ThreadDetailJson) => void }) {
+    const [open, setOpen] = useState(false);
+    const [reason, setReason] = useState("");
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const panel = useRef<HTMLDivElement | null>(null);
+
+    // This panel opens at the bottom of a scroller that is already full, so
+    // without this the member gets its heading and nothing else.
+    useEffect(() => {
+        if (open) panel.current?.scrollIntoView({ block: "nearest" });
+    }, [open]);
+
+    async function withdraw() {
+        setBusy(true);
+        setError(null);
+        try {
+            const data = await inboxFetch<{ thread: ThreadDetailJson }>(
+                `/api/inbox/threads/${thread.matchId}/respond`,
+                { method: "POST", body: { accept: false, reason: reason.trim() || undefined } },
+            );
+            onThread(data.thread);
+            track("decline_match", { withdrawn: true });
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "That did not go through.");
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    if (!open) {
+        return (
+            <p className="pt-0.5">
+                <button
+                    type="button"
+                    onClick={() => setOpen(true)}
+                    className="text-muted hover:text-fg text-[12.5px] underline underline-offset-4">
+                    Withdraw from this exchange
+                </button>
+            </p>
+        );
+    }
+
+    return (
+        <div ref={panel} className="border-line-strong bg-surface-2/60 rounded-sm border p-4">
+            <p className="text-[14px] font-semibold">Withdraw from this exchange?</p>
+            <p className="text-muted mt-1.5 text-[13px] leading-relaxed">
+                Neither link is live, so nothing is owed in either direction. {thread.partnerLabel} is told, both sites
+                go back into the pool tonight, and your standing is untouched. We will not pair the two of you again.
+            </p>
+
+            <label htmlFor="withdraw-reason" className="mt-3.5 block text-[13px] font-medium">
+                Anything worth telling them? Optional.
+            </label>
+            <textarea
+                id="withdraw-reason"
+                rows={2}
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                placeholder="Accepted by mistake"
+                className="border-line bg-bg focus:border-line-strong mt-2 w-full rounded-sm border p-3 text-[13.5px] outline-none"
+            />
+
+            {error ? <Banner tone="warn">{error}</Banner> : null}
+
+            <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                    type="button"
+                    onClick={() => void withdraw()}
+                    disabled={busy}
+                    className="border-line-strong hover:bg-surface-2 inline-flex items-center gap-2 rounded-sm border px-4 py-2 text-[13.5px] font-semibold disabled:opacity-60">
+                    {busy ? <Spinner /> : <X aria-hidden="true" className="size-4" />}
+                    Withdraw from this exchange
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setOpen(false)}
+                    className="border-line hover:bg-surface-2 rounded-sm border px-4 py-2 text-[13.5px]">
+                    Keep it
+                </button>
+            </div>
         </div>
     );
 }

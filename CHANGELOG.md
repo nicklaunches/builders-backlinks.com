@@ -1,61 +1,98 @@
 # Changelog
 
-What shipped, newest first. The member-facing half of each entry is also
-published at [builders-backlinks.com/changelog](https://builders-backlinks.com/changelog)
-from `next-app/src/content/changelog.ts`; keep the two in the same words.
+One version per deploy. `main` deploys on push, so a push members would notice
+gets the next version and an entry here; a push they would not — a typo, a test,
+a refactor — rides along under the one that follows it. The version in
+`next-app/package.json` is the newest entry below, and the two move in the same
+commit.
 
-## 2026-09-04 — An inbox for every match, and a new dashboard
+The member-facing half of each entry is published at
+[builders-backlinks.com/changelog](https://builders-backlinks.com/changelog) and
+in the app at `/app/changelog`, from `next-app/src/content/changelog.ts`; keep
+the two in the same words. **Internal** notes live here only.
 
-Until now two members could accept each other and then had no way, inside the
-product, to say which page either link was going on. Every match is now a
-conversation, and the dashboard around it was rebuilt so the first thing you
-see is what needs you.
+Versions before 0.6.0 were reconstructed from the git history on 2026-09-16 and
+are deliberately coarse: they name the release a member would remember, not
+every push that went out that week.
 
-### Inbox
+## 0.6.0 — 2026-09-16 — A way out of an accept, and a floor on who you match with
 
-- Every match has a thread. The list is on the left, the conversation on the right; on a phone it is one pane at a time.
-- Messaging opens only after you both accept. Until then neither side knows who the other is, and the composer says so.
-- A four-step rail on every thread: Decide, Agree, Add links, Live. A declined or expired thread keeps the rail, dimmed, under a banner.
-- Accept or decline from inside the thread, with a reason box for a decline.
-- Report your placement from the thread: paste the page URL and, optionally, the anchor, and we verify it there and then. Both sides' tasks are listed, so you can see who owes what.
-- A copy-ready link snippet for the partner's site, in HTML, Markdown, MDX or JSX.
-- A suggested opening message on a fresh thread, naming both sites and asking the two questions these threads always ask: which page, and dofollow or not.
-- Enter sends, Shift+Enter adds a line. New messages arrive without a reload while the tab is open.
-- Unread counts on the Inbox tab, updated as you read.
+Accepting was one click that could agree an exchange outright, with no way back.
+And DR only ever nudged the ranking, so a DR 66 site could be offered a partner
+with no authority at all.
 
-### Dashboard
-
-- Overview replaces the old match cards. It opens with your standing and three numbers (sites, links given, links received), then a "Needs you" list of only the threads waiting on you, each saying why: a new message, a decision, a link to add, a link we could not find. The link ledger follows.
-- A tab bar for the signed-in app: Overview, Inbox, Sites, API key. They are ordinary links, so the back button and a link from an email land where you expect.
-- A Sites page listing every site you have submitted, with its status and a given/received count.
-- The API key page lost its masthead; the key panel is the first thing on it.
-- Signed in, the home page takes you straight to Overview. Signing out lands on the home page.
-
-### Email
-
-- When a partner writes to you, the email quotes their message rather than summarising it, with a button straight into the thread.
-- It is deliberately quiet: at most one such email per thread every three hours, and none at all if you opened the thread in the last fifteen minutes.
-
-### Agents
-
-- Two MCP tools, `list_messages` and `send_message`, so an agent can read and write the same thread you see in the browser, under the same rule: nothing before both sides accept.
-
-### Fixes
-
-- A thread that reached agreement and then expired no longer masks itself again. Once you have been shown a partner, you keep being shown them.
-- A page URL that is not http(s) is refused when you report it, rather than stored and reported as inconclusive.
-- Pressing Enter while composing with an input method editor (Japanese, Chinese, Korean input) no longer sends a half-typed message.
-- An unknown thread address answers 404 rather than an error page.
-
-### Privacy
-
-- The site now uses Google Analytics 4 alongside Cloudflare Web Analytics. It records page views and five product events (submitting a site, issuing a key, accepting, declining, sending a message), never a domain, an email address or the text of a message. It sets cookies, and the privacy notice now says so.
+- Accept asks once more, and says what the click commits you to.
+- Withdraw from an exchange you already agreed to, until one of the two links goes live. Your partner is told, both sites go back in the pool, and nothing is owed either way.
+- Set a minimum partner DR on each site. Nothing below it is proposed to you, and the floor applies in both directions.
+- The control counts your pool as you move the number, and says so when a floor would leave you with nobody.
+- Your listed sites open one at a time, with the floor visible on the closed row.
+- Agents get set_matching_preferences, and respond_to_match now withdraws.
 
 ### Internal
 
-- A thread is a match: messages hang off `exchange_matches`, and the system half of a timeline (proposal, acceptances, reveal, placements, verifications) is derived from timestamps rather than stored. `a_accepted_at` and `b_accepted_at` were added so the first acceptance has a time.
-- `src/lib/services/threads.ts` is the one service behind `/app/inbox`, `/api/inbox/*`, `list_messages` and `send_message`.
-- `/api/inbox/*` are route handlers rather than server actions, because the inbox polls; every mutation there calls `assertSameOrigin` from `src/lib/api.ts`.
-- `pnpm test:inbox` drives every inbox route with minted session cookies; `pnpm test:e2e` drives the UI as two members in Playwright; `pnpm seed:inbox` fills a local database with a thread at every stage.
-- `match-card.tsx` and `app/actions.ts` are gone: accept, decline and placement all moved into the thread pane.
-- GA4 is rendered from the root layout and is off unless `NEXT_PUBLIC_GA_ID` is set at build time; the event names live in `src/lib/analytics.ts`.
+- `exchange_sites` gains `min_partner_dr` and `skip_unrated`; `exchange_matches` gains `withdrawn_at` and `withdrawn_by_id`. All four additive, and a withdrawal is still stored as `declined`.
+- The floor is `lib/matching/floor.ts`: pure, unit tested, the only DR rule that removes a candidate rather than scoring one. `selectPartner`, the digest sweep and both controls read it, and it is never restated in SQL.
+- `respondToMatch` handles the withdrawal rather than a second service function, so the route and the MCP tool needed no new wiring. It deletes any placement row that was never live, because the recheck cron would otherwise keep crawling a link nobody is owed.
+- Every script, Drizzle Kit and Playwright take `ENV_FILE`, and `pnpm dev:env` runs the dev server on the same file, so a suite and the server it drives cannot end up on different databases. Seeding refuses a remote database unless `DISPOSABLE_DB_HOST` names that exact host.
+- `pnpm test:inbox` covers the withdraw window and its refusal once a link is live; the browser suite walks the confirm step, a withdrawal from both sides, and the sites list.
+
+## 0.5.2 — 2026-09-14 — Inbox corrections
+
+- A thread stopped asking for a decision you had already made.
+- Badges and the overview were rebuilt around a green that is legible on paper.
+
+## 0.5.1 — 2026-09-06 — Who has accepted, on the thread
+
+- Acceptance states on every thread, and the waiting state that goes with them.
+
+## 0.5.0 — 2026-09-04 — An inbox for every match, and a new dashboard
+
+Two members could accept each other and then had no way, inside the product, to
+say which page either link was going on.
+
+- Every match is a thread: accept it, agree where the two links go, paste your page back for verification.
+- Messaging opens only after you both accept. Until then neither side knows who the other is.
+- A four-step rail on every thread: Decide, Agree, Add links, Live.
+- Overview replaces the match cards, opening with what needs you and why.
+- A Sites page listing everything you have submitted, and this changelog.
+- Agents get list_messages and send_message, under the same rule as the browser.
+
+## 0.4.3 — 2026-08-09 — Told the moment a link goes live
+
+- Both sides are emailed when a placement is confirmed live, and when one comes down.
+
+## 0.4.2 — 2026-08-07 — Nudges, instead of silence
+
+- A reminder when an exchange is waiting on your link, at most one per match per night.
+- A note when a match expires, saying both sites are back in the pool.
+
+## 0.4.1 — 2026-08-06 — Matching got a heartbeat
+
+Pairing ran once, at approval, so a site that missed that instant was invisible
+to matching for good — 26 of 33 active sites had never been matched.
+
+- Pairing runs nightly over every idle site, not only at approval.
+- An agreed match can no longer be reopened by a stray decline.
+
+## 0.4.0 — 2026-08-03 — Standing you cannot inflate
+
+- Standing is counted from links that are actually live, in both directions.
+- A match from an adjacent category says so on the match itself.
+- Anchors are stripped of anything that could become markup on a partner's page.
+
+## 0.3.0 — 2026-07-31 — Review before matching
+
+- A site is matched only once a human has approved it.
+- Both sides can accept in the same instant without one acceptance being lost.
+- Re-reporting a placement corrects the first one instead of counting twice.
+
+## 0.2.0 — 2026-07-28 — Workers, Postgres, and a dashboard
+
+- Moved to Cloudflare Workers and Postgres, and the repository was opened.
+- An /app dashboard, an admin review queue, and the four emails nobody was getting.
+- Domain Rating is read correctly, and a missing score is treated as missing rather than as zero.
+
+## 0.1.0 — 2026-07-27 — First build
+
+- The MCP server: search, submit, match, place, verify.
+- The landing page, the docs, sign-in, and the house rules.

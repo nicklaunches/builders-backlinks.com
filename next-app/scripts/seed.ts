@@ -17,10 +17,10 @@ import { orderPair } from "@/lib/exchange";
 
 import { sessionCookieHeader } from "./dev-session";
 
-loadEnv({ path: ".env.local", quiet: true });
+loadEnv({ path: process.env.ENV_FILE ?? ".env.local", quiet: true });
 
 /**
- * @file Seeds a local inbox worth looking at, and refuses to run anywhere else.
+ * @file Seeds an inbox worth looking at, and refuses to run where it should not.
  *
  * `pnpm dev` against an empty database shows an empty inbox, which is exactly
  * the state that cannot be designed or tested against: every interesting
@@ -28,6 +28,10 @@ loadEnv({ path: ".env.local", quiet: true });
  * thread per stage — waiting on you, waiting on them, agreed and talking, both
  * links live, and one that expired — so the rail, the tasks, the timeline and
  * the composer all have something real underneath them.
+ *
+ * WHERE IT MAY RUN is {@link assertDisposable}: this machine's Postgres, or one
+ * database named outright in `DISPOSABLE_DB_HOST`. Which env file supplies that
+ * is `ENV_FILE`, default `.env.local`; `.env.example` says what belongs in each.
  *
  * IT DELETES ITS OWN FIXTURES FIRST and nothing else. Every row it writes hangs
  * off a user whose email ends in the seed suffix, so re-running is idempotent
@@ -49,7 +53,19 @@ const now = Date.now();
 const ago = (days: number) => new Date(now - days * DAY);
 const ahead = (days: number) => new Date(now + days * DAY);
 
-function assertLocal(): void {
+/**
+ * Refuses any database that is not this machine's or declared disposable.
+ *
+ * A local host passes on sight. A remote one passes only when
+ * `DISPOSABLE_DB_HOST` names that exact host, which is a claim about ONE
+ * database that somebody had to write down and keep current. A plain opt-out
+ * flag would not do: it gets set once for a throwaway branch and then quietly
+ * covers every run after it, including the one pointed at production.
+ *
+ * @throws When `DATABASE_URL` is missing, unparseable, or names a host that
+ *   neither rule admits.
+ */
+function assertDisposable(): void {
     const url = process.env.DATABASE_URL;
     if (!url) throw new Error("DATABASE_URL is not set. Point it at your local Postgres and try again.");
 
@@ -59,11 +75,13 @@ function assertLocal(): void {
     } catch {
         throw new Error("DATABASE_URL is not a valid URL.");
     }
-    if (!LOCAL_HOSTS.has(host)) {
-        throw new Error(
-            `Refusing to seed ${host}. This writes fake members and matches, and is only ever meant for a local database.`,
-        );
-    }
+    if (LOCAL_HOSTS.has(host)) return;
+    if (process.env.DISPOSABLE_DB_HOST?.trim() === host) return;
+
+    throw new Error(
+        `Refusing to seed ${host}. This writes fake members and matches, so it runs against a local database, ` +
+            "or against one whose host is spelled out in DISPOSABLE_DB_HOST. Never against production.",
+    );
 }
 
 /** What a caller gets back: enough to drive either surface as either member. */
@@ -139,7 +157,7 @@ async function wipe(): Promise<void> {
 }
 
 export async function seedInbox(): Promise<SeedOutput> {
-    assertLocal();
+    assertDisposable();
     await wipe();
 
     const created: SeedRow[] = [];

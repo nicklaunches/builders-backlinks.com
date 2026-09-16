@@ -248,7 +248,30 @@ const WRITE_TOOLS: readonly ToolDef[] = [
         summary: "The sites this key owns, newest first.",
         args: [],
         returns:
-            "Domain, category, DR, status (pending_review, active, paused, rejected, banned) and links given versus received.",
+            "Domain, category, DR, status (pending_review, active, paused, rejected, banned), links given versus received, and the minimum partner DR when one is set.",
+    },
+    {
+        name: "set_matching_preferences",
+        auth: "key",
+        summary:
+            "Sets the floor on a partner's Domain Rating for one site, and whether sites we could not measure are allowed. Applies to the next pairing and never to a match that is already open.",
+        args: [
+            { name: "site_id", type: "string", required: true, note: "From list_my_sites." },
+            {
+                name: "min_partner_dr",
+                type: "integer 0 to 100",
+                required: true,
+                note: "Lowest DR worth pairing with. 0 means no floor, which is the default.",
+            },
+            {
+                name: "skip_unrated",
+                type: "boolean, default false",
+                required: false,
+                note: "A missing DR is a score we could not read, not a low one, so no floor decides it. This does.",
+            },
+        ],
+        returns:
+            "The saved setting plus what it leaves in the pool: how many active sites clear it, and how many of those would take this site back. The floor applies in both directions, so the second number is the one that predicts a match.",
     },
     {
         name: "list_matches",
@@ -270,19 +293,24 @@ const WRITE_TOOLS: readonly ToolDef[] = [
         name: "respond_to_match",
         auth: "key",
         summary:
-            "Accepts or declines a proposed match. When the second side accepts, the two domains and emails are revealed to each other in the same instant and the link brief unlocks.",
+            "Accepts or declines a proposed match. When the second side accepts, the two domains and emails are revealed to each other in the same instant and the link brief unlocks. Declining a match that is already agreed withdraws from it, which stays possible until one of the two links goes live.",
         args: [
             { name: "match_id", type: "string", required: true, note: "From list_matches." },
-            { name: "accept", type: "boolean", required: true, note: "false declines and closes the match." },
+            {
+                name: "accept",
+                type: "boolean",
+                required: true,
+                note: "false declines and closes the match, or withdraws from one already agreed.",
+            },
             {
                 name: "reason",
                 type: "string, up to 500 characters",
                 required: false,
-                note: "Optional note when declining. Recorded, not forwarded as an accusation.",
+                note: "Optional note when declining. Recorded, and quoted to the partner on a withdrawal.",
             },
         ],
         returns:
-            "The new state. On mutual accept, the partner domain and contact email plus an instruction to call get_link_brief. Accepting an already-agreed match is a harmless no-op, so retries are safe.",
+            "The new state. On mutual accept, the partner domain and contact email plus an instruction to call get_link_brief. Accepting an already-agreed match is a harmless no-op, so retries are safe. Withdrawing tells the partner and puts both sites back in the pool; once a link is live it is refused.",
     },
     {
         name: "get_link_brief",
@@ -523,7 +551,7 @@ export default function McpDocsPage() {
                 <PageHeader
                     eyebrow="Docs · MCP and API"
                     title="The MCP server, end to end"
-                    lede="One HTTP endpoint, eleven tools, and a worked trade from an empty listing to a link we have verified is live. Nothing installs on your machine."
+                    lede="One HTTP endpoint, twelve tools, and a worked trade from an empty listing to a link we have verified is live. Nothing installs on your machine."
                     meta={MCP_URL}>
                     {/* Small screens only: above lg the sticky rail takes over,
                         and showing both would be the same list twice. */}
@@ -652,7 +680,7 @@ export default function McpDocsPage() {
                         <Section id="tools" title="Tool reference">
                             <Prose>
                                 <p>
-                                    Eleven tools: three that need no key at all, and eight that act on your own account.
+                                    Twelve tools: three that need no key at all, and nine that act on your own account.
                                     Every tool returns plain text written to be read by a model, and every write tool
                                     ends by saying what to do next, so an agent can keep the loop going without being
                                     prompted at each step.

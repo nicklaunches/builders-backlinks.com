@@ -6,10 +6,11 @@ import { AnalyzeError, analyzeFailureHint } from "@/lib/contracts";
 import type { ExchangeMember } from "@/lib/db/schema";
 import { PLACEMENT_OFFERS } from "@/lib/exchange";
 import { RateLimited, enforceToolLimit } from "@/lib/limits";
+import { admittedAt, mutualAt } from "@/lib/matching/floor";
 import { getCategoryDepths, getRules } from "@/lib/services/catalog";
 import { LinkError, checkLinks, getLinkBrief, getStanding, markLinkPlaced } from "@/lib/services/links";
-import { MatchError, listMatches, respondToMatch, searchPartners } from "@/lib/services/matches";
-import { SiteError, commitSite, draftSite, listMySites } from "@/lib/services/sites";
+import { MatchError, listMatches, poolCurveFor, respondToMatch, searchPartners } from "@/lib/services/matches";
+import { SiteError, commitSite, draftSite, listMySites, setMatchingPreferences } from "@/lib/services/sites";
 import { ThreadError, listMessages, listThreads, sendMessage } from "@/lib/services/threads";
 
 /**
@@ -315,10 +316,13 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
             }
             return text(
                 sites
-                    .map(
-                        (s) =>
-                            `${s.domain}  ${s.category}  DR ${s.domainRating ?? "unrated"}  [${s.status}]  given ${s.linksGiven} / received ${s.linksGot}`,
-                    )
+                    .map((s) => {
+                        const floor =
+                            s.minPartnerDr > 0 || s.skipUnrated
+                                ? `  wants ${s.minPartnerDr > 0 ? `DR ${s.minPartnerDr}+` : "any DR"}${s.skipUnrated ? ", rated only" : ""}`
+                                : "";
+                        return `${s.domain}  ${s.category}  DR ${s.domainRating ?? "unrated"}  [${s.status}]  given ${s.linksGiven} / received ${s.linksGot}${floor}`;
+                    })
                     .join("\n"),
             );
         }),
@@ -373,7 +377,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
         {
             title: "Accept or decline a match",
             description:
-                "Accepts or declines a proposed match. When both sides accept, the two domains and emails are revealed to each other and the link brief becomes available.",
+                "Accepts or declines a proposed match. When both sides accept, the two domains and emails are revealed to each other and the link brief becomes available. Declining an already agreed match withdraws from it, which is allowed until one of the two links goes live: the partner is told and both sites go back into the pool.",
             inputSchema: z.object({
                 match_id: z.string(),
                 accept: z.boolean(),
@@ -397,6 +401,11 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
                         "",
                         `Next: call get_link_brief with match_id ${view.matchId} to get their URL and approved anchors, place the link, then call mark_link_placed.`,
                     ].join("\n"),
+                );
+            }
+            if (!args.accept && view.revealed) {
+                return text(
+                    `Withdrawn. Match ${view.matchId} is now ${view.state}, the other side has been told, and both sites are back in the pool. Neither of you owes the other a link.`,
                 );
             }
             return text(`Match ${view.matchId} is now ${view.state}. ${view.nextStep}`);
@@ -501,6 +510,59 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
                             }  ${r.pageUrl ?? "no page recorded"}`,
                     )
                     .join("\n"),
+            );
+        }),
+    );
+
+    server.registerTool(
+        "set_matching_preferences",
+        {
+            title: "Set who a site matches with",
+            description:
+                "Sets a floor on the Domain Rating of the partners a site will be offered, and whether partners we could not measure at all are allowed. Applies to the next pairing, never to a match that is already open. Call list_my_sites first for the site id.",
+            inputSchema: z.object({
+                site_id: z.string(),
+                min_partner_dr: z
+                    .number()
+                    .int()
+                    .min(0)
+                    .max(100)
+                    .describe("Lowest Domain Rating worth pairing with. 0 means no floor."),
+                skip_unrated: z
+                    .boolean()
+                    .default(false)
+                    .describe("True to also keep out sites we have no Domain Rating for."),
+            }),
+        },
+        guard(ctx, "set_matching_preferences", async (args) => {
+            const member = requireMember(ctx);
+            const site = await setMatchingPreferences({
+                member,
+                siteId: args.site_id,
+                minPartnerDr: args.min_partner_dr,
+                skipUnrated: args.skip_unrated,
+            });
+
+            // The number alone tells a member nothing about what it costs them,
+            // and a floor that empties the pool is silent by design: they stop
+            // being matched. Same counts the browser control shows.
+            const curve = await poolCurveFor(site);
+            const admitted = admittedAt(curve, site.minPartnerDr, site.skipUnrated);
+            const mutual = mutualAt(curve, site.minPartnerDr, site.skipUnrated);
+            const floor = site.minPartnerDr > 0 ? `DR ${site.minPartnerDr} and up` : "any DR";
+            const unrated = site.skipUnrated ? ", and no unrated sites" : "";
+            return text(
+                [
+                    `${site.domain} now wants ${floor}${unrated}.`,
+                    "",
+                    `  in its pool   ${curve.total} active site(s), ${curve.unrated} of them unrated`,
+                    `  it will take  ${admitted}`,
+                    `  mutual        ${mutual} of those would also take ${site.domain} back`,
+                    "",
+                    mutual === 0
+                        ? "Nothing clears that today, so this site will sit out of matching until something does or the floor comes down."
+                        : "Pairing runs nightly and the next one uses these numbers.",
+                ].join("\n"),
             );
         }),
     );

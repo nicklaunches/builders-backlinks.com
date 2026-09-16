@@ -10,7 +10,7 @@ import { LINK_STATUSES, MATCH_STATES, PLACEMENTS, PLACEMENT_OFFERS, SITE_STATUSE
 
 // Next loads .env.local automatically; a plain node script does not. Load it
 // before anything imports a module that reads process.env at call time.
-loadEnv({ path: ".env.local", quiet: true });
+loadEnv({ path: process.env.ENV_FILE ?? ".env.local", quiet: true });
 
 /**
  * @file End-to-end smoke test for the MCP server.
@@ -163,6 +163,7 @@ async function main() {
             "respond_to_match",
             "search_partners",
             "send_message",
+            "set_matching_preferences",
             "submit_site",
         ];
         const missing = expected.filter((n) => !names.includes(n));

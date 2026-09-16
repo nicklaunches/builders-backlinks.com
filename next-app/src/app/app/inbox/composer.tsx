@@ -50,7 +50,7 @@ export function Composer({
     }
 
     return (
-        <div className="border-line bg-bg border-t px-5 py-4 sm:px-6">
+        <div className="border-line bg-surface border-t px-5 py-4 sm:px-6">
             {/* A blank box on a thread with nothing in it is the hardest message
                 to write, and the one the whole trade waits on. */}
             {suggestion && value.length === 0 ? (
@@ -63,7 +63,7 @@ export function Composer({
                 </button>
             ) : null}
 
-            <div className="border-line bg-surface focus-within:border-line-strong flex items-end gap-2 rounded-sm border p-2 transition-colors">
+            <div className="border-line bg-bg focus-within:border-line-strong flex items-end gap-2 rounded-sm border p-2 transition-colors">
                 <textarea
                     ref={box}
                     rows={1}

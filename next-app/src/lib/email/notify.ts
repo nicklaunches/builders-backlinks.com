@@ -7,6 +7,7 @@ import { LinkVerifiedEmail } from "@/emails/link-verified";
 import { MatchAgreedEmail } from "@/emails/match-agreed";
 import { MatchExpiredEmail } from "@/emails/match-expired";
 import { MatchProposedEmail } from "@/emails/match-proposed";
+import { MatchWithdrawnEmail } from "@/emails/match-withdrawn";
 import { MessageReceivedEmail } from "@/emails/message-received";
 import { PlacementPendingEmail } from "@/emails/placement-pending";
 import { SiteApprovedEmail } from "@/emails/site-approved";
@@ -433,6 +434,36 @@ export async function notifyMatchExpired(input: {
             subject: "A match expired, and you are back in the pool",
             react: MatchExpiredEmail({ category: input.category, wasAgreed: input.wasAgreed }),
             emailType: "match-expired",
+        });
+    });
+}
+
+/**
+ * Tells the member left behind that their partner withdrew.
+ *
+ * One side only: the member who withdrew did it and does not need mail about
+ * it. Sent from `respondToMatch`, which refuses a withdrawal once a link is
+ * live, so this can promise that nothing is owed without re-checking.
+ *
+ * Both domains are out by the time a withdrawal is possible, which is what lets
+ * this one name the site that left. Do not reuse it anywhere earlier.
+ */
+export async function notifyMatchWithdrawn(input: {
+    /** The site being told. */
+    site: ExchangeSite;
+    /** The domain that withdrew. */
+    withdrawnBy: string;
+    reason: string | null;
+}): Promise<void> {
+    await safely("match-withdrawn", async () => {
+        const to = await emailForSite(input.site);
+        if (!to) return;
+
+        await sendEmail({
+            to,
+            subject: `${input.withdrawnBy} withdrew from your exchange`,
+            react: MatchWithdrawnEmail({ withdrawnBy: input.withdrawnBy, reason: input.reason }),
+            emailType: "match-withdrawn",
         });
     });
 }

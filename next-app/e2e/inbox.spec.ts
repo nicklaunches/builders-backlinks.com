@@ -61,7 +61,11 @@ test("accepting moves the list's own chip off Decide, without a reload", async (
     const row = page.getByRole("link", { name: /A Marketing site/ });
     await expect(row).toContainText("Decide");
 
+    // Accepting is two steps now: the button opens the confirmation, and only
+    // the confirmation commits. A single click must NOT change the row.
     await page.getByRole("button", { name: "Accept" }).click();
+    await expect(row).toContainText("Decide");
+    await page.getByRole("button", { name: "Yes, accept" }).click();
 
     await expect(row).toContainText("Waiting");
     await expect(row).toContainText("You accepted, waiting on them");
@@ -76,6 +80,10 @@ test("accepting a thread the partner already accepted reveals them", async ({ br
     await expect(page.getByText("They have accepted and are waiting on you")).toBeVisible();
 
     await page.getByRole("button", { name: "Accept" }).click();
+    // The confirmation says what the click actually does, which on this thread
+    // is agree the exchange outright.
+    await expect(page.getByText(/They have accepted, so this agrees it/)).toBeVisible();
+    await page.getByRole("button", { name: "Yes, accept" }).click();
 
     // The reveal: a name where a category used to be, and a composer.
     await expect(page.getByRole("heading", { name: /cyanalytics\.test/ })).toBeVisible();
@@ -83,6 +91,30 @@ test("accepting a thread the partner already accepted reveals them", async ({ br
     await expect(page.getByText(/both link tasks are ready/)).toBeVisible();
 
     await context.close();
+});
+
+test("withdrawing from the exchange just agreed closes it for both sides", async ({ browser, baseURL }) => {
+    // Runs on the thread the reveal test above agreed, and nothing after this
+    // uses it. The premise is the feedback this was built for: the member meant
+    // to decline, pressed the other button, and the exchange was already agreed.
+    const ada = await pageFor(browser, seed.people.adatools!, baseURL!);
+    const cy = await pageFor(browser, seed.people.cyanalytics!, baseURL!);
+
+    await openThread(ada.page, seed.matches.waitingOnAda);
+    await ada.page.getByRole("button", { name: "Withdraw from this exchange" }).click();
+    await ada.page.getByRole("textbox", { name: /Anything worth telling them/ }).fill("Accepted by mistake.");
+    await ada.page.getByRole("button", { name: "Withdraw from this exchange" }).last().click();
+
+    await expect(ada.page.getByText(/withdrawn from after both sides agreed/)).toBeVisible();
+    await expect(ada.page.getByRole("textbox", { name: "Write a reply" })).toHaveCount(0);
+
+    // The other side is told the same thing, and is told who did it.
+    await openThread(cy.page, seed.matches.waitingOnAda);
+    await expect(cy.page.getByText(/withdrawn from after both sides agreed/)).toBeVisible();
+    await expect(cy.page.getByText(/They withdrew from this exchange/)).toBeVisible();
+
+    await ada.context.close();
+    await cy.context.close();
 });
 
 test("a reply typed by one member appears in the other's open thread", async ({ browser, baseURL }) => {

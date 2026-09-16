@@ -1,4 +1,4 @@
-import { count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 
 import { analyzeSite } from "@/lib/analyze";
 import { type Category, UNMATCHABLE, isCategory } from "@/lib/categories";
@@ -30,7 +30,7 @@ import { NO_LINKS, liveLinkCounts } from "@/lib/services/standing";
 export class SiteError extends Error {
     constructor(
         public readonly code:
-            "domain_taken" | "invalid_category" | "unmatchable_category" | "too_many_sites" | "invalid",
+            "domain_taken" | "invalid_category" | "unmatchable_category" | "too_many_sites" | "not_found" | "invalid",
         message: string,
     ) {
         super(message);
@@ -193,6 +193,52 @@ export async function listMySites(member: ExchangeMember): Promise<(ExchangeSite
 
     const counts = await liveLinkCounts(sites.map((s) => s.id));
     return sites.map((site) => ({ ...site, ...(counts.get(site.id) ?? NO_LINKS) }));
+}
+
+/** The ceiling on a DR floor. The column is constrained to the same range. */
+const MAX_MIN_PARTNER_DR = 100;
+
+/**
+ * Sets who a site is willing to be matched with.
+ *
+ * The only edit a member can make to a listing today, and it is deliberately
+ * the only one: the description and the category were written to be shown to
+ * strangers and re-open the review question, while these two decide nothing
+ * about how the site is presented and everything about who sees it.
+ *
+ * Takes effect on the NEXT pairing. An open match is left alone — it was
+ * proposed under the old numbers, both members may already be talking, and
+ * retracting a proposal because a slider moved is a worse surprise than the
+ * proposal was.
+ *
+ * @throws `SiteError` when the site is not this member's, or the floor is not a
+ *   whole number inside the column's range.
+ */
+export async function setMatchingPreferences(input: {
+    member: ExchangeMember;
+    siteId: string;
+    minPartnerDr: number;
+    skipUnrated: boolean;
+}): Promise<ExchangeSite> {
+    const { minPartnerDr } = input;
+    if (!Number.isInteger(minPartnerDr) || minPartnerDr < 0 || minPartnerDr > MAX_MIN_PARTNER_DR) {
+        throw new SiteError(
+            "invalid",
+            `A minimum Domain Rating has to be a whole number from 0 to ${MAX_MIN_PARTNER_DR}.`,
+        );
+    }
+
+    // Ownership is the WHERE clause rather than a read first: one statement
+    // that cannot be raced, and a site belonging to somebody else comes back as
+    // no rows, which is the same answer as a site that does not exist.
+    const [updated] = await db()
+        .update(exchangeSites)
+        .set({ minPartnerDr, skipUnrated: input.skipUnrated, updatedAt: new Date() })
+        .where(and(eq(exchangeSites.id, input.siteId), eq(exchangeSites.ownerId, input.member.userId)))
+        .returning();
+
+    if (!updated) throw new SiteError("not_found", "No site of yours with that id.");
+    return updated;
 }
 
 /** A site plus the email of the member who submitted it. Admin views only. */

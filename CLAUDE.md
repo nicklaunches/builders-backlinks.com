@@ -77,11 +77,21 @@ carrying a test-only sign-in path that could ship.
 - One test per invariant. Don't re-test Zod or a library, and don't repeat an output-schema round-trip in every happy path.
 - Two assertions were written after the thing they check had already failed in production, and must not be softened. `test:mcp` audits the server's prose for tool names that do not exist: every snake_case token in a tool description or answer must be a registered tool or a pgEnum value. Do not turn that into an allowlist to make a failure go away. `test:cron` seeds an **odd** number of sites, because an even pool cannot produce the bug it is there to catch.
 
+## Releasing
+
+`main` deploys on push, so a push is a release. One that members would notice
+takes the next version: bump `next-app/package.json` and add the entry to
+`src/content/changelog.ts` and `CHANGELOG.md` **in the same commit**, in the
+same words, newest first. A push they would not notice takes no version and
+rides along under the next one that does. Entries are short — a title, one line
+of why, and a line per change. Internal notes go in `CHANGELOG.md` only.
+
 ## Commands
 
 | Command | What it does |
 | --- | --- |
 | `pnpm dev` | Next on Node. Convenient, and **not** the production runtime. |
+| `pnpm dev:env` | The same server on another env file: `ENV_FILE=.env.e2e pnpm dev:env --port 3100` |
 | `pnpm typecheck` | `tsc --noEmit` |
 | `pnpm lint` | ESLint, including the layering rule above |
 | `pnpm format` | Prettier |
@@ -90,13 +100,25 @@ carrying a test-only sign-in path that could ship.
 | `pnpm test:cron` | Drives the daily re-pair pass over a seeded pool. Localhost only. |
 | `pnpm test:inbox` | Drives every `/api/inbox` route with real session cookies. Seeds its own fixtures; needs a running server and Postgres. |
 | `pnpm test:e2e` | Playwright over the inbox UI, two members at once. Starts a dev server unless one is already listening. |
-| `pnpm seed:inbox` | Fills a LOCAL database with threads at every stage, and writes ids and sign-in cookies to `.seed/inbox.json`. |
+| `pnpm seed:inbox` | Fills a local or declared-disposable database with threads at every stage, and writes ids and sign-in cookies to `.seed/inbox.json`. |
 | `pnpm emails:render` | Renders every template to `.render/` |
 | `pnpm assets:generate` | Redraws the favicon, OG image and logo. Hand-run; commit the output |
 | `pnpm preview` | Build for Workers and serve it locally |
 | `pnpm run deploy` | Migrate, build, deploy. Not `pnpm deploy` — in pnpm 10 that is a built-in workspace command and silently shadows the script |
 | `pnpm cf-typegen` | Regenerate `worker-configuration.d.ts` after a binding change |
 | `pnpm db:generate` / `db:migrate` / `db:studio` | Drizzle Kit |
+
+Every script, Drizzle Kit and Playwright read `.env.local` unless `ENV_FILE`
+names another file; `next dev` cannot, which is what `pnpm dev:env` is for. The
+suites that write fixtures refuse any remote database except the one host
+`DISPOSABLE_DB_HOST` spells out, so pointing them somewhere new is a deliberate
+two-line edit rather than a flag:
+
+```bash
+ENV_FILE=.env.e2e pnpm db:migrate
+ENV_FILE=.env.e2e pnpm dev:env --port 3100   # in its own shell
+ENV_FILE=.env.e2e pnpm test:inbox            # then the rest, same prefix
+```
 
 `pnpm dev` cannot reproduce the two workerd traps this app is shaped around — the
 request-scoped database handle and the Hyperdrive binding — so check a change

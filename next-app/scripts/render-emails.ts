@@ -14,6 +14,7 @@ import { LinkVerifiedEmail } from "../src/emails/link-verified";
 import { MatchAgreedEmail } from "../src/emails/match-agreed";
 import { MatchExpiredEmail } from "../src/emails/match-expired";
 import { MatchProposedEmail } from "../src/emails/match-proposed";
+import { MatchWithdrawnEmail } from "../src/emails/match-withdrawn";
 import { MessageReceivedEmail } from "../src/emails/message-received";
 import { PlacementPendingEmail } from "../src/emails/placement-pending";
 import { SiteApprovedEmail } from "../src/emails/site-approved";
@@ -185,6 +186,17 @@ const fixtures: Fixture[] = [
         element: createElement(MatchExpiredEmail, {
             category: "Developer Tools",
             wasAgreed: true,
+        }),
+    },
+    {
+        // Post-agreement, so naming the site that left is correct here and the
+        // fixture says so: `masked: false`.
+        name: "match-withdrawn",
+        subject: `${PARTNER_DOMAIN} withdrew from your exchange`,
+        masked: false,
+        element: createElement(MatchWithdrawnEmail, {
+            withdrawnBy: PARTNER_DOMAIN,
+            reason: "Accepted by mistake, sorry.",
         }),
     },
     {

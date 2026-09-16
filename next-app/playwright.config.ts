@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 import { config as loadEnv } from "dotenv";
 
-loadEnv({ path: ".env.local", quiet: true });
+loadEnv({ path: process.env.ENV_FILE ?? ".env.local", quiet: true });
 
 /**
  * @file The browser suite. Covers what the HTTP suite cannot: the inbox itself.

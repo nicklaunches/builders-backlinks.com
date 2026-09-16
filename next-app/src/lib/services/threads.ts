@@ -175,6 +175,11 @@ export type ThreadDetail = {
     waitingOnMe: boolean;
     /** The viewer accepted first and the partner has not answered. Nothing to do but wait or withdraw. */
     waitingOnThem: boolean;
+    /**
+     * The exchange is agreed and no link is live yet, so the viewer can still
+     * pull out. See `respondToMatch`, which is what actually refuses it.
+     */
+    canWithdraw: boolean;
     expiresAt: Date;
     lastReadAt: Date | null;
 };
@@ -437,6 +442,8 @@ export async function getThread(input: { member: ExchangeMember; matchId: string
         bAcceptedAt: match.bAcceptedAt,
         agreedAt: match.agreedAt,
         expiresAt: match.expiresAt,
+        withdrawnAt: match.withdrawnAt,
+        withdrawnByMe: match.withdrawnById === member.userId,
         mineIsA,
         myDomain: mySite.domain,
         partnerLabel,
@@ -477,6 +484,9 @@ export async function getThread(input: { member: ExchangeMember; matchId: string
         canMessage: isRevealed(match.state),
         waitingOnMe: isWaitingOnMe(match, mineIsA),
         waitingOnThem: isWaitingOnThem(match, mineIsA),
+        // `placed` is deliberately absent: both links live is an exchange that
+        // happened, and the way out of one of those is taking a link down.
+        canWithdraw: match.state === "agreed" && myLink?.status !== "live" && theirLink?.status !== "live",
         expiresAt: match.expiresAt,
         lastReadAt: readRow[0]?.lastReadAt ?? null,
     };

@@ -22,6 +22,11 @@ import type { ThreadSummary } from "@/lib/services/threads";
  * it is why the inbox does not use the `PageFrame` the rest of `/app` uses.
  * How much of the viewport the header and tab bar take is `--app-chrome`,
  * published by `app/layout.tsx`; the `3rem` below is this shell's own `sm:my-6`.
+ *
+ * THE SHELL IS PAPER WHITE, like every other card in `/app`, and the page
+ * ground shows only around it. Everything inside is then tinted DOWN from
+ * white — the work area above a conversation, the task rows, the bubbles — so
+ * the zones inside a thread separate the same way they do on a document page.
  */
 
 export function InboxShell({
@@ -35,7 +40,7 @@ export function InboxShell({
 }) {
     return (
         <main id="main" className="mx-auto w-full max-w-6xl px-0 sm:px-6">
-            <div className="border-line bg-bg grid h-[calc(100dvh-var(--app-chrome))] min-h-0 grid-cols-1 sm:my-6 sm:h-[calc(100dvh-var(--app-chrome)-3rem)] sm:rounded-sm sm:border lg:grid-cols-[21rem_1fr]">
+            <div className="border-line bg-surface grid h-[calc(100dvh-var(--app-chrome))] min-h-0 grid-cols-1 sm:my-6 sm:h-[calc(100dvh-var(--app-chrome)-3rem)] sm:rounded-sm sm:border lg:grid-cols-[21rem_1fr]">
                 <div
                     className={cn(
                         "border-line flex min-h-0 flex-col lg:border-r",

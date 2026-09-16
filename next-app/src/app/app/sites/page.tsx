@@ -1,15 +1,26 @@
 import type { Metadata } from "next";
 
+import { SiteCard } from "@/app/app/sites/site-card";
 import { Empty, PageFrame, Section, SignInPrompt } from "@/app/app/ui";
-import { cn } from "@/components/web/cn";
+import { poolCurveFor } from "@/lib/services/matches";
 import { listMySites } from "@/lib/services/sites";
 import { getSessionMember } from "@/lib/session";
 
 /**
  * @file `/app/sites`, every site the member has listed.
  *
- * A list and a link to `/submit`. Editing a listing is not a thing the product
- * does yet; a site is analysed on submission and that is its record.
+ * A list, a link to `/submit`, and the one edit the product allows: who each
+ * site is willing to be matched with. The listing itself is still fixed at
+ * submission — the description and category were written to be shown to
+ * strangers and re-open the review question, while a floor changes nothing
+ * about how the site is presented.
+ *
+ * Each row is closed until asked, with its floor on the row; `site-card.tsx`
+ * holds that and the editor behind it.
+ *
+ * The pool is counted per site, before render, so the control can answer as the
+ * member moves the number the moment a row is opened. One extra query per
+ * listed site, capped at ten by `MAX_SITES_PER_MEMBER`.
  */
 
 export const metadata: Metadata = {
@@ -38,6 +49,7 @@ export default async function SitesPage() {
     }
 
     const sites = await listMySites(member);
+    const curves = await Promise.all(sites.map((site) => poolCurveFor(site)));
 
     return (
         <PageFrame title="Your sites">
@@ -52,26 +64,23 @@ export default async function SitesPage() {
                     </Empty>
                 ) : (
                     <>
-                        <ul className="border-line grid gap-px overflow-hidden rounded-sm border">
-                            {sites.map((site) => (
-                                <li
+                        <ul className="space-y-3">
+                            {sites.map((site, index) => (
+                                <SiteCard
                                     key={site.id}
-                                    className="bg-surface flex flex-wrap items-baseline gap-x-3 gap-y-1 p-4">
-                                    <span className="text-[15px] font-medium">{site.domain}</span>
-                                    <span className="text-muted text-[13.5px]">{site.category}</span>
-                                    <span
-                                        className={cn(
-                                            "rounded-full border px-2 py-0.5 font-mono text-[10px] tracking-[0.14em] uppercase",
-                                            site.status === "active"
-                                                ? "border-ok/40 bg-ok-soft text-ok-text"
-                                                : "border-line text-muted bg-surface-2",
-                                        )}>
-                                        {site.status.replace(/_/g, " ")}
-                                    </span>
-                                    <span className="text-muted ml-auto font-mono text-[11.5px]">
-                                        {site.linksGiven} given · {site.linksGot} received
-                                    </span>
-                                </li>
+                                    site={{
+                                        id: site.id,
+                                        domain: site.domain,
+                                        category: site.category,
+                                        status: site.status,
+                                        domainRating: site.domainRating,
+                                        linksGiven: site.linksGiven,
+                                        linksGot: site.linksGot,
+                                        minPartnerDr: site.minPartnerDr,
+                                        skipUnrated: site.skipUnrated,
+                                    }}
+                                    curve={curves[index]!}
+                                />
                             ))}
                         </ul>
                         <p className="text-muted mt-3 text-[13.5px]">

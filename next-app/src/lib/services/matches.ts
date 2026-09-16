@@ -13,7 +13,7 @@ import {
     exchangeMembers,
     exchangeSites,
 } from "@/lib/db/schema";
-import { notifyMatchAgreed, notifyMatchProposed } from "@/lib/email/notify";
+import { notifyMatchAgreed, notifyMatchProposed, notifyMatchWithdrawn } from "@/lib/email/notify";
 import {
     type LinkStatus,
     type MatchState,
@@ -23,6 +23,7 @@ import {
     orderPair,
 } from "@/lib/exchange";
 import { findBestPartner } from "@/lib/matching";
+import { type PoolCurve, buildPoolCurve, mutuallyAcceptable } from "@/lib/matching/floor";
 import { briefFor } from "@/lib/services/links";
 import { toMaskedPartner, toRevealedPartner } from "@/lib/services/mask";
 import { NO_LINKS, liveLinkCounts, liveLinkCountsFor } from "@/lib/services/standing";
@@ -138,11 +139,52 @@ export async function searchPartners(input: {
     return sites.map((site) => toMaskedPartner(site, counts.get(site.id) ?? NO_LINKS));
 }
 
+/**
+ * The shape of a site's pool at every floor it could set.
+ *
+ * Read by the two controls that set one, so a member sees the cost of a number
+ * before they save it rather than through weeks of silence. Counts the same
+ * pools {@link selectPartner} would draw from, including the adjacent one when
+ * the category is thin, and deliberately does NOT exclude sites holding an open
+ * match: those come back, and a reach that dipped as strangers got busy would
+ * read as the floor doing something it did not do.
+ *
+ * The counting rule itself is `lib/matching/floor`, never restated in SQL.
+ */
+export async function poolCurveFor(site: ExchangeSite): Promise<PoolCurve> {
+    const [active] = await db()
+        .select({ n: count() })
+        .from(exchangeSites)
+        .where(and(eq(exchangeSites.category, site.category), eq(exchangeSites.status, "active")));
+
+    const pools = candidateCategories(site.category, active?.n ?? 0);
+    if (pools.length === 0) return buildPoolCurve(site, []);
+
+    const rows = await db()
+        .select({
+            domainRating: exchangeSites.domainRating,
+            minPartnerDr: exchangeSites.minPartnerDr,
+            skipUnrated: exchangeSites.skipUnrated,
+        })
+        .from(exchangeSites)
+        .where(
+            and(
+                inArray(exchangeSites.category, pools),
+                eq(exchangeSites.status, "active"),
+                ne(exchangeSites.id, site.id),
+                ne(exchangeSites.ownerId, site.ownerId),
+            ),
+        );
+
+    return buildPoolCurve(site, rows);
+}
+
 export type AutoPairResult =
     | { matched: true; match: ExchangeMatch; partner: MaskedPartner }
     | {
           matched: false;
-          reason: "first_in_category" | "no_eligible_partner" | "not_active" | "already_matched";
+          reason:
+              "first_in_category" | "no_eligible_partner" | "blocked_by_dr_floor" | "not_active" | "already_matched";
           category: Category;
       };
 
@@ -257,7 +299,11 @@ type PartnerChoice =
           widened: boolean;
           category: Category;
       }
-    | { ok: false; reason: "first_in_category" | "no_eligible_partner" | "not_active"; category: Category };
+    | {
+          ok: false;
+          reason: "first_in_category" | "no_eligible_partner" | "blocked_by_dr_floor" | "not_active";
+          category: Category;
+      };
 
 /**
  * Chooses the best partner for a site, and writes nothing.
@@ -336,9 +382,18 @@ async function selectPartner(site: ExchangeSite, exclude: ReadonlySet<string> = 
     // The database cannot answer that during a dry run, because a dry run writes
     // nothing — without it the rehearsal would hand the same partner out twice
     // and report pairs the live run would never create.
-    const candidates = pool.filter((c) => !busy.has(c.id) && !exclude.has(c.id));
-    if (candidates.length === 0) {
+    const available = pool.filter((c) => !busy.has(c.id) && !exclude.has(c.id));
+    if (available.length === 0) {
         return { ok: false, reason: "no_eligible_partner", category };
+    }
+
+    // The DR floor, both sides of it. Reported as its own reason rather than
+    // folded into `no_eligible_partner`: a member who set a floor and hears
+    // nothing has to be able to learn that the floor is why, and only this
+    // branch knows the pool was not empty until we applied it.
+    const candidates = available.filter((c) => mutuallyAcceptable(site, c));
+    if (candidates.length === 0) {
+        return { ok: false, reason: "blocked_by_dr_floor", category };
     }
 
     const priorMatches = await db()
@@ -674,6 +729,27 @@ export async function listMatches(member: ExchangeMember, state?: MatchState): P
     return views.filter((v): v is MatchView => v !== null);
 }
 
+/**
+ * Refuses a withdrawal once either direction has been verified live.
+ *
+ * Reads the rows rather than the match state because `agreed` covers one live
+ * link as well as none: `placed` is only reached when BOTH are live.
+ *
+ * @throws `MatchError` when a live link is on this match.
+ */
+async function assertNothingLive(matchId: string): Promise<void> {
+    const [live] = await db()
+        .select({ id: exchangeLinks.id })
+        .from(exchangeLinks)
+        .where(and(eq(exchangeLinks.matchId, matchId), eq(exchangeLinks.status, "live")))
+        .limit(1);
+    if (!live) return;
+    throw new MatchError(
+        "bad_state",
+        "A link on this exchange is already live, so there is nothing to withdraw from. Tell them in the thread, and take your own link down if that is what you mean to do.",
+    );
+}
+
 export class MatchError extends Error {
     constructor(
         public readonly code: "not_found" | "not_yours" | "bad_state",
@@ -685,14 +761,28 @@ export class MatchError extends Error {
 }
 
 /**
- * Accepts or declines a match on the viewer's behalf.
+ * Accepts, declines, or withdraws from a match on the viewer's behalf.
  *
  * When both sides have accepted the state becomes `agreed`, which is the single
  * moment identities unlock. Everything downstream keys off that: the returned
  * view is the first time this member sees the partner's domain.
  *
- * @throws `MatchError` when the match is missing, belongs to someone else, or
- *   has already been resolved.
+ * REFUSING AN AGREED MATCH IS ALLOWED, and is the one thing this function does
+ * that its name does not say. An accept is a single click on a surface reached
+ * from an email, and when the partner has already accepted it agrees the
+ * exchange outright with nothing in between, so the way back out has to stay
+ * open for as long as leaving costs nobody anything. It lands in `declined`
+ * like any other refusal, stamped with `withdrawn_at` so the thread can say
+ * which of the two it was, and it is refused the moment a link is live: from
+ * there the exchange is half-done and taking it back is a removal.
+ *
+ * It needs no budget of its own because it harvests nothing. A withdrawal is
+ * only reachable once agreement has already handed both sides the other's
+ * domain and address, and it leaves the pair permanently declined, so nobody
+ * can ride it around the pool.
+ *
+ * @throws `MatchError` when the match is missing, belongs to someone else, has
+ *   already closed, or is being withdrawn from with a link already live.
  */
 export async function respondToMatch(input: {
     member: ExchangeMember;
@@ -727,11 +817,10 @@ export async function respondToMatch(input: {
             throw new MatchError("bad_state", `This match is already ${from}.`);
         }
 
-        // Declining an agreed match must be refused: a revealed match can already
-        // have a live link behind it, and the link row would stay live while its
-        // match read `declined`. Re-accepting is the harmless agent retry and is
-        // a no-op just below.
-        if ((from === "agreed" || from === "placed") && !accept) {
+        // `placed` is both links live and verified, which is an exchange that
+        // happened: there is no withdrawing from it, only taking a link down.
+        // Re-accepting is the harmless agent retry and is a no-op just below.
+        if (from === "placed" && !accept) {
             throw new MatchError("bad_state", `This match is already ${from}.`);
         }
 
@@ -743,6 +832,8 @@ export async function respondToMatch(input: {
             agreedAt?: Date;
             aAcceptedAt?: Date;
             bAcceptedAt?: Date;
+            withdrawnAt?: Date;
+            withdrawnById?: string;
         } = {};
         const now = new Date();
 
@@ -758,6 +849,14 @@ export async function respondToMatch(input: {
         };
 
         if (!accept) {
+            // Refusing before the reveal is a decline and costs nothing to
+            // undo; refusing after it is a withdrawal, which has a partner who
+            // is already waiting on a link and rows to clean up below.
+            if (from === "agreed") {
+                await assertNothingLive(match.id);
+                patch.withdrawnAt = now;
+                patch.withdrawnById = member.userId;
+            }
             patch.state = "declined";
             patch.declineReason = input.reason ?? null;
         } else if (from === "agreed" || from === "placed" || from === myAccept) {
@@ -800,6 +899,33 @@ export async function respondToMatch(input: {
     }
 
     const justAgreed = updated.state === "agreed" && match.state !== "agreed";
+    const justWithdrawn = updated.withdrawnAt !== null && match.withdrawnAt === null;
+
+    // A promised row on a dead exchange is worse than no row: the recheck cron
+    // goes on crawling it, and the day it finds the link it credits standing
+    // for an exchange nobody is in. A live row is left exactly where it is —
+    // that link exists, whatever happened to the match.
+    if (justWithdrawn) {
+        await db()
+            .delete(exchangeLinks)
+            .where(and(eq(exchangeLinks.matchId, updated.id), ne(exchangeLinks.status, "live")));
+
+        const sites = await db()
+            .select()
+            .from(exchangeSites)
+            .where(inArray(exchangeSites.id, [updated.siteAId, updated.siteBId]));
+        const mySite = sites.find((s) => idSet.has(s.id));
+        const partnerSite = sites.find((s) => !idSet.has(s.id));
+        if (mySite && partnerSite) {
+            // Identities are out by now, so the mail names who left. Fire and
+            // forget, like every other send.
+            void notifyMatchWithdrawn({
+                site: partnerSite,
+                withdrawnBy: mySite.domain,
+                reason: input.reason?.trim() || null,
+            });
+        }
+    }
 
     // The reveal moment. Both sides are told at once, each getting the other's
     // identity and a brief pointing at the other's URL. Building the two briefs

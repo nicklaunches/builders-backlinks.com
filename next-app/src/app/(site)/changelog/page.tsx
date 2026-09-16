@@ -11,7 +11,7 @@
 import type { Metadata } from "next";
 
 import { OnThisPage, PageHeader } from "@/components/web/page-header";
-import { Prose, Section, Subheading } from "@/components/web/prose";
+import { Prose, Section } from "@/components/web/prose";
 import { SiteFooter } from "@/components/web/site-footer";
 import { SiteHeader } from "@/components/web/site-header";
 import { CHANGELOG } from "@/content/changelog";
@@ -22,7 +22,7 @@ export const metadata: Metadata = {
     alternates: { canonical: "/changelog" },
 };
 
-const SECTIONS = CHANGELOG.map((entry) => ({ href: `#${entry.slug}`, label: entry.title }));
+const SECTIONS = CHANGELOG.map((entry) => ({ href: `#${entry.slug}`, label: `v${entry.version} · ${entry.title}` }));
 
 const DATE_FORMAT = new Intl.DateTimeFormat("en-GB", {
     day: "numeric",
@@ -45,29 +45,24 @@ export default function ChangelogPage() {
                     eyebrow="Changelog"
                     title="What changed"
                     lede="Every release that changes what you can do in the exchange, newest first. Internal changes are in the repository's CHANGELOG.md."
-                    meta={`Last release ${formatDate(CHANGELOG[0].date)}`}>
+                    meta={`v${CHANGELOG[0].version} · ${formatDate(CHANGELOG[0].date)}`}>
                     <OnThisPage items={SECTIONS} />
                 </PageHeader>
 
                 <div className="mx-auto max-w-3xl px-5 py-14 sm:px-6 sm:py-16">
                     {CHANGELOG.map((entry) => (
                         <Section key={entry.slug} id={entry.slug} title={entry.title}>
-                            <p className="text-muted font-mono text-[12px]">{formatDate(entry.date)}</p>
+                            <p className="text-muted font-mono text-[12px]">
+                                <span className="text-accent-text">v{entry.version}</span> · {formatDate(entry.date)}
+                            </p>
                             <Prose className="mt-4">
                                 <p>{entry.summary}</p>
+                                <ul>
+                                    {entry.items.map((item) => (
+                                        <li key={item}>{item}</li>
+                                    ))}
+                                </ul>
                             </Prose>
-                            {entry.sections.map((section) => (
-                                <div key={section.heading}>
-                                    <Subheading>{section.heading}</Subheading>
-                                    <Prose>
-                                        <ul>
-                                            {section.items.map((item) => (
-                                                <li key={item}>{item}</li>
-                                            ))}
-                                        </ul>
-                                    </Prose>
-                                </div>
-                            ))}
                         </Section>
                     ))}
                 </div>

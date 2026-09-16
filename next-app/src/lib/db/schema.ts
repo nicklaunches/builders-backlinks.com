@@ -185,6 +185,25 @@ export const exchangeSites = pgTable(
 
         placementOffered: placementOfferEnum("placement_offered").default("unsure").notNull(),
 
+        /**
+         * Floor on a partner's Domain Rating. 0 is no floor, and is the default.
+         *
+         * A hard gate, unlike every other DR reading in this schema: `lib/matching`
+         * bands DR as a preference, and this keeps anything below it out of the
+         * pool entirely. It reads `domain_rating`, the number the member is shown,
+         * rather than `true_dr` that scoring bands on — a floor a member sets has
+         * to mean the number they can see.
+         */
+        minPartnerDr: integer("min_partner_dr").default(0).notNull(),
+        /**
+         * Whether partners with no measured DR are kept out of this site's matching.
+         *
+         * A separate axis from the floor on purpose. A NULL `domain_rating` is a
+         * score we did not get, not a low one, so it is not something a number can
+         * decide; see the floor's note in `services/matches.ts`.
+         */
+        skipUnrated: boolean("skip_unrated").default(false).notNull(),
+
         status: siteStatusEnum("status").default("pending_review").notNull(),
         reviewNote: text("review_note"),
 
@@ -235,6 +254,7 @@ export const exchangeSites = pgTable(
         // its default of 50. The constraint is here so that whatever eventually
         // does write it inherits the bound rather than having to remember it.
         check("exchange_sites_trust_score_range", sql`${table.trustScore} between 0 and 100`),
+        check("exchange_sites_min_partner_dr_range", sql`${table.minPartnerDr} between 0 and 100`),
     ],
 );
 
@@ -273,6 +293,21 @@ export const exchangeMatches = pgTable(
 
         /** The reveal moment: domains and emails unlock here and not before. */
         agreedAt: timestamp("agreed_at", { withTimezone: true }),
+
+        /**
+         * When an agreed match was withdrawn from, and by whom.
+         *
+         * A withdrawal lands in `declined` like any other refusal, so `state`
+         * cannot tell the two apart and `decline_reason` carries no attribution.
+         * Both sides are revealed to each other by the time one is possible, and
+         * a thread that says only "declined" to the member who did not do it is
+         * the one reading worth ruling out.
+         *
+         * Nullable forever and never backfilled: a match declined before these
+         * columns existed has no honest value to put here.
+         */
+        withdrawnAt: timestamp("withdrawn_at", { withTimezone: true }),
+        withdrawnById: uuid("withdrawn_by_id").references(() => users.id, { onDelete: "set null" }),
         expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
         /**
          * When the placement nudge last went out for this match.

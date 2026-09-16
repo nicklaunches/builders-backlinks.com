@@ -15,6 +15,10 @@ import { getThread } from "@/lib/services/threads";
 /**
  * @file `POST /api/inbox/threads/[matchId]/respond` — accept or decline.
  *
+ * Also the withdraw path: `accept: false` on an already agreed match is a
+ * withdrawal, which the service allows until one of the links is live. The
+ * route does not need to know the difference, and must not start deciding it.
+ *
  * Calls the same `respondToMatch` the MCP tool and the dashboard action call,
  * then re-reads the thread so the pane gets the post-reveal shape in one round
  * trip: accepting can flip the match to `agreed`, which changes the partner from

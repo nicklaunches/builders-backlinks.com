@@ -3,7 +3,7 @@ import { defineConfig } from "drizzle-kit";
 
 // The CLI is a plain node process: nothing has loaded .env.local for it, and
 // README tells a new clone to put DATABASE_URL there before `pnpm db:migrate`.
-loadEnv({ path: ".env.local", quiet: true });
+loadEnv({ path: process.env.ENV_FILE ?? ".env.local", quiet: true });
 
 /**
  * Drizzle Kit config, used only by the CLI to generate and push migrations.

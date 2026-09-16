@@ -2,7 +2,7 @@ import { config as loadEnv } from "dotenv";
 
 import { type SeedOutput, seedInbox } from "./seed";
 
-loadEnv({ path: ".env.local", quiet: true });
+loadEnv({ path: process.env.ENV_FILE ?? ".env.local", quiet: true });
 
 /**
  * @file End-to-end smoke test for the inbox API.
@@ -342,6 +342,48 @@ async function main(): Promise<void> {
         check("the second acceptance reveals both sides", thread?.revealed === true);
         check("and the partner is now named", thread?.partnerLabel === cy.domain, thread?.partnerLabel);
         check("and messaging is open", thread?.canMessage === true);
+    }
+
+    console.log("\nwithdrawing");
+    {
+        // The escape hatch from an accept nobody meant to make. `waitingOnAda`
+        // is agreed as of the block above and has no link on it, which is
+        // exactly the window a withdrawal is allowed in.
+        const { waitingOnAda, placed } = seed.matches;
+
+        const beforeWithdraw = await call({ path: `/api/inbox/threads/${waitingOnAda}`, cookie: ada.cookie });
+        check(
+            "an agreed thread with no live link offers a way out",
+            (beforeWithdraw.body as { thread?: { canWithdraw?: boolean } }).thread?.canWithdraw === true,
+        );
+
+        const withdrawn = await call({
+            path: `/api/inbox/threads/${waitingOnAda}/respond`,
+            method: "POST",
+            cookie: ada.cookie,
+            body: { accept: false, reason: "Accepted by mistake." },
+        });
+        type Closed = { thread?: { state?: string; canWithdraw?: boolean; revealed?: boolean; canMessage?: boolean } };
+        const closed = (withdrawn.body as Closed).thread;
+        check("withdrawing from an agreed match works", withdrawn.status === 200, `got ${withdrawn.status}`);
+        check("and closes it", closed?.state === "declined", closed?.state);
+        check("and cannot be done twice", closed?.canWithdraw === false);
+        // The pair knew each other before this, and a thread that hid them
+        // afterwards would be rewriting what happened.
+        check("and leaves the history readable", closed?.revealed === true);
+        check("but not writable", closed?.canMessage === false);
+
+        // Both links are live on `placed`: that exchange happened, and the way
+        // out of it is taking a link down, not unsaying the agreement.
+        // Cy's, not Ada's: the finished exchange is Cy and Di's, and a match
+        // naming neither of your sites answers 404 long before this rule.
+        const refused = await call({
+            path: `/api/inbox/threads/${placed}/respond`,
+            method: "POST",
+            cookie: cy.cookie,
+            body: { accept: false },
+        });
+        check("a finished exchange refuses a withdrawal", refused.status === 409, `got ${refused.status}`);
     }
 
     console.log("\nplacement");

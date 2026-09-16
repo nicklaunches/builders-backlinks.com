@@ -249,6 +249,10 @@ export function threadEvents(input: {
     myDomain: string;
     /** The partner's domain once revealed, or the masked description before. */
     partnerLabel: string;
+    /** When an agreed match was withdrawn from. Null on every other close. */
+    withdrawnAt?: Date | null;
+    /** Whether the viewer is the one who withdrew. Read only when `withdrawnAt` is set. */
+    withdrawnByMe?: boolean;
     links: EventLink[];
 }): ThreadEvent[] {
     const { state, mineIsA } = input;
@@ -295,6 +299,20 @@ export function threadEvents(input: {
         if (link.removedAt) {
             events.push({ id: `link:${link.id}:removed`, at: link.removedAt, text: `${who} link came down.` });
         }
+    }
+
+    // A withdrawal is a `declined` match with this column set, and it is the one
+    // close both sides can see the thread of: they know each other by then. A
+    // plain decline produces no line at all, because there is nobody it could
+    // be shown to who does not already know they made it.
+    if (input.withdrawnAt) {
+        events.push({
+            id: "withdrawn",
+            at: input.withdrawnAt,
+            text: input.withdrawnByMe
+                ? "You withdrew from this exchange. Both sites went back in the pool."
+                : "They withdrew from this exchange. Both sites went back in the pool, and nothing is owed either way.",
+        });
     }
 
     if (state === "expired") {

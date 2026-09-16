@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { exchangeMatches, exchangeMembers, exchangeSites, users } from "@/lib/db/schema";
 import { OPEN_MATCH_STATES } from "@/lib/exchange";
 
-loadEnv({ path: ".env.local", quiet: true });
+loadEnv({ path: process.env.ENV_FILE ?? ".env.local", quiet: true });
 
 /**
  * @file End-to-end test for the daily re-pair pass in `api/cron/recheck`.

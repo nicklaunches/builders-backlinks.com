@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { seedInbox } from "./seed";
 
-loadEnv({ path: ".env.local", quiet: true });
+loadEnv({ path: process.env.ENV_FILE ?? ".env.local", quiet: true });
 
 /**
  * @file `pnpm seed:inbox` — fills a local database with an inbox worth opening.

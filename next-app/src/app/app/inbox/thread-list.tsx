@@ -149,7 +149,14 @@ function Avatar({ label, revealed }: { label: string; revealed: boolean }) {
  */
 function subtitle(thread: ThreadSummaryJson): string {
     if (thread.lastMessage) return `${thread.lastMessage.mine ? "You: " : ""}${thread.lastMessage.body}`;
-    if (thread.state === "declined") return "Declined. Nothing further to do.";
+    // A revealed thread that reads `declined` was withdrawn from after both
+    // sides agreed, and the member who did not do it has to be told which it
+    // was. The chip beside this still says Declined, which is what it is.
+    if (thread.state === "declined") {
+        return thread.revealed
+            ? "Withdrawn after agreement. Both sites went back in the pool."
+            : "Declined. Nothing further to do.";
+    }
     if (thread.state === "expired") return "Expired. Both sites went back in the pool.";
     if (thread.waitingOnMe) return "Waiting on your decision";
     if (thread.waitingOnThem) return "You accepted, waiting on them";

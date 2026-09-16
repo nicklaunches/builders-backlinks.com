@@ -101,6 +101,8 @@ export const HOUSE_RULES = {
         "Where the link goes is your call. We check every placement and tell BOTH sides exactly what was given and received (in content or in a footer, dofollow or nofollow, and the anchor used), but we never reject a placement. You and your partner decide what is fair.",
     weKeepChecking:
         "We verify on placement, then again at day 7, day 30, and monthly after that. If a link comes down, both parties are told.",
+    backOutUntilLive:
+        "You can pull out of an exchange you have agreed to, right up until one of the two links goes live. Your partner is told, both sites go back into the pool, and it costs neither of you anything. After a link is live it is no longer a withdrawal, it is a removal, and both sides are told about that too.",
     hiddenUntilAgreed:
         "Your domain and email are never shown to anyone until you and a partner both accept. At that moment you are both revealed to each other and you talk directly.",
 } as const;
