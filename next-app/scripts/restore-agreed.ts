@@ -133,17 +133,40 @@ async function main() {
             ),
         );
 
-    // What is blocking each site, not just that something is. "Holds an open
-    // match" leaves the operator with no idea whether to give up or re-run next
-    // week; a `proposed` that lapses on Friday is a wait, an `agreed` is not.
-    // Soonest-clearing first, so a site blocked twice reports the nearer date.
+    // The blocking match's OTHER side is usually outside the candidate set, so
+    // its domain has to be fetched to be named.
+    const strangers = [...new Set(openRows.flatMap((r) => [r.a, r.b]))].filter((id) => !siteById.has(id));
+    const strangerRows = strangers.length
+        ? await db()
+              .select({ id: exchangeSites.id, domain: exchangeSites.domain })
+              .from(exchangeSites)
+              .where(inArray(exchangeSites.id, strangers))
+        : [];
+    const domainById = new Map<string, string>([
+        ...sites.map((s) => [s.id, s.domain] as const),
+        ...strangerRows.map((s) => [s.id, s.domain] as const),
+    ]);
+
+    // What is blocking each site, who it is with, and when it clears — not just
+    // that something is. A `proposed` that lapses on Friday is a wait, an
+    // `agreed` is not, and an unanswered proposal is the one an operator can
+    // decide to clear by hand. Soonest-clearing first, so a site blocked twice
+    // reports the nearer date.
     const blockedBy = new Map<string, string>();
     for (const row of [...openRows].sort((x, y) => x.expiresAt.getTime() - y.expiresAt.getTime())) {
-        const why =
-            row.state === "agreed"
-                ? "agreed, no deadline"
-                : `${row.state}, lapses ${row.expiresAt.toISOString().slice(0, 10)}`;
-        for (const id of [row.a, row.b]) if (!blockedBy.has(id)) blockedBy.set(id, why);
+        for (const [id, otherId] of [
+            [row.a, row.b],
+            [row.b, row.a],
+        ]) {
+            if (blockedBy.has(id)) continue;
+            const withWhom = `with ${domainById.get(otherId) ?? otherId}`;
+            blockedBy.set(
+                id,
+                row.state === "agreed"
+                    ? `agreed ${withWhom}, no deadline`
+                    : `${row.state} ${withWhom}, lapses ${row.expiresAt.toISOString().slice(0, 10)}`,
+            );
+        }
     }
     const busy = new Set(blockedBy.keys());
 
