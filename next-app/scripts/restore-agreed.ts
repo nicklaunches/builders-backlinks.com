@@ -119,7 +119,12 @@ async function main() {
     // One query for all of them: this is the check that keeps a restore from
     // double-booking somebody who was re-paired after their match lapsed.
     const openRows = await db()
-        .select({ a: exchangeMatches.siteAId, b: exchangeMatches.siteBId })
+        .select({
+            a: exchangeMatches.siteAId,
+            b: exchangeMatches.siteBId,
+            state: exchangeMatches.state,
+            expiresAt: exchangeMatches.expiresAt,
+        })
         .from(exchangeMatches)
         .where(
             and(
@@ -127,11 +132,20 @@ async function main() {
                 or(inArray(exchangeMatches.siteAId, siteIds), inArray(exchangeMatches.siteBId, siteIds)),
             ),
         );
-    const busy = new Set<string>();
-    for (const row of openRows) {
-        busy.add(row.a);
-        busy.add(row.b);
+
+    // What is blocking each site, not just that something is. "Holds an open
+    // match" leaves the operator with no idea whether to give up or re-run next
+    // week; a `proposed` that lapses on Friday is a wait, an `agreed` is not.
+    // Soonest-clearing first, so a site blocked twice reports the nearer date.
+    const blockedBy = new Map<string, string>();
+    for (const row of [...openRows].sort((x, y) => x.expiresAt.getTime() - y.expiresAt.getTime())) {
+        const why =
+            row.state === "agreed"
+                ? "agreed, no deadline"
+                : `${row.state}, lapses ${row.expiresAt.toISOString().slice(0, 10)}`;
+        for (const id of [row.a, row.b]) if (!blockedBy.has(id)) blockedBy.set(id, why);
     }
+    const busy = new Set(blockedBy.keys());
 
     // Oldest agreement first, so a site that lost two matches to this gets the
     // one it agreed to first rather than whichever the query happened to return.
@@ -155,7 +169,7 @@ async function main() {
             blocked = `${which.domain} is ${which.status}, not active`;
         } else if (busy.has(row.siteAId) || busy.has(row.siteBId)) {
             const which = busy.has(row.siteAId) ? siteA : siteB;
-            blocked = `${which.domain} already holds an open match`;
+            blocked = `${which.domain} already holds an open match (${blockedBy.get(which.id)})`;
         } else if (RUNWAY_UNDER_DAYS !== null && runwayMs >= RUNWAY_UNDER_DAYS * DAY_MS) {
             blocked = `runway ${formatRunway(runwayMs)} is over the threshold`;
         }
@@ -164,8 +178,10 @@ async function main() {
         // the real match would. Without this, two lapsed matches sharing a site
         // both look free and the run creates the double-booking it is avoiding.
         if (blocked === null) {
-            busy.add(row.siteAId);
-            busy.add(row.siteBId);
+            for (const id of [row.siteAId, row.siteBId]) {
+                busy.add(id);
+                blockedBy.set(id, "restored earlier in this run");
+            }
         }
 
         candidates.push({ id: row.id, siteAId: row.siteAId, siteBId: row.siteBId, label, agreedAt, runwayMs, blocked });
