@@ -15,6 +15,25 @@ Versions before 0.6.0 were reconstructed from the git history on 2026-09-16 and
 are deliberately coarse: they name the release a member would remember, not
 every push that went out that week.
 
+## 0.6.4 — 2026-09-19 — An agreed exchange no longer runs out of time
+
+Both of you said yes. Nothing should close that but one of you, so the countdown
+now belongs to the decision and stops the moment the decision is made.
+
+- Once both sides accept, the exchange stays open until the links go live or one of you withdraws.
+- A match you accept late is a real agreement now, instead of one that could lapse the same night.
+- An unanswered proposal still lapses after 14 days, and both sites go straight back into the pool.
+- The reminder about a link you still owe keeps coming — weekly for the first month, monthly after that — and says how to step out.
+- A thread shows a date to decide by only while there is still a decision to make.
+
+### Internal
+
+- `OPEN_MATCH_STATES` split in two. `UNDECIDED_MATCH_STATES` is the expiry sweep's list; `OPEN_MATCH_STATES` is it plus `agreed` and still answers "is this site busy?" for the digest, the re-pair pass and `selectPartner`. The split is the fix: `expires_at` is stamped once at proposal and nothing ever moves it, so sweeping `agreed` closed an agreement against a deadline set two weeks before it existed.
+- The reported case, exactly: proposed day 0, one side accepted day 0, the other accepted on day 14 — inside the gap between the deadline passing and the daily sweep, so `respondToMatch`'s state guard let it through — and the next cron run expired the eight-hour-old agreement. Late acceptance is now durable rather than something the following run tears down, which is why no accept-time deadline check was added.
+- The placement nudge backs off instead of stopping: weekly from day 3, monthly past day 30, forever. An agreed match has no deadline any more, so this mail is the only thing keeping a forgotten one visible, and holding one keeps both sites out of the pool. Every send still honours unsubscribe in `email/send.ts`.
+- `match-expired` lost `wasAgreed` and `placement-pending` lost its "Match expires" row: both were branches on a state that can no longer reach them.
+- Known gap, deliberately left: `assertNothingLive` refuses a withdrawal once either link is live, so an agreement where one side placed and the other never does has no release at all now. It nudges monthly forever and both sites stay out of the pool. Giving the side that placed a way out is the follow-up.
+
 ## 0.6.3 — 2026-09-16 — An account menu, a star count, and DR that stays current
 
 Three things the product was missing: somewhere to see whose account you are in,

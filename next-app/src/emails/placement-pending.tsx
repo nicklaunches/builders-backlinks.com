@@ -8,11 +8,16 @@ import { CodeBlock, EmailLayout, Facts, styles } from "./_layout";
 /**
  * @file "You agreed to this and never placed it."
  *
- * The gap this fills was the widest one in the product. Between `match-agreed`
- * and the day the match expires, nothing was ever sent. Worse, the weekly digest
- * SKIPS any member holding an open match, so someone sitting on an agreed match
- * they had forgotten heard from us not at all, then found the match gone. Both
- * sides of a trade could stall indefinitely with no one told.
+ * The gap this fills was the widest one in the product. After `match-agreed`,
+ * nothing was ever sent. Worse, the weekly digest SKIPS any member holding an
+ * open match, so someone sitting on an agreed match they had forgotten heard
+ * from us not at all. Both sides of a trade could stall indefinitely with no
+ * one told.
+ *
+ * IT IS NOW THE ONLY THING THAT CLOSES A STALLED AGREEMENT. An agreed match has
+ * no deadline, so this mail and the withdrawal it points at are the whole exit.
+ * The cron backs the cadence off after a month rather than stopping, and the
+ * copy has to keep naming the way out.
  *
  * WHY IT NAMES THE OTHER SIDE'S PROGRESS. When the partner has already placed,
  * the mail says so. That is the most motivating true fact available and it costs
@@ -36,8 +41,6 @@ export type PlacementPendingProps = {
     anchorOptions: readonly string[];
     /** True when the partner has already placed their half. */
     partnerPlaced: boolean;
-    /** Preformatted deadline, so the template does no date maths. */
-    expires: string;
 };
 
 export function PlacementPendingEmail({
@@ -46,7 +49,6 @@ export function PlacementPendingEmail({
     targetUrl,
     anchorOptions,
     partnerPlaced,
-    expires,
 }: PlacementPendingProps) {
     const origin = getSiteOrigin();
 
@@ -74,7 +76,6 @@ export function PlacementPendingEmail({
                         label: "Anchor options",
                         value: anchorOptions.length > 0 ? anchorOptions.join(", ") : "Your own wording",
                     },
-                    { label: "Match expires", value: expires },
                 ]}
             />
 
@@ -91,8 +92,9 @@ export function PlacementPendingEmail({
             </Section>
 
             <Text style={styles.muted}>
-                If this one no longer suits you, decline it on the dashboard. Declining is free and costs you nothing in
-                standing. Letting it expire quietly is the only outcome that helps neither of you.
+                This match stays open until one of you places or withdraws — nothing closes it on its own. If it no
+                longer suits you, withdraw on the dashboard: it is free, it costs you nothing in standing, and it puts
+                both sites back in the pool. Leaving it sitting here is the only outcome that helps neither of you.
             </Text>
         </EmailLayout>
     );

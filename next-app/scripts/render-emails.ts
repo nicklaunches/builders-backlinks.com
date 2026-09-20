@@ -172,21 +172,17 @@ const fixtures: Fixture[] = [
             targetUrl: PARTNER_URL,
             anchorOptions: brief.anchorOptions,
             partnerPlaced: true,
-            expires: "20 Aug 2026",
         }),
     },
     {
-        // `masked: true` is the point of this fixture, not an oversight. A match
-        // can expire from `proposed`, where the two sides were never revealed,
-        // so this template takes no partner at all and the assertion below is
-        // what keeps it that way if someone later tries to make it warmer.
+        // `masked: true` is the point of this fixture, not an oversight. Only an
+        // undecided match expires, and its two sides were never revealed, so
+        // this template takes no partner at all and the assertion below is what
+        // keeps it that way if someone later tries to make it warmer.
         name: "match-expired",
         subject: "A match expired, and you are back in the pool",
         masked: true,
-        element: createElement(MatchExpiredEmail, {
-            category: "Developer Tools",
-            wasAgreed: true,
-        }),
+        element: createElement(MatchExpiredEmail, { category: "Developer Tools" }),
     },
     {
         // Post-agreement, so naming the site that left is correct here and the

@@ -1,11 +1,11 @@
-import { and, eq, inArray, isNotNull, isNull, lt, notExists, or, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, isNull, lt, notExists, or, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 import { db } from "@/lib/db";
 import { exchangeLinks, exchangeMatches, exchangeSites } from "@/lib/db/schema";
 import { isAuthorizedCron } from "@/lib/email/cron-auth";
 import { notifyLinkRemoved, notifyLinkVerified, notifyMatchExpired, notifyPlacementPending } from "@/lib/email/notify";
-import { GIVE_UP_AFTER_CHECKS, OPEN_MATCH_STATES, nextCheckAt } from "@/lib/exchange";
+import { GIVE_UP_AFTER_CHECKS, OPEN_MATCH_STATES, UNDECIDED_MATCH_STATES, nextCheckAt } from "@/lib/exchange";
 import { errorDetail } from "@/lib/log";
 import { briefFor } from "@/lib/services/links";
 import { autoPair, previewPair } from "@/lib/services/matches";
@@ -82,19 +82,18 @@ export async function GET(request: Request) {
 
     // Expire first. The weekly digest SKIPS anyone holding an open match, so an
     // unanswered proposal that never expires ends that member's digest for good.
-    // `declined` and `placed` are terminal: a placed match has real links behind
-    // it and must never be reopened by a clock. The state expired FROM comes back
-    // because it decides the notification wording.
+    // Only the UNDECIDED states, never `agreed`: `expires_at` is stamped at
+    // proposal and nothing moves it, so sweeping an agreement would close one
+    // reached on the last day against a deadline that predates it.
     const expired = await db()
         .update(exchangeMatches)
         .set({ state: "expired", updatedAt: now })
-        .where(and(inArray(exchangeMatches.state, [...OPEN_MATCH_STATES]), lt(exchangeMatches.expiresAt, now)))
+        .where(and(inArray(exchangeMatches.state, [...UNDECIDED_MATCH_STATES]), lt(exchangeMatches.expiresAt, now)))
         .returning({
             id: exchangeMatches.id,
             siteAId: exchangeMatches.siteAId,
             siteBId: exchangeMatches.siteBId,
             category: exchangeMatches.category,
-            agreedAt: exchangeMatches.agreedAt,
         });
 
     if (expired.length > 0) {
@@ -111,11 +110,7 @@ export async function GET(request: Request) {
                 for (const id of [match.siteAId, match.siteBId]) {
                     const site = byId.get(id);
                     if (!site) continue;
-                    void notifyMatchExpired({
-                        site,
-                        category: match.category,
-                        wasAgreed: match.agreedAt !== null,
-                    });
+                    void notifyMatchExpired({ site, category: match.category });
                 }
             }
         } catch (err) {
@@ -396,6 +391,18 @@ export async function GET(request: Request) {
 const NUDGE_AFTER_DAYS = 3;
 /** And this long between nudges, so the second lands around day 10. */
 const NUDGE_EVERY_DAYS = 7;
+/** After this long agreed, the weekly nudge drops to {@link NUDGE_SLOW_EVERY_DAYS}. */
+const NUDGE_SLOW_AFTER_DAYS = 30;
+/**
+ * The slow cadence, which never stops.
+ *
+ * An agreed match no longer expires, so this mail is the only thing that keeps
+ * a forgotten one visible — and holding one keeps BOTH sites out of the pool.
+ * Stopping the nudge would leave them there silently. Monthly rather than
+ * weekly because nothing is going to change on its own, and every send honours
+ * the member's unsubscribe in `email/send.ts`.
+ */
+const NUDGE_SLOW_EVERY_DAYS = 30;
 /** Matches considered per run, matching the restraint of {@link PAIR_BATCH}. */
 const NUDGE_BATCH = 25;
 
@@ -413,7 +420,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  */
 async function nudgePendingPlacements(now: Date): Promise<number> {
     const agreedBefore = new Date(now.getTime() - NUDGE_AFTER_DAYS * DAY_MS);
+    const slowAfter = new Date(now.getTime() - NUDGE_SLOW_AFTER_DAYS * DAY_MS);
     const nudgedBefore = new Date(now.getTime() - NUDGE_EVERY_DAYS * DAY_MS);
+    const slowNudgedBefore = new Date(now.getTime() - NUDGE_SLOW_EVERY_DAYS * DAY_MS);
 
     const due = await db()
         .select()
@@ -422,7 +431,14 @@ async function nudgePendingPlacements(now: Date): Promise<number> {
             and(
                 eq(exchangeMatches.state, "agreed"),
                 lt(exchangeMatches.agreedAt, agreedBefore),
-                or(isNull(exchangeMatches.lastNudgedAt), lt(exchangeMatches.lastNudgedAt, nudgedBefore)),
+                // Which cadence a match is on is decided by its age, not by a
+                // counter: a month in, weekly mail about a link nobody is going
+                // to place is noise the member did not ask for.
+                or(
+                    isNull(exchangeMatches.lastNudgedAt),
+                    and(gte(exchangeMatches.agreedAt, slowAfter), lt(exchangeMatches.lastNudgedAt, nudgedBefore)),
+                    and(lt(exchangeMatches.agreedAt, slowAfter), lt(exchangeMatches.lastNudgedAt, slowNudgedBefore)),
+                ),
             ),
         )
         .limit(NUDGE_BATCH);
@@ -470,7 +486,6 @@ async function nudgePendingPlacements(now: Date): Promise<number> {
                 targetUrl: brief.targetUrl,
                 anchorOptions: brief.anchorOptions,
                 partnerPlaced: liveFrom.has(creditorId),
-                expires: EXPIRES_FORMAT.format(match.expiresAt),
             });
             sent++;
         }
@@ -480,11 +495,3 @@ async function nudgePendingPlacements(now: Date): Promise<number> {
 
     return sent;
 }
-
-/** Fixed locale and zone, matching the dashboard, so a date reads the same everywhere. */
-const EXPIRES_FORMAT = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "UTC",
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-});

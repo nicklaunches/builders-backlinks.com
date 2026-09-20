@@ -28,7 +28,23 @@ export type LinkStatus = (typeof LINK_STATUSES)[number];
 export type Placement = (typeof PLACEMENTS)[number];
 
 /**
- * The match states that still want a decision from somebody.
+ * The match states where nobody has answered yet, and the only ones a clock may
+ * close.
+ *
+ * This is the expiry sweep's list. A proposal nobody answers has to lapse,
+ * because holding one takes BOTH sites out of the pool and out of the digest,
+ * so one member who never opens their email would otherwise freeze their
+ * partner out of the product permanently.
+ *
+ * `agreed` is deliberately absent, and adding it back is the bug this list was
+ * split out to prevent. Both sides said yes to that one and can see each other;
+ * the way out of it is a withdrawal somebody chooses, not a deadline set two
+ * weeks before the agreement existed.
+ */
+export const UNDECIDED_MATCH_STATES = ["proposed", "a_accepted", "b_accepted"] as const satisfies MatchState[];
+
+/**
+ * The match states that keep a site busy.
  *
  * "Open" is the question two different jobs ask, and they must ask it the same
  * way: the weekly digest skips a member holding one of these, and the daily
@@ -37,10 +53,13 @@ export type Placement = (typeof PLACEMENTS)[number];
  * twice over or never nudged again, and neither surface would look wrong on its
  * own.
  *
- * `placed` is absent deliberately. It is settled, not open: both links are live
- * and nobody owes anybody an answer. `declined` and `expired` are terminal.
+ * Wider than {@link UNDECIDED_MATCH_STATES} by exactly `agreed`: an agreement
+ * with a link still to place occupies both sites, it just cannot be closed by a
+ * clock. `placed` is absent deliberately — it is settled, not open: both links
+ * are live and nobody owes anybody an answer. `declined` and `expired` are
+ * terminal.
  */
-export const OPEN_MATCH_STATES = ["proposed", "a_accepted", "b_accepted", "agreed"] as const satisfies MatchState[];
+export const OPEN_MATCH_STATES = [...UNDECIDED_MATCH_STATES, "agreed"] as const satisfies MatchState[];
 
 /**
  * Normalizes a hostname or URL into the canonical `domain` form.

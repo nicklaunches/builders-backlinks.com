@@ -41,6 +41,22 @@ export type ChangelogEntry = {
 /** Newest first. The first entry is the current version. */
 export const CHANGELOG: readonly ChangelogEntry[] = [
     {
+        version: "0.6.4",
+        date: "2026-09-19",
+        slug: "v0-6-4",
+        title: "An agreed exchange no longer runs out of time",
+        summary:
+            "Both of you said yes. Nothing should close that but one of you, so the countdown now belongs to the " +
+            "decision and stops the moment the decision is made.",
+        items: [
+            "Once both sides accept, the exchange stays open until the links go live or one of you withdraws.",
+            "A match you accept late is a real agreement now, instead of one that could lapse the same night.",
+            "An unanswered proposal still lapses after 14 days, and both sites go straight back into the pool.",
+            "The reminder about a link you still owe keeps coming — weekly for the first month, monthly after that — and says how to step out.",
+            "A thread shows a date to decide by only while there is still a decision to make.",
+        ],
+    },
+    {
         version: "0.6.3",
         date: "2026-09-16",
         slug: "v0-6-3",

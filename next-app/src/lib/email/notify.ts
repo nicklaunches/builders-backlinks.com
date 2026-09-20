@@ -379,9 +379,8 @@ export async function notifyPlacementPending(input: {
     targetUrl: string;
     anchorOptions: readonly string[];
     partnerPlaced: boolean;
-    expires: string;
 }): Promise<void> {
-    const { matchId, debtorSite, creditorSite, targetUrl, anchorOptions, partnerPlaced, expires } = input;
+    const { matchId, debtorSite, creditorSite, targetUrl, anchorOptions, partnerPlaced } = input;
 
     await safely("placement-pending", async () => {
         const [to, creditorEmail, counts] = await Promise.all([
@@ -407,7 +406,6 @@ export async function notifyPlacementPending(input: {
                 targetUrl,
                 anchorOptions,
                 partnerPlaced,
-                expires,
             }),
             emailType: "placement-pending",
         });
@@ -417,14 +415,11 @@ export async function notifyPlacementPending(input: {
 /**
  * Tells one member a match ran out of time.
  *
- * Called once per side by the expiry sweep. No partner identity is passed: a
- * match can expire from `proposed`, where the two were never revealed.
+ * Called once per side by the expiry sweep, which only ever closes an undecided
+ * match. No partner identity is passed, and none exists to pass: the two sides
+ * of one were never revealed to each other.
  */
-export async function notifyMatchExpired(input: {
-    site: ExchangeSite;
-    category: string;
-    wasAgreed: boolean;
-}): Promise<void> {
+export async function notifyMatchExpired(input: { site: ExchangeSite; category: string }): Promise<void> {
     await safely("match-expired", async () => {
         const to = await emailForSite(input.site);
         if (!to) return;
@@ -432,7 +427,7 @@ export async function notifyMatchExpired(input: {
         await sendEmail({
             to,
             subject: "A match expired, and you are back in the pool",
-            react: MatchExpiredEmail({ category: input.category, wasAgreed: input.wasAgreed }),
+            react: MatchExpiredEmail({ category: input.category }),
             emailType: "match-expired",
         });
     });

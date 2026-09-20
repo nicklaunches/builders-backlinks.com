@@ -6,6 +6,7 @@ import {
     MATCH_STATES,
     type MatchState,
     OPEN_MATCH_STATES,
+    UNDECIDED_MATCH_STATES,
     isRevealed,
     nextCheckAt,
 } from "@/lib/exchange";
@@ -125,12 +126,22 @@ describe("nextCheckAt", () => {
     });
 });
 
+describe("UNDECIDED_MATCH_STATES", () => {
+    // The expiry sweep runs on this list. `agreed` in it is the bug it was split
+    // out to prevent: `expires_at` never moves off the proposal, so an agreement
+    // reached on day 13 was swept on day 14, hours old.
+    it("excludes agreed, so no clock can close an agreement", () => {
+        assert.deepEqual([...UNDECIDED_MATCH_STATES], ["proposed", "a_accepted", "b_accepted"]);
+        assert.equal((UNDECIDED_MATCH_STATES as readonly MatchState[]).includes("agreed"), false);
+    });
+});
+
 describe("OPEN_MATCH_STATES", () => {
     // Two jobs read this list: the digest skips a member holding an open match,
     // the re-pair pass skips a site holding one. The cost of a second copy is not
     // a compile error, it is a member matched twice over or never nudged again,
     // so these cases pin the membership.
-    it("covers every state that still wants a decision", () => {
+    it("covers every undecided state plus agreed, which keeps a site busy", () => {
         assert.deepEqual([...OPEN_MATCH_STATES], ["proposed", "a_accepted", "b_accepted", "agreed"]);
     });
 

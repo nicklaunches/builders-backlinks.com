@@ -200,6 +200,7 @@ export function ThreadPane({ initial }: { initial: ThreadDetailJson }) {
     }, [events, messages, pending]);
 
     const closed = thread.state === "declined" || thread.state === "expired";
+    const undecided = thread.state === "proposed" || thread.state === "a_accepted" || thread.state === "b_accepted";
 
     return (
         <section className="flex h-full min-h-0 flex-col" aria-label={`Exchange with ${thread.partnerLabel}`}>
@@ -220,7 +221,10 @@ export function ThreadPane({ initial }: { initial: ThreadDetailJson }) {
                             <span>{thread.category}</span>
                             {thread.widened ? <span>· adjacent</span> : null}
                             <span>· DR {thread.partner.domainRating ?? "n/a"}</span>
-                            <span>· {closed ? thread.state : `expires ${formatDate(thread.expiresAt)}`}</span>
+                            {/* The deadline is the one to DECIDE by, and an agreed match no
+                                longer has one, so it drops off the moment both sides accept
+                                rather than counting down to something that never happens. */}
+                            <span>· {undecided ? `expires ${formatDate(thread.expiresAt)}` : thread.state}</span>
                         </p>
                     </div>
                 </div>
