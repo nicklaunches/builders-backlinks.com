@@ -28,7 +28,6 @@ const BASE: MatchableSite = {
     category: "Marketing",
     keywords: ["seo tools", "content marketing", "link building"],
     domainRating: 41,
-    trueDr: null,
     placementOffered: "blog_post",
     linksGiven: 2,
     linksGot: 1,

@@ -15,6 +15,26 @@ Versions before 0.6.0 were reconstructed from the git history on 2026-09-16 and
 are deliberately coarse: they name the release a member would remember, not
 every push that went out that week.
 
+## 0.6.5 — 2026-10-16 — Domain Rating from our own cache
+
+The same Ahrefs Domain Rating, read from a service we run ourselves, so every
+listing is checked daily and nothing waits on someone else's quota.
+
+- Domain Rating is still Ahrefs Domain Rating. We now read it from a cache we run ourselves instead of an outside vendor.
+- Every active site's DR is re-read about once a day, up from twice a week.
+- Matching pairs sites on that same DR, the number you see on every listing.
+- A site we could not rate yet is asked about again at the next refresh, not days later.
+- The privacy notice and terms now say where the rating comes from.
+
+### Internal
+
+- VerifiedDR is gone. `lib/analyze/verifieddr.ts` is replaced by `lib/analyze/mother.ts`, a client for Mother, our own Domain Rating service: one `POST /dr` per batch, results keyed by `query ?? domain`, the body checked with Zod so a moved field logs its path instead of quietly reading nulls. A 403 is Mother's nginx IP allowlist refusing the caller, not a token problem, and is logged as an error.
+- TrueDR has no replacement: Mother returns DR only. `trueDr` is gone from `SiteAnalysis` and `MatchableSite`, and `scoreDrBand` bands on `domain_rating`. Only sites approved on VerifiedDR ever had a TrueDR, so most pairs were already banding on DR through the old fallback.
+- `exchange_sites.true_dr` stays in the schema, unread and unwritten, and still holds the old values. Dropping it is the second deploy of the usual two-pass change.
+- The refresh sends its whole batch in one call: `REFRESH_BATCH` 500, `STALE_AFTER_DAYS` 0.75 (daily per site on a twelve-hour schedule, with room for the seconds a run takes), and `MAX_BATCH` 1,000 on manual runs. No per-minute window, no monthly quota, so a backfill is one `stale=0` run.
+- Only an answer is written. `ok` writes the DR, zero included; `unrated` stamps `dr_checked_at` and keeps the stored score; `pending` and every failure write nothing, so the site is asked again next run. `dr_checked_at` now means "when Mother last answered", not "when we asked".
+- `VERIFIEDDR_API_KEY` is replaced by `MOTHER_URL` and `MOTHER_TOKEN`.
+
 ## 0.6.4 — 2026-09-19 — An agreed exchange no longer runs out of time
 
 Both of you said yes. Nothing should close that but one of you, so the countdown

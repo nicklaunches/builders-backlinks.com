@@ -177,10 +177,14 @@ export const exchangeSites = pgTable(
         /** LLM-written and identity-scrubbed: shown to partners pre-reveal. */
         description: text("description").notNull(),
 
-        /** Ahrefs Domain Rating via VerifiedDR. Shown to partners. */
+        /** Ahrefs Domain Rating via Mother. Shown to partners, and what matching bands on. */
         domainRating: integer("domain_rating"),
-        /** VerifiedDR TrueDR. What matching actually bands on, see lib/matching. */
+        /**
+         * A trust-weighted score the previous DR vendor supplied. Nothing reads or
+         * writes it now; it stays only so the drop can ship as its own deploy.
+         */
         trueDr: integer("true_dr"),
+        /** When Mother last answered for this domain: a reading, or a confirmed "unrated". */
         drCheckedAt: timestamp("dr_checked_at", { withTimezone: true }),
 
         placementOffered: placementOfferEnum("placement_offered").default("unsure").notNull(),
@@ -190,9 +194,8 @@ export const exchangeSites = pgTable(
          *
          * A hard gate, unlike every other DR reading in this schema: `lib/matching`
          * bands DR as a preference, and this keeps anything below it out of the
-         * pool entirely. It reads `domain_rating`, the number the member is shown,
-         * rather than `true_dr` that scoring bands on — a floor a member sets has
-         * to mean the number they can see.
+         * pool entirely. It reads `domain_rating`, the number the member is shown:
+         * a floor a member sets has to mean the number they can see.
          */
         minPartnerDr: integer("min_partner_dr").default(0).notNull(),
         /**
@@ -240,12 +243,11 @@ export const exchangeSites = pgTable(
          * Scores stay in 0..100, or NULL for "not measured yet".
          *
          * These are worth enforcing in the database rather than at the write
-         * site because the values come from a third party. `lib/analyze` parses
-         * the VerifiedDR response against a documented guess at its shape, so a
-         * field that turns out to be a 0..1 float, a string, or a different key
-         * entirely is a live possibility. A bad DR does not fail loudly, it
-         * quietly bands a site into the wrong matching tier, which is the kind
-         * of wrong that nobody notices. NULL is deliberately still allowed:
+         * site because the values come from another service, and every writer
+         * (the submit flow, the refresh, scripts) would otherwise have to
+         * remember the bound. A bad DR does not fail loudly, it quietly bands a
+         * site into the wrong matching tier, which is the kind of wrong that
+         * nobody notices. NULL is deliberately still allowed:
          * unknown is a legitimate state and the scorer handles it.
          */
         check("exchange_sites_domain_rating_range", sql`${table.domainRating} between 0 and 100`),

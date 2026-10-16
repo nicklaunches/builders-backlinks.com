@@ -65,7 +65,7 @@ import { type ToolContext, registerTools } from "@/lib/mcp/tools";
  *
  * There is no `maxDuration` here. It was a Vercel function setting and means
  * nothing on Workers, where the budget is CPU time rather than wall clock, so
- * `submit_site` waiting on a page fetch, a VerifiedDR call and an LLM call is
+ * `submit_site` waiting on a page fetch, a Domain Rating call and an LLM call is
  * mostly idle time that does not count against it.
  */
 

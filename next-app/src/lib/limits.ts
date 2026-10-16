@@ -6,7 +6,7 @@ import { enforceRateLimit } from "@/lib/rate-limit";
  * It used to live in `lib/mcp/` and cap the tool surface only, which quietly
  * made the browser the cheap way in: a server action is a POST endpoint that
  * anyone signed in can call in a loop, and `draftSiteAction` spends a page
- * fetch, an LLM call and a VerifiedDR lookup per call exactly as `submit_site`
+ * fetch, an LLM call and a Domain Rating lookup per call exactly as `submit_site`
  * does. One capped path and one uncapped path to the same service function is
  * not a budget. The budgets are keyed by the TOOL NAME on purpose, so a member
  * shares one bucket across both interfaces rather than getting a second
@@ -47,8 +47,8 @@ const BUDGETS: Record<string, { limit: number; windowMs: number }> = {
     get_categories: { limit: 120, windowMs: HOUR },
     get_rules: { limit: 120, windowMs: HOUR },
 
-    // Each call fetches a page, runs an LLM, and hits VerifiedDR, which has a
-    // monthly call quota. Real cost per call, so this is the tightest budget.
+    // Each call fetches a page, runs an LLM, and looks up Domain Rating. The LLM
+    // is a real cost per call, so this is the tightest budget.
     submit_site: { limit: 20, windowMs: HOUR },
 
     // Fetches the member's page to verify a placement.

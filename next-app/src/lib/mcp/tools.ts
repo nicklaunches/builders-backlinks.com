@@ -271,7 +271,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
                         "",
                         `  domain       ${draft.domain}`,
                         `  category     ${draft.category}`,
-                        `  DR           ${draft.domainRating ?? "unrated"} (Ahrefs DR via VerifiedDR)`,
+                        `  DR           ${draft.domainRating ?? "unrated"} (Ahrefs DR via our own cache)`,
                         `  anchors      ${draft.keywords.join(", ")}`,
                         `  description  ${draft.description}`,
                         "",

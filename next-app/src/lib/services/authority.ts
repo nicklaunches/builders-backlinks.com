@@ -1,6 +1,6 @@
 import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm";
 
-import { getAuthorityScores } from "@/lib/analyze/verifieddr";
+import { getDomainRatings } from "@/lib/analyze/mother";
 import { db } from "@/lib/db";
 import { exchangeSites } from "@/lib/db/schema";
 
@@ -8,45 +8,41 @@ import { exchangeSites } from "@/lib/db/schema";
  * @file Keeping Domain Rating current, a batch at a time.
  *
  * DR was written once, at submission, and never again. It is the number
- * partners judge each other on and the number the floor in `lib/matching/floor`
- * gates on, so a listing submitted in July was being matched in September on a
- * score two months old — in the direction that flatters whoever grew since.
+ * partners judge each other on, the number matching bands on and the number the
+ * floor in `lib/matching/floor` gates on, so a listing submitted in July was
+ * being matched in September on a score two months old, in the direction that
+ * flatters whoever grew since.
  *
- * TWICE A WEEK PER SITE, NOT TWICE A WEEK IN ONE GO. The pass runs twice a day
- * and takes the {@link REFRESH_BATCH} stalest sites that are older than
- * {@link STALE_AFTER_DAYS}; the age filter is what makes the cadence per-site,
- * and the batch is what keeps one run inside VerifiedDR's sliding window of 60
- * requests a minute. A single weekly run over the whole pool would be one long
- * burst against that window and would grow into the Worker's limits as the
- * exchange does.
+ * ONCE A DAY PER SITE, IN ONE CALL. The pass runs twice a day and takes up to
+ * {@link REFRESH_BATCH} of the stalest active sites older than
+ * {@link STALE_AFTER_DAYS}; the age filter is what makes the cadence per-site.
+ * Mother answers the whole batch in a single `POST /dr` and has no per-minute
+ * window or monthly quota, so there is nothing to pace against: the batch is
+ * bounded by the sequential row writes below, not by the vendor.
  *
- * WATCH THE MONTHLY QUOTA. A refresh costs one unit, or two for a site listed
- * on verifieddr.com. Ninety-five sites twice a week is roughly 820 units a
- * month before a single submission is counted, and the Pro plan is 1,000. If
- * the pool grows or the quota tightens, {@link STALE_AFTER_DAYS} is the one
- * number to raise: seven makes it weekly and halves the bill.
- *
- * A FAILED LOOKUP NEVER OVERWRITES A GOOD SCORE. `getAuthorityScores` answers
- * with nulls for every failure — a 402, a 429, a timeout — and writing those
- * would silently blank the number matching runs on. The row is left exactly as
- * it is and only `dr_checked_at` moves, which is why that column means "when we
- * last ASKED" rather than "when we last got an answer": stamping it either way
- * is what stops a permanently failing domain sitting at the head of the queue
- * and burning a unit on every run.
+ * ONLY AN ANSWER IS WRITTEN. A reading (`ok`, zero included) replaces the
+ * stored DR. `unrated` keeps whatever is stored, since a missing measurement
+ * must never blank the number matching runs on, and stamps `dr_checked_at`.
+ * `pending` (Mother is buying the domain, minutes away) and every failure write
+ * nothing at all, so the site stays at the head of the queue and the next run,
+ * twelve hours on, asks again. Retrying costs nothing now, which is why
+ * `dr_checked_at` means "when Mother last answered" rather than "when we asked".
  */
-
-/** How old a score has to be before this pass will spend a unit on it. */
-export const STALE_AFTER_DAYS = 3.5;
 
 /**
- * Sites per run.
+ * How old a reading has to be before this pass asks again.
  *
- * Twenty-four sites is at most forty-eight VerifiedDR calls, well inside their
- * sixty-a-minute window even though the loop below is sequential and so never
- * gets near it. Two runs a day at this size keeps a pool of ~165 sites on the
- * twice-weekly cadence.
+ * Eighteen hours rather than twenty-four: the schedule fires every twelve, and a
+ * site stamped a few seconds into one run would otherwise miss the run a day
+ * later by those few seconds and slip to every other day.
  */
-export const REFRESH_BATCH = 24;
+export const STALE_AFTER_DAYS = 0.75;
+
+/**
+ * Sites per run. Comfortably above the whole active pool today, so one run
+ * covers every due site, and far under Mother's 5,000-a-call ceiling.
+ */
+export const REFRESH_BATCH = 500;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -56,9 +52,13 @@ export type AuthorityChange = { domain: string; from: number | null; to: number 
 export type AuthorityRefresh = {
     /** Sites this run picked up. */
     picked: number;
-    /** Of those, the ones VerifiedDR answered for. */
+    /** Of those, the ones Mother had a reading for. */
     answered: number;
-    /** Lookups that came back with nothing. Their stored scores are untouched. */
+    /** Mother answered with no rating. Their stored scores are untouched. */
+    unrated: number;
+    /** Mother is still buying these. Nothing written; the next run asks again. */
+    pending: number;
+    /** No answer at all: the call failed, or Mother errored on the domain. Nothing written. */
     failed: number;
     /** Sites whose DR actually moved. */
     changes: AuthorityChange[];
@@ -67,15 +67,11 @@ export type AuthorityRefresh = {
 };
 
 /**
- * Re-reads DR and TrueDR for the stalest active sites.
- *
- * Sequential on purpose: the calls are cheap and the pacing is free, while a
- * `Promise.all` over a batch is a burst at VerifiedDR's per-minute window for
- * no gain on a job nobody is waiting for.
+ * Re-reads DR for the stalest active sites.
  *
  * Only `active` sites are refreshed. A rejected or banned listing is never in a
  * pool, and a paused one is picked up by the ordinary cadence the moment it
- * comes back, so neither is worth a unit today.
+ * comes back.
  *
  * @param input.staleAfterDays - Pass 0 to take every active site regardless of
  *   age, which is what a manual backfill wants.
@@ -92,7 +88,6 @@ export async function refreshAuthorityScores(input: {
             id: exchangeSites.id,
             domain: exchangeSites.domain,
             domainRating: exchangeSites.domainRating,
-            trueDr: exchangeSites.trueDr,
         })
         .from(exchangeSites)
         .where(
@@ -109,39 +104,49 @@ export async function refreshAuthorityScores(input: {
     const result: AuthorityRefresh = {
         picked: due.length,
         answered: 0,
+        unrated: 0,
+        pending: 0,
         failed: 0,
         changes: [],
         dryRun: input.dryRun === true,
     };
-    if (input.dryRun) return result;
+    if (input.dryRun || due.length === 0) return result;
+
+    const ratings = await getDomainRatings(due.map((site) => site.domain));
+    if (ratings.status !== "ok") {
+        result.failed = due.length;
+        return result;
+    }
 
     for (const site of due) {
-        const scores = await getAuthorityScores(site.domain);
+        const answer = ratings.answers.get(site.domain);
         const now = new Date();
 
-        if (scores.domainRating === null) {
-            result.failed++;
-            // Asked, and got nothing. Stamp anyway, see the file header.
+        if (answer?.status === "pending") {
+            result.pending++;
+            continue;
+        }
+        if (answer?.status === "unrated") {
+            result.unrated++;
             await db()
                 .update(exchangeSites)
                 .set({ drCheckedAt: now, updatedAt: now })
                 .where(eq(exchangeSites.id, site.id));
             continue;
         }
+        if (answer?.status !== "ok") {
+            result.failed++;
+            continue;
+        }
 
         result.answered++;
-        if (scores.domainRating !== site.domainRating) {
-            result.changes.push({ domain: site.domain, from: site.domainRating, to: scores.domainRating });
+        if (answer.dr !== site.domainRating) {
+            result.changes.push({ domain: site.domain, from: site.domainRating, to: answer.dr });
         }
 
         await db()
             .update(exchangeSites)
-            .set({
-                domainRating: scores.domainRating,
-                trueDr: scores.trueDr,
-                drCheckedAt: now,
-                updatedAt: now,
-            })
+            .set({ domainRating: answer.dr, drCheckedAt: now, updatedAt: now })
             .where(eq(exchangeSites.id, site.id));
     }
 

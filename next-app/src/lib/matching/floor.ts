@@ -12,7 +12,7 @@ import type { ExchangeSite } from "@/lib/db/schema";
  * TWO AXES, NOT ONE, and the split is the whole design. A site sets a floor,
  * which gates the sites we have a rating for, and separately says whether it
  * will take a site we could not rate at all. `domain_rating` being NULL means
- * VerifiedDR gave us no score, which is a measurement we are missing and not a
+ * Mother gave us no score, which is a measurement we are missing and not a
  * score of zero — folding it into the number would quietly turn "at least 30"
  * into "and nothing unmeasured", which is a different request. A member who
  * wants that says so with the second control.

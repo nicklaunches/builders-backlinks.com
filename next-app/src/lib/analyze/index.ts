@@ -4,7 +4,7 @@ import { normalizeDomain } from "@/lib/exchange";
 import { describeSite } from "./describe";
 import { extractPage } from "./extract";
 import { FetchError, fetchSiteHtml, normalizeUrl } from "./fetch-html";
-import { getAuthorityScores } from "./verifieddr";
+import { getDomainRating } from "./mother";
 
 /**
  * @file Everything derived from a URL at submit time, behind one function.
@@ -22,8 +22,8 @@ import { getAuthorityScores } from "./verifieddr";
  * the slowest, most visible step of the signup flow.
  *
  * Failure policy: anything wrong with the site is an `AnalyzeError` with a code
- * the caller can turn into a specific message. Anything wrong with VerifiedDR is
- * not an error at all, it is a null `domainRating` and a null `trueDr`.
+ * the caller can turn into a specific message. Anything wrong with the Domain
+ * Rating lookup is not an error at all, it is a null `domainRating`.
  */
 
 /**
@@ -95,8 +95,8 @@ function withScheme(rawUrl: string): string {
 /**
  * Analyzes a submitted URL into everything the exchange needs to list it.
  *
- * Fetches the page, extracts its text, then resolves the authority scores (DR and
- * TrueDR) and the LLM profile in parallel. The returned `description` is
+ * Fetches the page, extracts its text, then resolves the Domain Rating and the
+ * LLM profile in parallel. The returned `description` is
  * identity-scrubbed and safe
  * to show to a partner pre-reveal; `title` is not, and is returned only for the
  * member's own confirmation screen.
@@ -149,10 +149,10 @@ export const analyzeSite: AnalyzeSite = async (rawUrl: string): Promise<SiteAnal
         );
     }
 
-    // Independent legs, run together. The authority leg never rejects (it returns
-    // nulls on failure), so Promise.all only ever rejects for the LLM.
-    const [authority, described] = await Promise.all([
-        getAuthorityScores(domain),
+    // Independent legs, run together. The rating leg never rejects (it returns
+    // null on failure), so Promise.all only ever rejects for the LLM.
+    const [domainRating, described] = await Promise.all([
+        getDomainRating(domain),
         describeSite(extract, domain).catch((err: unknown) => {
             // The full stop is load-bearing. Both callers append a hint sentence
             // to this message with a single space, so without it the member
@@ -168,8 +168,7 @@ export const analyzeSite: AnalyzeSite = async (rawUrl: string): Promise<SiteAnal
         category: described.category,
         description: described.description,
         keywords: described.keywords,
-        domainRating: authority.domainRating,
-        trueDr: authority.trueDr,
+        domainRating,
         title: extract.title,
     };
 };

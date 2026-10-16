@@ -74,8 +74,8 @@ export async function draftSiteAction(_previous: DraftState, formData: FormData)
 
     try {
         // Same bucket the `submit_site` tool spends, because this costs the same
-        // money: a page fetch, an LLM call, and one of a monthly quota of
-        // VerifiedDR lookups. Charged before the work, not after.
+        // money: a page fetch, an LLM call and a Domain Rating lookup. Charged
+        // before the work, not after.
         await enforceToolLimit("submit_site", memberCaller(member.id));
 
         const draft = await draftSite(url);
