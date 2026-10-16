@@ -182,7 +182,6 @@ export async function seedInbox(): Promise<SeedOutput> {
                 keywords: person.keywords,
                 description: person.description,
                 domainRating: person.domainRating,
-                trueDr: person.domainRating - 4,
                 drCheckedAt: ago(9),
                 placementOffered: "blog_post",
                 status: "active",

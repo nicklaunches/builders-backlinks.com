@@ -29,7 +29,7 @@ const CRON_ROUTES: Record<string, string> = {
     // Link rechecks, daily 04:00 UTC.
     "0 4 * * *": "/api/cron/recheck",
     // Domain Rating refresh, 02:30 and 14:30 UTC. Twice a day so that each site
-    // comes round about twice a week; see `services/authority.ts`.
+    // comes round once a day; see `services/authority.ts`.
     "30 2,14 * * *": "/api/cron/authority",
 };
 

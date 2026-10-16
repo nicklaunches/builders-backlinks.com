@@ -41,6 +41,22 @@ export type ChangelogEntry = {
 /** Newest first. The first entry is the current version. */
 export const CHANGELOG: readonly ChangelogEntry[] = [
     {
+        version: "0.6.5",
+        date: "2026-10-16",
+        slug: "v0-6-5",
+        title: "Domain Rating from our own cache",
+        summary:
+            "The same Ahrefs Domain Rating, read from a service we run ourselves, so every listing is checked daily and " +
+            "nothing waits on someone else's quota.",
+        items: [
+            "Domain Rating is still Ahrefs Domain Rating. We now read it from a cache we run ourselves instead of an outside vendor.",
+            "Every active site's DR is re-read about once a day, up from twice a week.",
+            "Matching pairs sites on that same DR, the number you see on every listing.",
+            "A site we could not rate yet is asked about again at the next refresh, not days later.",
+            "The privacy notice and terms now say where the rating comes from.",
+        ],
+    },
+    {
         version: "0.6.4",
         date: "2026-09-19",
         slug: "v0-6-4",

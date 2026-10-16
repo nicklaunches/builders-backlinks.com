@@ -26,17 +26,15 @@ import { CATEGORIES, UNMATCHABLE } from "@/lib/categories";
  * rejected one field.
  */
 
-const VERIFIEDDR_URL = "https://verifieddr.com";
-
 /**
  * Domain Rating, with its source named.
  *
- * This IS Ahrefs Domain Rating, read through VerifiedDR. The credit stays
- * regardless of whether a licence compels it: a number that decides who a member
- * is matched with should say where it came from.
+ * This IS Ahrefs Domain Rating, read through the DR checker, our own cache of it. The
+ * credit stays regardless of whether a licence compels it: a number that decides
+ * who a member is matched with should say where it came from.
  *
- * The member is shown DR, but MATCHING bands on TrueDR — DR is the recognisable
- * number, TrueDR is the one that is hard to inflate. See `matching/score.ts`.
+ * Null is common for a new domain: the DR checker is still fetching it, and the refresh
+ * fills it in once the listing is active (`services/authority.ts`).
  */
 export function DomainRatingBadge({ value }: { value: number | null }) {
     return (
@@ -46,16 +44,9 @@ export function DomainRatingBadge({ value }: { value: number | null }) {
                 <span className="text-muted text-[13px]">Domain Rating</span>
             </div>
             <p className="text-muted mt-1.5 text-[11.5px] leading-relaxed">
-                Score from{" "}
-                <a
-                    href={VERIFIEDDR_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-accent rounded-sm underline underline-offset-2">
-                    VerifiedDR
-                </a>
+                Ahrefs Domain Rating, read from our own cache
                 {value == null
-                    ? ". We could not read one for this domain, which is not a problem: it is a sorting hint, never a gate."
+                    ? ". We do not have one for this domain yet, which is not a problem: it is a sorting hint, never a gate. We check again once the listing is live."
                     : ". Partners see this band, not an exact ranking."}
             </p>
         </div>
