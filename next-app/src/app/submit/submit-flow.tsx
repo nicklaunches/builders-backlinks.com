@@ -25,7 +25,7 @@ const INITIAL: DraftState = { status: "idle" };
 const PENDING_STEPS = [
     "Fetching the page",
     "Drafting an identity-scrubbed description",
-    "Looking up Domain Rating at VerifiedDR",
+    "Looking up Domain Rating",
 ] as const;
 
 export function SubmitFlow({ initialUrl, signInHref }: { initialUrl: string; signInHref: string }) {

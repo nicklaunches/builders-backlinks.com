@@ -25,7 +25,7 @@ import { Callout, Code, Prose, Section } from "@/components/web/prose";
 import { SiteFooter } from "@/components/web/site-footer";
 import { SiteHeader } from "@/components/web/site-header";
 
-const LAST_UPDATED = "27 July 2026";
+const LAST_UPDATED = "16 October 2026";
 const CONTACT = "hello@builders-backlinks.com";
 
 export const metadata: Metadata = {
@@ -147,9 +147,11 @@ export default function TermsPage() {
                                     free of anything you would not want a stranger to read.
                                 </li>
                                 <li>
-                                    <strong>Domain Rating comes from VerifiedDR and is fetched by us.</strong> It is a
-                                    sorting hint, never a gate, and it is never accepted from a caller, so there is
-                                    nothing to inflate.
+                                    <strong>
+                                        Domain Rating is Ahrefs Domain Rating, read by us from our own cache.
+                                    </strong>{" "}
+                                    It is a sorting hint, never a gate, and it is never accepted from a caller, so there
+                                    is nothing to inflate.
                                 </li>
                             </ul>
                         </Prose>

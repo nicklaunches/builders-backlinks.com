@@ -91,7 +91,6 @@ function toMatchable(site: ExchangeSite, counts: LiveLinkCounts): MatchableSite 
         category: site.category,
         keywords: site.keywords,
         domainRating: site.domainRating,
-        trueDr: site.trueDr,
         placementOffered: site.placementOffered,
         linksGiven: counts.linksGiven,
         linksGot: counts.linksGot,
