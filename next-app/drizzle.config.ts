@@ -10,8 +10,8 @@ loadEnv({ path: process.env.ENV_FILE ?? ".env.local", quiet: true });
  *
  * Reads DATABASE_URL from the environment (or .env.local) rather than the
  * Hyperdrive binding: migrations
- * run from a developer machine or CI against Neon, never from inside the
- * Worker. The Worker has no business running DDL.
+ * run from a developer machine or CI through the tunnel to production
+ * (`scripts/database-url.ts`), never from inside the Worker. The Worker has no business running DDL.
  */
 export default defineConfig({
     schema: "./src/lib/db/schema.ts",

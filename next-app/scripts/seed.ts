@@ -15,6 +15,7 @@ import {
 } from "@/lib/db/schema";
 import { orderPair } from "@/lib/exchange";
 
+import { isLocalDatabase, isProductionTunnel } from "./database-url";
 import { sessionCookieHeader } from "./dev-session";
 
 loadEnv({ path: process.env.ENV_FILE ?? ".env.local", quiet: true });
@@ -43,8 +44,6 @@ loadEnv({ path: process.env.ENV_FILE ?? ".env.local", quiet: true });
  * that to `.seed/inbox.json` for a human to read.
  */
 
-const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1", "host.docker.internal"]);
-
 /** Everything this script owns is addressed by this suffix. */
 const SUFFIX = "@seed.builders-backlinks.test";
 
@@ -56,7 +55,8 @@ const ahead = (days: number) => new Date(now + days * DAY);
 /**
  * Refuses any database that is not this machine's or declared disposable.
  *
- * A local host passes on sight. A remote one passes only when
+ * A local host passes on sight, except a port that tunnels to production
+ * (`scripts/database-url.ts`). A remote one passes only when
  * `DISPOSABLE_DB_HOST` names that exact host, which is a claim about ONE
  * database that somebody had to write down and keep current. A plain opt-out
  * flag would not do: it gets set once for a throwaway branch and then quietly
@@ -69,13 +69,16 @@ function assertDisposable(): void {
     const url = process.env.DATABASE_URL;
     if (!url) throw new Error("DATABASE_URL is not set. Point it at your local Postgres and try again.");
 
-    let host: string;
+    let parsed: URL;
     try {
-        host = new URL(url).hostname;
+        parsed = new URL(url);
     } catch {
         throw new Error("DATABASE_URL is not a valid URL.");
     }
-    if (LOCAL_HOSTS.has(host)) return;
+    const host = parsed.hostname;
+    if (isProductionTunnel(parsed))
+        throw new Error(`Refusing to seed ${host}:${parsed.port}, the tunnel to production.`);
+    if (isLocalDatabase(parsed)) return;
     if (process.env.DISPOSABLE_DB_HOST?.trim() === host) return;
 
     throw new Error(

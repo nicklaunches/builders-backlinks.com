@@ -15,6 +15,21 @@ Versions before 0.6.0 were reconstructed from the git history on 2026-09-16 and
 are deliberately coarse: they name the release a member would remember, not
 every push that went out that week.
 
+## 0.6.6 — 2026-11-01 — Your data now lives in the EU
+
+Everything Builders Backlinks stores about you moved to a database we run ourselves, on servers in Finland.
+
+- Member data moved from a US database provider to Hetzner servers in Finland.
+- Nothing changes in how you use the site: the same listings, matches, inbox and API keys.
+- The privacy notice now names the new host.
+
+### Internal
+
+- Production Postgres moved from Neon (us-east-2) to `builders_backlinks` on the shared Hetzner box in Helsinki. Hyperdrive config `builders-backlinks-db` keeps its id; only its origin changed, to `pg.builders-backlinks.com`, the `hetzner-db` Cloudflare Tunnel behind an Access app that admits two service tokens (Hyperdrive, GitHub Actions). Postgres 5432 stays closed; TLS was switched on because Hyperdrive refuses a plaintext origin even through a tunnel.
+- The deploy job opens `cloudflared access tcp` to `127.0.0.1:15432` before `db:migrate`, with `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET`. Workstations reach the same database through `ssh -fN db-tunnel` on the same port.
+- `scripts/database-url.ts` makes that port count as production: `seed.ts` refuses it outright, `assert-prod-db.ts` accepts it. Every other localhost port is still a throwaway database.
+- Data was copied with a `postgres:18` `pg_dump` (Neon runs 18, the box 17) and checked row for row after the cutover. `.env.e2e` still points at its Neon branch.
+
 ## 0.6.5 — 2026-10-16 — Domain Rating from our own cache
 
 The same Ahrefs Domain Rating, read from a service we run ourselves, so every

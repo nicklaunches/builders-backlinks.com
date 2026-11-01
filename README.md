@@ -64,7 +64,7 @@ with their ids and sign-in cookies. `pnpm test:inbox` (the API) and `pnpm test:e
 
 ## Hosting
 
-Cloudflare Workers via [OpenNext](https://opennext.js.org/cloudflare), with Postgres (Neon in production) behind a Hyperdrive binding. Analytics is [Cloudflare Web Analytics](https://developers.cloudflare.com/web-analytics/), which is cookieless, and which is what keeps the claim on `/privacy` true: the only cookie this site sets is your sign-in session.
+Cloudflare Workers via [OpenNext](https://opennext.js.org/cloudflare), with Postgres (a Hetzner box in Helsinki, reached through a Cloudflare Tunnel) behind a Hyperdrive binding. Analytics is [Cloudflare Web Analytics](https://developers.cloudflare.com/web-analytics/), which is cookieless, and which is what keeps the claim on `/privacy` true: the only cookie this site sets is your sign-in session.
 
 Deploys are automatic. Push to `main` and `.github/workflows/deploy.yml` typechecks, lints, tests, applies migrations, builds and deploys. Nothing is run by hand.
 

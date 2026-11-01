@@ -41,6 +41,19 @@ export type ChangelogEntry = {
 /** Newest first. The first entry is the current version. */
 export const CHANGELOG: readonly ChangelogEntry[] = [
     {
+        version: "0.6.6",
+        date: "2026-11-01",
+        slug: "v0-6-6",
+        title: "Your data now lives in the EU",
+        summary:
+            "Everything Builders Backlinks stores about you moved to a database we run ourselves, on servers in Finland.",
+        items: [
+            "Member data moved from a US database provider to Hetzner servers in Finland.",
+            "Nothing changes in how you use the site: the same listings, matches, inbox and API keys.",
+            "The privacy notice now names the new host.",
+        ],
+    },
+    {
         version: "0.6.5",
         date: "2026-10-16",
         slug: "v0-6-5",

@@ -70,7 +70,9 @@
         "EMAIL_FROM": "Builders Backlinks <hello@builders-backlinks.com>",
         "OPENROUTER_ANALYZE_MODEL": "deepseek/deepseek-v4-flash",
     },
-    // Neon Postgres, pooled at the edge. A Hyperdrive binding is NOT an
+    // Postgres on the shared Hetzner box, reached through the `hetzner-db`
+    // Cloudflare Tunnel at pg.builders-backlinks.com behind an Access service
+    // token, and pooled by Hyperdrive. A Hyperdrive binding is NOT an
     // environment variable: the connection string arrives on the Cloudflare
     // context, which is why lib/db/index.ts reads getCloudflareContext() and
     // only falls back to DATABASE_URL when there is no request context (scripts,

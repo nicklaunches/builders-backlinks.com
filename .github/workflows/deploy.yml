@@ -67,6 +67,26 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
 
+      # Production Postgres listens on the Hetzner box's loopback only. The runner
+      # reaches it through the same Cloudflare Tunnel Hyperdrive uses, admitted by
+      # its own Access service token; DATABASE_URL points at 127.0.0.1:15432.
+      - name: Open the database tunnel
+        run: |
+          curl -fsSL -o /tmp/cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+          chmod +x /tmp/cloudflared
+          /tmp/cloudflared access tcp --hostname pg.builders-backlinks.com --url 127.0.0.1:15432 \
+            --service-token-id "$CF_ACCESS_CLIENT_ID" --service-token-secret "$CF_ACCESS_CLIENT_SECRET" \
+            > /tmp/cloudflared.log 2>&1 &
+          for i in $(seq 1 30); do
+            pg_isready -h 127.0.0.1 -p 15432 -t 2 >/dev/null 2>&1 && exit 0
+            sleep 1
+          done
+          cat /tmp/cloudflared.log
+          exit 1
+        env:
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+
       - name: Apply migrations
         run: pnpm db:migrate
         env:

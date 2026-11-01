@@ -31,7 +31,7 @@ import { Callout, Code, Prose, Section } from "@/components/web/prose";
 import { SiteFooter } from "@/components/web/site-footer";
 import { SiteHeader } from "@/components/web/site-header";
 
-const LAST_UPDATED = "16 October 2026";
+const LAST_UPDATED = "1 November 2026";
 const CONTACT = "hello@builders-backlinks.com";
 const USER_AGENT = "BuildersBacklinksBot/1.0 (+https://builders-backlinks.com)";
 
@@ -263,10 +263,10 @@ export default function PrivacyPage() {
                         <Prose className="mt-6">
                             <p>
                                 <strong>Amazon SES</strong> sends our email, so your address passes through it in order
-                                to reach you. <strong>Neon</strong> stores the data described above, and the application
-                                runs on <strong>Cloudflare</strong>, which also provides the privacy-preserving page
-                                analytics described in section 8. All three hold data on our behalf as infrastructure
-                                providers.
+                                to reach you. <strong>Hetzner</strong> stores the data described above on servers in
+                                Finland, and the application runs on <strong>Cloudflare</strong>, which also provides
+                                the privacy-preserving page analytics described in section 8. All three hold data on our
+                                behalf as infrastructure providers.
                             </p>
                             <p>
                                 <strong>Google</strong> receives the usage data described in section 8 through Google
