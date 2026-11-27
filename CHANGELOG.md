@@ -15,6 +15,20 @@ Versions before 0.6.0 were reconstructed from the git history on 2026-09-16 and
 are deliberately coarse: they name the release a member would remember, not
 every push that went out that week.
 
+## 0.6.7 — 2026-11-27 — Know when someone is waiting on you
+
+When the other side of a match accepts first, you now hear about it right away, with how long you have left to answer.
+
+- When a site accepts your match first, we email you its Domain Rating and category and how long the match stays open. Neither side is revealed until you accept too.
+- If you still have not answered with under 48 hours to go, you get one last reminder. It is the only one.
+- The match page shows the same countdown next to the accept button.
+
+### Internal
+
+- New template `emails/match-waiting.tsx`, masked like `match-proposed`. `respondToMatch` sends it to the waiting side on the `proposed → a_accepted|b_accepted` write; the recheck cron sends it once more (`lastCall`) when under 48h remain, skipped if the first accept was itself inside that window.
+- Migration `0006`: nullable `exchange_matches.waiting_last_call_at`, additive. Kept apart from `last_nudged_at`, whose NULL the placement nudge reads as "never nudged".
+- `timeLeft()` in `lib/exchange.ts` is the one countdown; the email and the decision panel both read it.
+
 ## 0.6.6 — 2026-11-01 — Your data now lives in the EU
 
 Everything Builders Backlinks stores about you moved to a database we run ourselves, on servers in Finland.

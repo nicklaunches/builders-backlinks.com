@@ -14,6 +14,7 @@ import { LinkVerifiedEmail } from "../src/emails/link-verified";
 import { MatchAgreedEmail } from "../src/emails/match-agreed";
 import { MatchExpiredEmail } from "../src/emails/match-expired";
 import { MatchProposedEmail } from "../src/emails/match-proposed";
+import { MatchWaitingEmail } from "../src/emails/match-waiting";
 import { MatchWithdrawnEmail } from "../src/emails/match-withdrawn";
 import { MessageReceivedEmail } from "../src/emails/message-received";
 import { PlacementPendingEmail } from "../src/emails/placement-pending";
@@ -150,6 +151,30 @@ const fixtures: Fixture[] = [
             partner: maskedPartner,
             expiresAt: new Date("2026-08-09T12:00:00Z"),
             widened: false,
+        }),
+    },
+    {
+        name: "match-waiting",
+        subject: "A DR 34 site accepted your match, 12 days left",
+        masked: true,
+        element: createElement(MatchWaitingEmail, {
+            matchId: "6650f0c4a1b2c3d4e5f6aaaa",
+            partner: maskedPartner,
+            expiresAt: new Date("2026-08-09T12:00:00Z"),
+            now: new Date("2026-07-28T09:00:00Z"),
+        }),
+    },
+    {
+        // The DR-less partner, so the category phrasing is looked at too.
+        name: "match-last-call",
+        subject: "An Analytics site is waiting on you, 47h left",
+        masked: true,
+        element: createElement(MatchWaitingEmail, {
+            matchId: "6650f0c4a1b2c3d4e5f6aaaa",
+            partner: secondMaskedPartner,
+            expiresAt: new Date("2026-08-09T12:00:00Z"),
+            now: new Date("2026-08-07T12:30:00Z"),
+            lastCall: true,
         }),
     },
     {

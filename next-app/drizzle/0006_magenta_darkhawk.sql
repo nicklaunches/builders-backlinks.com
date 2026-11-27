@@ -1,0 +1,1 @@
+ALTER TABLE "exchange_matches" ADD COLUMN "waiting_last_call_at" timestamp with time zone;

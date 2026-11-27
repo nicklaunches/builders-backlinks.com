@@ -4,7 +4,13 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { exchangeLinks, exchangeMatches, exchangeSites } from "@/lib/db/schema";
 import { isAuthorizedCron } from "@/lib/email/cron-auth";
-import { notifyLinkRemoved, notifyLinkVerified, notifyMatchExpired, notifyPlacementPending } from "@/lib/email/notify";
+import {
+    notifyLinkRemoved,
+    notifyLinkVerified,
+    notifyMatchExpired,
+    notifyMatchWaiting,
+    notifyPlacementPending,
+} from "@/lib/email/notify";
 import { GIVE_UP_AFTER_CHECKS, OPEN_MATCH_STATES, UNDECIDED_MATCH_STATES, nextCheckAt } from "@/lib/exchange";
 import { errorDetail } from "@/lib/log";
 import { briefFor } from "@/lib/services/links";
@@ -27,6 +33,11 @@ import { verifyLink } from "@/lib/verify";
  * by anything. That is not theoretical: it had silently stranded 26 of 33 active
  * sites by 2026-08-06. Pairing needed a heartbeat, and this file is where the
  * daily heartbeat already was.
+ *
+ * Two mail passes ride along after the re-pair: the placement nudge for agreed
+ * matches still missing a link, and the last call for half-accepted matches
+ * under 48 hours from expiry. Both stamp a column on the match so a nightly run
+ * cannot mail nightly.
  *
  * The recheck loop proper: day 7, day 30, then monthly for a live link, and a
  * tighter retry for one that is `promised` or `missing`. The schedule itself
@@ -239,6 +250,17 @@ export async function GET(request: Request) {
         }
     }
 
+    // The waiting side's last call, once per match, under 48 hours from expiry.
+    let lastCalls = 0;
+    if (!dryRun) {
+        try {
+            lastCalls = await sendLastCalls(now);
+            if (lastCalls > 0) console.log(`recheck: sent ${lastCalls} last call(s) on half-accepted matches`);
+        } catch (err) {
+            console.error(`recheck: last-call pass failed: ${errorDetail(err)}`);
+        }
+    }
+
     // Oldest checked first, NULLS FIRST explicitly, or Postgres sorts the
     // never-checked links to the back. `promised` is in the set because an
     // inconclusive first report lands there. The second clause drops links
@@ -379,6 +401,7 @@ export async function GET(request: Request) {
         expired: expired.length,
         repair: { dryRun, idle: idle.length, paired, failed, pairs },
         nudged,
+        lastCalls,
         due: due.length,
         checked,
         confirmed,
@@ -491,6 +514,76 @@ async function nudgePendingPlacements(now: Date): Promise<number> {
         }
 
         await db().update(exchangeMatches).set({ lastNudgedAt: now }).where(eq(exchangeMatches.id, match.id));
+    }
+
+    return sent;
+}
+
+/** The last call goes out once less than this remains before expiry. */
+const LAST_CALL_WINDOW_MS = 48 * 60 * 60 * 1000;
+
+/**
+ * Mails the waiting side of a half-accepted match that is about to lapse, and
+ * stamps `waitingLastCallAt` so it goes once.
+ *
+ * Skipped when the first accept landed inside the window too: that member got
+ * the accept mail, with the same countdown, less than two days ago.
+ *
+ * @returns how many members were mailed.
+ */
+async function sendLastCalls(now: Date): Promise<number> {
+    const windowEnd = new Date(now.getTime() + LAST_CALL_WINDOW_MS);
+    const acceptedBefore = new Date(now.getTime() - LAST_CALL_WINDOW_MS);
+
+    // A NULL accept time is a match accepted before the column existed, which
+    // is long enough ago by definition.
+    const due = await db()
+        .select()
+        .from(exchangeMatches)
+        .where(
+            and(
+                isNull(exchangeMatches.waitingLastCallAt),
+                gte(exchangeMatches.expiresAt, now),
+                lt(exchangeMatches.expiresAt, windowEnd),
+                or(
+                    and(
+                        eq(exchangeMatches.state, "a_accepted"),
+                        or(isNull(exchangeMatches.aAcceptedAt), lt(exchangeMatches.aAcceptedAt, acceptedBefore)),
+                    ),
+                    and(
+                        eq(exchangeMatches.state, "b_accepted"),
+                        or(isNull(exchangeMatches.bAcceptedAt), lt(exchangeMatches.bAcceptedAt, acceptedBefore)),
+                    ),
+                ),
+            ),
+        )
+        .limit(NUDGE_BATCH);
+    if (due.length === 0) return 0;
+
+    const siteIds = [...new Set(due.flatMap((m) => [m.siteAId, m.siteBId]))];
+    const sites = await db().select().from(exchangeSites).where(inArray(exchangeSites.id, siteIds));
+    const siteById = new Map(sites.map((s) => [s.id, s]));
+
+    let sent = 0;
+    for (const match of due) {
+        const [acceptedId, waitingId] =
+            match.state === "a_accepted" ? [match.siteAId, match.siteBId] : [match.siteBId, match.siteAId];
+        const acceptedSite = siteById.get(acceptedId);
+        const waitingSite = siteById.get(waitingId);
+
+        if (acceptedSite && waitingSite) {
+            void notifyMatchWaiting({
+                matchId: match.id,
+                waitingSite,
+                acceptedSite,
+                expiresAt: match.expiresAt,
+                lastCall: true,
+            });
+            sent++;
+        }
+
+        // Stamped even when a site row is gone, or the match would be picked up every night.
+        await db().update(exchangeMatches).set({ waitingLastCallAt: now }).where(eq(exchangeMatches.id, match.id));
     }
 
     return sent;

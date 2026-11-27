@@ -41,6 +41,19 @@ export type ChangelogEntry = {
 /** Newest first. The first entry is the current version. */
 export const CHANGELOG: readonly ChangelogEntry[] = [
     {
+        version: "0.6.7",
+        date: "2026-11-27",
+        slug: "v0-6-7",
+        title: "Know when someone is waiting on you",
+        summary:
+            "When the other side of a match accepts first, you now hear about it right away, with how long you have left to answer.",
+        items: [
+            "When a site accepts your match first, we email you its Domain Rating and category and how long the match stays open. Neither side is revealed until you accept too.",
+            "If you still have not answered with under 48 hours to go, you get one last reminder. It is the only one.",
+            "The match page shows the same countdown next to the accept button.",
+        ],
+    },
+    {
         version: "0.6.6",
         date: "2026-11-01",
         slug: "v0-6-6",

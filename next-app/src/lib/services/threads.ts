@@ -17,7 +17,7 @@ import {
     exchangeThreadReads,
 } from "@/lib/db/schema";
 import { notifyMessageReceived } from "@/lib/email/notify";
-import { type MatchState, isRevealed } from "@/lib/exchange";
+import { type MatchState, isRevealed, timeLeft } from "@/lib/exchange";
 import {
     MESSAGE_MAX_LENGTH,
     type TaskState,
@@ -181,6 +181,12 @@ export type ThreadDetail = {
      */
     canWithdraw: boolean;
     expiresAt: Date;
+    /**
+     * "12 days left", from the same helper the waiting-side email uses. Built
+     * here rather than in the pane so the server render and the hydration
+     * agree; the inbox poll keeps it current.
+     */
+    timeLeft: string;
     lastReadAt: Date | null;
 };
 
@@ -488,6 +494,7 @@ export async function getThread(input: { member: ExchangeMember; matchId: string
         // happened, and the way out of one of those is taking a link down.
         canWithdraw: match.state === "agreed" && myLink?.status !== "live" && theirLink?.status !== "live",
         expiresAt: match.expiresAt,
+        timeLeft: timeLeft(match.expiresAt, new Date()),
         lastReadAt: readRow[0]?.lastReadAt ?? null,
     };
 }

@@ -345,7 +345,7 @@ function DecideWork({ thread, onThread }: { thread: ThreadDetailJson; onThread: 
             {confirming ? null : (
                 <p className="text-muted mt-4 text-[13.5px] leading-relaxed">
                     {thread.waitingOnMe
-                        ? "They have accepted and are waiting on you. Accept to reveal both sides and open the thread."
+                        ? `They have accepted and are waiting on you, with ${thread.timeLeft} to answer. Accept to reveal both sides and open the thread.`
                         : thread.waitingOnThem
                           ? "You have accepted. Waiting on them. Once they accept too you are revealed to each other and can talk here. You can still decline until then."
                           : "Neither of you has answered yet. Accepting only reveals you to each other once they accept too."}

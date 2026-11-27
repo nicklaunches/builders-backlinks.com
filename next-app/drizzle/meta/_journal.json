@@ -43,6 +43,13 @@
       "when": 1789581626473,
       "tag": "0005_black_preak",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795732317264,
+      "tag": "0006_magenta_darkhawk",
+      "breakpoints": true
     }
   ]
 }

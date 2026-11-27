@@ -185,3 +185,21 @@ export function nextCheckAt(link: {
     const schedule = link.status === "live" ? LIVE_CHECK_INTERVAL_DAYS : RETRY_CHECK_INTERVAL_DAYS;
     return new Date(anchor.getTime() + intervalDays(schedule, checkCount) * MS_PER_DAY);
 }
+
+const MS_PER_HOUR = 60 * 60 * 1000;
+
+/**
+ * How long an undecided match has left, as a member reads it: "12 days left",
+ * "47h left", "under 1h left".
+ *
+ * Whole days down to 48 hours, whole hours below, always rounded DOWN so the
+ * label never promises time that is not there. The waiting-side email and the
+ * decision panel both read this, which is what keeps the countdown in a mail
+ * equal to the one on the match page.
+ */
+export function timeLeft(expiresAt: Date, now: Date): string {
+    const ms = expiresAt.getTime() - now.getTime();
+    if (ms < MS_PER_HOUR) return "under 1h left";
+    if (ms < 48 * MS_PER_HOUR) return `${Math.floor(ms / MS_PER_HOUR)}h left`;
+    return `${Math.floor(ms / MS_PER_DAY)} days left`;
+}

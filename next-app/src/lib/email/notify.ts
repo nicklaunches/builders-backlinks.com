@@ -7,6 +7,7 @@ import { LinkVerifiedEmail } from "@/emails/link-verified";
 import { MatchAgreedEmail } from "@/emails/match-agreed";
 import { MatchExpiredEmail } from "@/emails/match-expired";
 import { MatchProposedEmail } from "@/emails/match-proposed";
+import { MatchWaitingEmail, waitingPartnerPhrase } from "@/emails/match-waiting";
 import { MatchWithdrawnEmail } from "@/emails/match-withdrawn";
 import { MessageReceivedEmail } from "@/emails/message-received";
 import { PlacementPendingEmail } from "@/emails/placement-pending";
@@ -19,7 +20,7 @@ import type { MaskedPartner } from "@/lib/contracts";
 import { db } from "@/lib/db";
 import { type ExchangeSite, exchangeMembers } from "@/lib/db/schema";
 import { sendEmail } from "@/lib/email/send";
-import type { Placement } from "@/lib/exchange";
+import { type Placement, timeLeft } from "@/lib/exchange";
 import type { LinkBrief } from "@/lib/services/links";
 import { toMaskedPartner, toRevealedPartner } from "@/lib/services/mask";
 import { NO_LINKS, liveLinkCounts } from "@/lib/services/standing";
@@ -217,6 +218,44 @@ export async function notifyMatchAgreed(input: {
             );
         }
         await Promise.all(sends);
+    });
+}
+
+/**
+ * Tells the side that has not answered that the other side accepted.
+ *
+ * One recipient: the waiting side. The site that accepted is shown masked, and
+ * the subject is built from that same masked view, so the subject line cannot
+ * leak what the body may not. Sent from `respondToMatch` on the first accept,
+ * and once more by the recheck cron as the last call.
+ */
+export async function notifyMatchWaiting(input: {
+    matchId: string;
+    /** The site that has not answered, and whose owner is mailed. */
+    waitingSite: ExchangeSite;
+    /** The site that accepted. */
+    acceptedSite: ExchangeSite;
+    expiresAt: Date;
+    lastCall?: boolean;
+}): Promise<void> {
+    const { matchId, waitingSite, acceptedSite, expiresAt, lastCall = false } = input;
+    const label = lastCall ? "match-last-call" : "match-waiting";
+
+    await safely(label, async () => {
+        const [to, counts] = await Promise.all([emailForSite(waitingSite), liveLinkCounts([acceptedSite.id])]);
+        if (!to) return;
+
+        const partner = toMaskedPartner(acceptedSite, counts.get(acceptedSite.id) ?? NO_LINKS);
+        const now = new Date();
+        const who = waitingPartnerPhrase(partner);
+        const left = timeLeft(expiresAt, now);
+
+        await sendEmail({
+            to,
+            subject: lastCall ? `${who} is waiting on you, ${left}` : `${who} accepted your match, ${left}`,
+            react: MatchWaitingEmail({ matchId, partner, expiresAt, now, lastCall }),
+            emailType: label,
+        });
     });
 }
 

@@ -13,7 +13,7 @@ import {
     exchangeMembers,
     exchangeSites,
 } from "@/lib/db/schema";
-import { notifyMatchAgreed, notifyMatchProposed, notifyMatchWithdrawn } from "@/lib/email/notify";
+import { notifyMatchAgreed, notifyMatchProposed, notifyMatchWaiting, notifyMatchWithdrawn } from "@/lib/email/notify";
 import {
     type LinkStatus,
     type MatchState,
@@ -899,6 +899,22 @@ export async function respondToMatch(input: {
 
     const justAgreed = updated.state === "agreed" && match.state !== "agreed";
     const justWithdrawn = updated.withdrawnAt !== null && match.withdrawnAt === null;
+    // `current` is the row the winning write was computed from, so a retry of an
+    // accept that already landed reads `myAccept` here and mails nobody.
+    const justAcceptedFirst = updated.state === myAccept && current.state === "proposed";
+
+    // The other side is now the one being waited on, and is told by whom.
+    if (justAcceptedFirst) {
+        const sites = await db()
+            .select()
+            .from(exchangeSites)
+            .where(inArray(exchangeSites.id, [updated.siteAId, updated.siteBId]));
+        const acceptedSite = sites.find((s) => idSet.has(s.id));
+        const waitingSite = sites.find((s) => !idSet.has(s.id));
+        if (acceptedSite && waitingSite) {
+            void notifyMatchWaiting({ matchId: updated.id, waitingSite, acceptedSite, expiresAt: updated.expiresAt });
+        }
+    }
 
     // A promised row on a dead exchange is worse than no row: the recheck cron
     // goes on crawling it, and the day it finds the link it credits standing

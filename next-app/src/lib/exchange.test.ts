@@ -9,6 +9,7 @@ import {
     UNDECIDED_MATCH_STATES,
     isRevealed,
     nextCheckAt,
+    timeLeft,
 } from "@/lib/exchange";
 
 /**
@@ -183,5 +184,18 @@ describe("isRevealed", () => {
         assert.equal(isRevealed("declined", agreedAt), true);
         assert.equal(isRevealed("expired", null), false);
         assert.equal(isRevealed("proposed", null), false);
+    });
+});
+
+describe("timeLeft", () => {
+    // Rounds down at every step: an email that says "2 days left" with 47 hours
+    // to go has promised a day the member does not have.
+    it("switches to hours below 48h and never rounds up", () => {
+        const hours = (n: number) => new Date(T0.getTime() + n * 60 * 60 * 1000);
+        assert.equal(timeLeft(day(12.9), T0), "12 days left");
+        assert.equal(timeLeft(hours(48), T0), "2 days left");
+        assert.equal(timeLeft(hours(47.9), T0), "47h left");
+        assert.equal(timeLeft(hours(0.9), T0), "under 1h left");
+        assert.equal(timeLeft(day(-1), T0), "under 1h left");
     });
 });

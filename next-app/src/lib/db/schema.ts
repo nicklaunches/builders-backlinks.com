@@ -319,6 +319,16 @@ export const exchangeMatches = pgTable(
          * someone daily until it expired. NULL means never nudged.
          */
         lastNudgedAt: timestamp("last_nudged_at", { withTimezone: true }),
+        /**
+         * When the recheck cron sent the waiting side its last call: the one
+         * reminder, under 48 hours from expiry, on a match only one side has
+         * accepted. NULL means not sent, and it is sent at most once.
+         *
+         * Separate from `last_nudged_at` on purpose. The placement nudge reads
+         * NULL there as "never nudged", so stamping it here would hold back the
+         * first placement nudge after the match is agreed.
+         */
+        waitingLastCallAt: timestamp("waiting_last_call_at", { withTimezone: true }),
 
         createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
         updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
